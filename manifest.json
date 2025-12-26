@@ -1,0 +1,10 @@
+{
+  "id": "obsidi-claude",
+  "name": "Obsidi-Claude",
+  "version": "0.1.0",
+  "minAppVersion": "1.0.0",
+  "description": "Chat with Claude AI using the Agent SDK directly in Obsidian",
+  "author": "Cameron",
+  "authorUrl": "https://github.com/cameronsjo",
+  "isDesktopOnly": true
+}
