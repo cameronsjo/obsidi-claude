@@ -33,3 +33,4 @@ data.json
 # Storage directories (in vault)
 conversations/
 vectors/
+settings.json
