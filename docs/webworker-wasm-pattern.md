@@ -49,7 +49,7 @@ The worker code is stored as a string and converted to a blob URL at runtime:
 
 ```typescript
 const WORKER_CODE = `
-const TRANSFORMERS_CDN = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.1.2';
+const TRANSFORMERS_CDN = 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2';
 
 let pipeline = null;
 let transformers = null;
