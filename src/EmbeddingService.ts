@@ -20,6 +20,7 @@ export interface EmbeddingProvider {
  */
 export class TransformersJSProvider implements EmbeddingProvider {
   private worker: TransformersWorkerManager | null = null;
+  private initPromise: Promise<void> | null = null;
   private dimensions: number;
   private modelName: string;
 
@@ -29,14 +30,32 @@ export class TransformersJSProvider implements EmbeddingProvider {
     this.dimensions = modelName.includes('MiniLM-L6') ? 384 : 768;
   }
 
-  async embed(texts: string[]): Promise<number[][]> {
-    if (!this.worker) {
-      this.worker = new TransformersWorkerManager(this.modelName);
-      await this.worker.initialize();
-      this.dimensions = this.worker.getDimensions();
+  private async ensureInitialized(): Promise<void> {
+    // If already initialized, return immediately
+    if (this.worker) {
+      return;
     }
 
-    return this.worker.embed(texts);
+    // If initialization is in progress, wait for it
+    if (this.initPromise) {
+      await this.initPromise;
+      return;
+    }
+
+    // Start initialization - set promise FIRST to prevent race condition
+    this.initPromise = (async () => {
+      const worker = new TransformersWorkerManager(this.modelName);
+      await worker.initialize();
+      this.dimensions = worker.getDimensions();
+      this.worker = worker; // Set worker LAST after fully initialized
+    })();
+
+    await this.initPromise;
+  }
+
+  async embed(texts: string[]): Promise<number[][]> {
+    await this.ensureInitialized();
+    return this.worker!.embed(texts);
   }
 
   getDimensions(): number {
@@ -203,6 +222,7 @@ export class VoyageAIProvider implements EmbeddingProvider {
  */
 export class EmbeddingService {
   private provider: EmbeddingProvider | null = null;
+  private providerPromise: Promise<EmbeddingProvider> | null = null;
   private settings: EmbeddingSettings;
 
   constructor(settings: EmbeddingSettings) {
@@ -212,51 +232,53 @@ export class EmbeddingService {
   updateSettings(settings: EmbeddingSettings): void {
     this.settings = settings;
     this.provider = null; // Reset provider on settings change
+    this.providerPromise = null;
   }
 
-  private getProvider(): EmbeddingProvider {
-    if (this.provider) return this.provider;
-
+  private createProvider(): EmbeddingProvider {
     switch (this.settings.provider) {
       case 'transformers':
-        this.provider = new TransformersJSProvider(
+        return new TransformersJSProvider(
           this.settings.localModel || 'Xenova/all-MiniLM-L6-v2'
         );
-        break;
       case 'ollama':
-        this.provider = new OllamaProvider(
+        return new OllamaProvider(
           this.settings.localModel || 'nomic-embed-text',
           this.settings.ollamaHost || 'http://localhost:11434'
         );
-        break;
       case 'openai':
         if (!this.settings.openaiApiKey) {
           throw new Error('OpenAI API key is required');
         }
-        this.provider = new OpenAIProvider(
+        return new OpenAIProvider(
           this.settings.openaiApiKey,
           this.settings.openaiModel || 'text-embedding-3-small',
           this.settings.openaiDimensions || 512
         );
-        break;
       case 'voyage':
         if (!this.settings.voyageApiKey) {
           throw new Error('Voyage AI API key is required');
         }
-        this.provider = new VoyageAIProvider(
+        return new VoyageAIProvider(
           this.settings.voyageApiKey,
           this.settings.voyageModel || 'voyage-3-large'
         );
-        break;
       default:
         throw new Error(`Unknown embedding provider: ${this.settings.provider}`);
     }
+  }
 
+  private getProviderSync(): EmbeddingProvider {
+    if (!this.provider) {
+      this.provider = this.createProvider();
+    }
     return this.provider;
   }
 
   async embed(texts: string[]): Promise<number[][]> {
-    return this.getProvider().embed(texts);
+    // Use synchronous provider creation to avoid race conditions
+    // The provider itself handles async initialization internally
+    return this.getProviderSync().embed(texts);
   }
 
   async embedSingle(text: string): Promise<number[]> {
@@ -265,16 +287,16 @@ export class EmbeddingService {
   }
 
   getDimensions(): number {
-    return this.getProvider().getDimensions();
+    return this.getProviderSync().getDimensions();
   }
 
   getProviderName(): string {
-    return this.getProvider().getName();
+    return this.getProviderSync().getName();
   }
 
   isConfigured(): boolean {
     try {
-      this.getProvider();
+      this.getProviderSync();
       return true;
     } catch {
       return false;
