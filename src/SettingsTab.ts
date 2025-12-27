@@ -57,6 +57,22 @@ export class SettingsTab extends PluginSettingTab {
           })
       );
 
+    // Claude Code path
+    new Setting(containerEl)
+      .setName('Claude Code Path')
+      .setDesc(
+        'Path to Claude Code CLI executable. Run "which claude" in terminal to find it.'
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder('/opt/homebrew/bin/claude')
+          .setValue(this.plugin.settings.claudeCodePath)
+          .onChange(async (value) => {
+            this.plugin.settings.claudeCodePath = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
     // Permission mode
     new Setting(containerEl)
       .setName('Permission Mode')

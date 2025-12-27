@@ -3,6 +3,9 @@ import type { EmbeddingSettings } from './types';
 import { generateId } from './types';
 import { EmbeddingService } from './EmbeddingService';
 import { VectorStore, type VectorEntry, type SearchResult } from './VectorStore';
+import { createLogger } from './Logger';
+
+const log = createLogger('RAGService');
 
 export interface IndexProgress {
   total: number;
@@ -177,20 +180,28 @@ export class RAGService {
   }
 
   async initialize(): Promise<void> {
+    log.info('Initializing RAG service');
     await this.vectorStore.load();
 
     // Set provider info (will clear index if provider changed)
     if (this.embeddingService.isConfigured()) {
-      this.vectorStore.setProviderInfo(
-        this.embeddingService.getProviderName(),
-        this.embeddingService.getDimensions()
-      );
+      const providerName = this.embeddingService.getProviderName();
+      const dimensions = this.embeddingService.getDimensions();
+      this.vectorStore.setProviderInfo(providerName, dimensions);
+      log.info('RAG service initialized', {
+        provider: providerName,
+        dimensions,
+        existingChunks: this.vectorStore.getEntryCount(),
+      });
+    } else {
+      log.debug('RAG service initialized without embedding provider');
     }
   }
 
   updateSettings(settings: EmbeddingSettings): void {
     this.settings = settings;
     this.embeddingService.updateSettings(settings);
+    log.debug('Settings updated', { provider: settings.provider, enabled: settings.enabled });
 
     // Check if provider changed
     if (this.embeddingService.isConfigured()) {
@@ -263,6 +274,8 @@ export class RAGService {
       this.settings.chunkOverlap
     );
 
+    log.debug('Indexing file', { path: file.path, chunkCount: chunks.length, contentLength: content.length });
+
     // Generate embeddings for all chunks
     const embeddings = await this.embeddingService.embed(chunks);
 
@@ -294,12 +307,18 @@ export class RAGService {
     }
 
     const files = this.getFilesToIndex();
+    log.info('Starting vault indexing', { totalFiles: files.length, force });
+
     this.progress = {
       total: files.length,
       processed: 0,
       status: 'indexing',
     };
     this.notifyProgress();
+
+    let indexed = 0;
+    let skipped = 0;
+    let failed = 0;
 
     try {
       for (const file of files) {
@@ -309,13 +328,16 @@ export class RAGService {
         // Skip if not changed (unless force)
         if (!force && !(await this.needsReindex(file))) {
           this.progress.processed++;
+          skipped++;
           continue;
         }
 
         try {
           await this.indexFile(file);
+          indexed++;
         } catch (error) {
-          console.error(`Failed to index ${file.path}:`, error);
+          log.error('Failed to index file', error, { path: file.path });
+          failed++;
           // Continue with other files
         }
 
@@ -326,18 +348,23 @@ export class RAGService {
       // Remove entries for deleted files
       const indexedFiles = new Set(this.vectorStore.getIndexedFiles());
       const currentFiles = new Set(files.map((f) => f.path));
+      let removed = 0;
       for (const filepath of indexedFiles) {
         if (!currentFiles.has(filepath)) {
           await this.vectorStore.removeByFilepath(filepath);
+          removed++;
         }
       }
 
       await this.vectorStore.save();
       this.progress.status = 'complete';
       this.progress.currentFile = undefined;
+
+      log.info('Vault indexing completed', { indexed, skipped, failed, removed });
     } catch (error) {
       this.progress.status = 'error';
       this.progress.error = error instanceof Error ? error.message : String(error);
+      log.error('Vault indexing failed', error);
     }
 
     this.notifyProgress();
@@ -352,15 +379,17 @@ export class RAGService {
     // Check exclusions
     for (const folder of this.settings.excludeFolders || []) {
       if (file.path.startsWith(folder + '/') || file.path.startsWith(folder)) {
+        log.debug('Skipping excluded file', { path: file.path, excludedBy: folder });
         return;
       }
     }
 
     try {
+      log.debug('Indexing single file', { path: file.path });
       await this.indexFile(file);
       await this.vectorStore.save();
     } catch (error) {
-      console.error(`Failed to index ${file.path}:`, error);
+      log.error('Failed to index single file', error, { path: file.path });
     }
   }
 
@@ -368,6 +397,7 @@ export class RAGService {
    * Remove a file from the index
    */
   async removeFile(filepath: string): Promise<void> {
+    log.debug('Removing file from index', { path: filepath });
     await this.vectorStore.removeByFilepath(filepath);
     await this.vectorStore.save();
   }
@@ -379,6 +409,13 @@ export class RAGService {
     if (!this.isConfigured()) {
       throw new Error('Embedding service not configured');
     }
+
+    log.debug('Performing semantic search', {
+      queryLength: query.length,
+      limit: options.limit,
+      minScore: options.minScore,
+      hasFilters: !!(options.filterTags || options.filterFolders || options.excludeFolders),
+    });
 
     const queryVector = await this.embeddingService.embedSingle(query);
     const limit = options.limit || 10;
@@ -426,7 +463,13 @@ export class RAGService {
     }
 
     // Filter by minimum score
-    return results.filter((r) => r.score >= minScore);
+    const filtered = results.filter((r) => r.score >= minScore);
+    log.info('Search completed', {
+      resultCount: filtered.length,
+      totalCandidates: results.length,
+      topScore: filtered[0]?.score ?? 0,
+    });
+    return filtered;
   }
 
   /**
@@ -452,6 +495,7 @@ export class RAGService {
    * Clear the entire index
    */
   async clearIndex(): Promise<void> {
+    log.info('Clearing entire index');
     this.vectorStore.clear();
     await this.vectorStore.save();
   }

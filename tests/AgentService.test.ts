@@ -7,6 +7,21 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: vi.fn(),
 }));
 
+// Mock the claudePath module
+vi.mock('../src/claudePath', () => ({
+  findClaudeCliPath: vi.fn(() => '/usr/local/bin/claude'),
+}));
+
+// Mock the Logger
+vi.mock('../src/Logger', () => ({
+  createLogger: vi.fn(() => ({
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  })),
+}));
+
 import { query } from '@anthropic-ai/claude-agent-sdk';
 
 describe('AgentService', () => {
@@ -19,6 +34,7 @@ describe('AgentService', () => {
     const settings = {
       ...DEFAULT_SETTINGS,
       workingDirectory: '/test/vault',
+      claudeCodePath: '/usr/local/bin/claude',
     };
     agentService = new AgentService(settings);
 
@@ -63,6 +79,7 @@ describe('AgentService', () => {
       const emptySettings = {
         ...DEFAULT_SETTINGS,
         workingDirectory: '',
+        claudeCodePath: '/usr/local/bin/claude',
       };
       const service = new AgentService(emptySettings);
 
@@ -71,6 +88,27 @@ describe('AgentService', () => {
       expect(mockCallbacks.onError).toHaveBeenCalledWith(
         expect.objectContaining({
           message: expect.stringContaining('Working directory not configured'),
+        })
+      );
+    });
+
+    it('should throw error when Claude CLI is not found', async () => {
+      // Mock findClaudeCliPath to return null (CLI not found)
+      const { findClaudeCliPath } = await import('../src/claudePath');
+      vi.mocked(findClaudeCliPath).mockReturnValueOnce(null);
+
+      const emptySettings = {
+        ...DEFAULT_SETTINGS,
+        workingDirectory: '/test/vault',
+        claudeCodePath: '',
+      };
+      const service = new AgentService(emptySettings);
+
+      await service.sendMessage('Hello', [], mockCallbacks);
+
+      expect(mockCallbacks.onError).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.stringContaining('Claude Code CLI not found'),
         })
       );
     });
@@ -172,7 +210,7 @@ describe('AgentService', () => {
 
     it('should handle tool use blocks', async () => {
       const mockQuery = vi.mocked(query);
-      const settings = { ...DEFAULT_SETTINGS, workingDirectory: '/test', showToolCalls: true };
+      const settings = { ...DEFAULT_SETTINGS, workingDirectory: '/test', claudeCodePath: '/usr/local/bin/claude', showToolCalls: true };
       const service = new AgentService(settings);
 
       mockQuery.mockReturnValue(
@@ -333,7 +371,7 @@ describe('AgentService message handling edge cases', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    const settings = { ...DEFAULT_SETTINGS, workingDirectory: '/test' };
+    const settings = { ...DEFAULT_SETTINGS, workingDirectory: '/test', claudeCodePath: '/usr/local/bin/claude' };
     agentService = new AgentService(settings);
 
     mockCallbacks = {

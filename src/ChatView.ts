@@ -9,6 +9,9 @@ import type ObsidiClaudePlugin from '../main';
 import type { ChatMessage, ToolCallInfo, Conversation } from './types';
 import { generateId } from './types';
 import { AgentService, type AgentCallbacks, type AgentResult } from './AgentService';
+import { createLogger } from './Logger';
+
+const log = createLogger('ChatView');
 
 export const CHAT_VIEW_TYPE = 'obsidi-claude-chat';
 
@@ -52,6 +55,7 @@ export class ChatView extends ItemView {
   }
 
   async onOpen(): Promise<void> {
+    log.info('Opening chat view');
     const container = this.containerEl.children[1] as HTMLElement;
     container.empty();
     container.addClass('obsidi-claude-container');
@@ -79,6 +83,7 @@ export class ChatView extends ItemView {
     // Load saved conversation
     await this.loadConversation();
     this.renderAllMessages();
+    log.debug('Chat view opened', { conversationId: this.conversation.id });
   }
 
   private createHeader(header: HTMLElement): void {
@@ -262,12 +267,14 @@ export class ChatView extends ItemView {
   }
 
   private createInputArea(inputArea: HTMLElement): void {
+    // Wrapper for input and buttons
+    const inputWrapper = inputArea.createDiv('chat-input-wrapper');
+
     // Textarea
-    this.inputEl = inputArea.createEl('textarea', {
+    this.inputEl = inputWrapper.createEl('textarea', {
       cls: 'chat-input',
       attr: {
-        placeholder: 'Ask Claude anything... (Enter to send, Shift+Enter for newline)',
-        rows: '3',
+        placeholder: 'Ask Claude anything...',
       },
     });
 
@@ -278,22 +285,34 @@ export class ChatView extends ItemView {
       }
     });
 
+    // Auto-resize textarea
+    this.inputEl.addEventListener('input', () => {
+      this.inputEl.style.height = 'auto';
+      this.inputEl.style.height = Math.min(this.inputEl.scrollHeight, 180) + 'px';
+    });
+
     // Button container
-    const buttonArea = inputArea.createDiv('chat-buttons');
+    const buttonArea = inputWrapper.createDiv('chat-buttons');
+
+    // Keyboard hint
+    const hintEl = buttonArea.createSpan('chat-input-hint');
+    hintEl.setText('Enter to send, Shift+Enter for newline');
 
     // Stop button (hidden by default)
     this.stopButton = buttonArea.createEl('button', {
       cls: 'chat-stop-btn',
-      text: 'Stop',
     });
+    setIcon(this.stopButton, 'square');
+    this.stopButton.createSpan({ text: 'Stop' });
     this.stopButton.style.display = 'none';
     this.stopButton.onclick = () => this.stopGeneration();
 
     // Send button
     this.sendButton = buttonArea.createEl('button', {
       cls: 'chat-send-btn mod-cta',
-      text: 'Send',
     });
+    setIcon(this.sendButton, 'send');
+    this.sendButton.createSpan({ text: 'Send' });
     this.sendButton.onclick = () => this.sendMessage();
   }
 
@@ -311,8 +330,12 @@ export class ChatView extends ItemView {
     try {
       this.conversation = await this.plugin.storage.getCurrentConversation();
       this.updateTitle();
+      log.debug('Conversation loaded', {
+        id: this.conversation.id,
+        messageCount: this.conversation.messages.length,
+      });
     } catch (error) {
-      console.error('Failed to load conversation:', error);
+      log.error('Failed to load conversation', error);
     }
   }
 
@@ -352,21 +375,21 @@ export class ChatView extends ItemView {
   private renderMessage(msg: ChatMessage): HTMLElement | null {
     if (!this.messagesContainer) return null;
     const msgDiv = this.messagesContainer.createDiv('chat-message');
-    msgDiv.addClass(
-      msg.role === 'user' ? 'user-message' : 'assistant-message'
-    );
+    msgDiv.addClass(msg.role === 'user' ? 'user-message' : 'assistant-message');
     msgDiv.dataset.messageId = msg.id;
 
-    // Role label
-    const roleLabel = msgDiv.createDiv('message-role');
+    // Message header (role + time) - outside the bubble
+    const headerDiv = msgDiv.createDiv('message-header');
+    const roleLabel = headerDiv.createSpan('message-role');
     roleLabel.setText(msg.role === 'user' ? 'You' : 'Claude');
+    const timeEl = headerDiv.createSpan('message-time');
+    timeEl.setText(new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
 
-    // Timestamp
-    const timeEl = msgDiv.createDiv('message-time');
-    timeEl.setText(new Date(msg.timestamp).toLocaleTimeString());
+    // Message bubble
+    const bubbleDiv = msgDiv.createDiv('message-bubble');
 
-    // Content
-    const contentDiv = msgDiv.createDiv('message-content');
+    // Content inside bubble
+    const contentDiv = bubbleDiv.createDiv('message-content');
 
     if (msg.content) {
       MarkdownRenderer.render(
@@ -377,12 +400,12 @@ export class ChatView extends ItemView {
         new Component()
       );
     } else if (msg.isStreaming) {
-      contentDiv.createDiv('typing-indicator').setText('...');
+      contentDiv.createDiv('typing-indicator');
     }
 
-    // Tool calls (if any)
+    // Tool calls inside bubble (if any)
     if (msg.toolCalls && msg.toolCalls.length > 0 && this.plugin.settings.showToolCalls) {
-      const toolsDiv = msgDiv.createDiv('message-tools');
+      const toolsDiv = bubbleDiv.createDiv('message-tools');
       for (const tool of msg.toolCalls) {
         this.renderToolCall(toolsDiv, tool);
       }
@@ -396,7 +419,10 @@ export class ChatView extends ItemView {
     const toolDiv = container.createDiv('tool-call');
     toolDiv.addClass(`tool-status-${tool.status}`);
 
-    const iconEl = toolDiv.createSpan('tool-icon');
+    // Tool header row with icon and name
+    const headerDiv = toolDiv.createDiv('tool-call-header');
+
+    const iconEl = headerDiv.createSpan('tool-icon');
     const statusIcon =
       tool.status === 'completed'
         ? 'check'
@@ -407,9 +433,10 @@ export class ChatView extends ItemView {
             : 'clock';
     setIcon(iconEl, statusIcon);
 
-    const nameEl = toolDiv.createSpan('tool-name');
+    const nameEl = headerDiv.createSpan('tool-name');
     nameEl.setText(tool.name);
 
+    // Result below header (only show if completed with result)
     if (tool.result && tool.status === 'completed') {
       const resultEl = toolDiv.createDiv('tool-result');
       // Truncate long results
@@ -447,9 +474,13 @@ export class ChatView extends ItemView {
     const msgEl = this.messageElements.get(messageId);
     if (!msgEl) return;
 
-    let toolsDiv = msgEl.querySelector('.message-tools') as HTMLElement;
+    // Find the bubble, or create tools in message if no bubble
+    const bubbleDiv = msgEl.querySelector('.message-bubble') as HTMLElement;
+    const parentEl = bubbleDiv || msgEl;
+
+    let toolsDiv = parentEl.querySelector('.message-tools') as HTMLElement;
     if (!toolsDiv) {
-      toolsDiv = msgEl.createDiv('message-tools');
+      toolsDiv = parentEl.createDiv('message-tools');
     }
 
     toolsDiv.empty();
@@ -476,6 +507,8 @@ export class ChatView extends ItemView {
   private async sendMessage(): Promise<void> {
     const content = this.inputEl.value.trim();
     if (!content || this.isProcessing) return;
+
+    log.info('User sending message', { contentLength: content.length });
 
     this.inputEl.value = '';
     this.setProcessing(true);
@@ -547,8 +580,8 @@ export class ChatView extends ItemView {
 
       onSessionInit: (sessionId, tools) => {
         this.conversation.sessionId = sessionId;
-        console.log('Session initialized:', sessionId);
-        console.log('Available tools:', tools);
+        log.info('Session initialized', { sessionId, toolCount: tools.length });
+        log.debug('Available tools', { tools });
       },
 
       onComplete: async (result) => {
@@ -577,7 +610,7 @@ export class ChatView extends ItemView {
       onError: (error) => {
         this.setProcessing(false);
         this.setStatus(`Error: ${error.message}`, 'error');
-        console.error('Agent error:', error);
+        log.error('Agent error during message processing', error);
       },
     };
 
@@ -596,12 +629,14 @@ export class ChatView extends ItemView {
   }
 
   private stopGeneration(): void {
+    log.info('User stopped generation');
     this.agentService.abort();
     this.setProcessing(false);
     this.setStatus('Stopped', 'info');
   }
 
   private async newConversation(): Promise<void> {
+    log.info('Creating new conversation');
     this.conversation = await this.plugin.storage.createConversation();
     this.renderAllMessages();
     this.updateTitle();
@@ -617,6 +652,7 @@ export class ChatView extends ItemView {
   }
 
   private async clearMessages(): Promise<void> {
+    log.info('Clearing messages', { conversationId: this.conversation.id });
     this.conversation.messages = [];
     this.conversation.sessionId = undefined;
     this.renderAllMessages();
@@ -631,6 +667,7 @@ export class ChatView extends ItemView {
   }
 
   async onClose(): Promise<void> {
+    log.info('Closing chat view');
     // Save before closing
     await this.saveConversation();
   }

@@ -54,6 +54,7 @@ export interface ObsidiClaudeSettings {
   systemPrompt: string;
   maxTurns: number;
   workingDirectory: string;
+  claudeCodePath: string;
   allowedTools: string[];
   permissionMode: 'default' | 'acceptEdits' | 'bypassPermissions';
   showToolCalls: boolean;
@@ -89,6 +90,7 @@ Use the semantic_search tool to find relevant notes based on meaning, not just k
 Be concise but thorough. Use markdown formatting in your responses.`,
   maxTurns: 50,
   workingDirectory: '',
+  claudeCodePath: '',
   allowedTools: [
     'Read',
     'Write',

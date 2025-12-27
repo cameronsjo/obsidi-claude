@@ -1,6 +1,13 @@
 import { query, type SDKMessage, type Options } from '@anthropic-ai/claude-agent-sdk';
 import type { ObsidiClaudeSettings, ChatMessage, ToolCallInfo } from './types';
 import { generateId } from './types';
+import { createLogger } from './Logger';
+import { findClaudeCliPath } from './claudePath';
+
+const log = createLogger('AgentService');
+
+// Cache the detected CLI path
+let cachedCliPath: string | null = null;
 
 export interface AgentCallbacks {
   onMessage: (message: ChatMessage) => void;
@@ -30,6 +37,11 @@ export class AgentService {
   }
 
   updateSettings(settings: ObsidiClaudeSettings): void {
+    // Clear cached CLI path if the setting changed
+    if (settings.claudeCodePath !== this.settings.claudeCodePath) {
+      cachedCliPath = null;
+      log.debug('Claude CLI path setting changed, cache cleared');
+    }
     this.settings = settings;
   }
 
@@ -44,6 +56,15 @@ export class AgentService {
     resumeSessionId?: string
   ): Promise<void> {
     this.abortController = new AbortController();
+    const messagePreview = userMessage.slice(0, 50) + (userMessage.length > 50 ? '...' : '');
+
+    log.info('Sending message to agent', {
+      messageLength: userMessage.length,
+      previousMessageCount: previousMessages.length,
+      resumeSession: !!resumeSessionId,
+      model: this.settings.model,
+    });
+    log.debug('Message preview', { preview: messagePreview });
 
     // Create user message
     const userMsgId = generateId();
@@ -74,6 +95,19 @@ export class AgentService {
         throw new Error('Working directory not configured. Please set it in plugin settings.');
       }
 
+      // Auto-detect Claude CLI path if not cached
+      if (!cachedCliPath) {
+        cachedCliPath = findClaudeCliPath(this.settings.claudeCodePath);
+      }
+
+      if (!cachedCliPath) {
+        throw new Error(
+          'Claude Code CLI not found. Install it via npm install -g @anthropic-ai/claude-code, or set the path manually in plugin settings.'
+        );
+      }
+
+      log.debug('Using Claude CLI', { path: cachedCliPath });
+
       const options: Options = {
         model: this.settings.model,
         cwd,
@@ -83,6 +117,7 @@ export class AgentService {
         allowedTools: this.settings.allowedTools,
         abortController: this.abortController,
         includePartialMessages: true,
+        pathToClaudeCodeExecutable: cachedCliPath,
       };
 
       if (resumeSessionId) {
@@ -94,8 +129,11 @@ export class AgentService {
         options,
       });
 
+      log.debug('Agent query initiated', { cwd, permissionMode: this.settings.permissionMode });
+
       for await (const message of response) {
         if (this.abortController?.signal.aborted) {
+          log.info('Agent request aborted by user');
           break;
         }
 
@@ -112,7 +150,9 @@ export class AgentService {
 
       // Finalize the assistant message
       callbacks.onStreamingUpdate(assistantMsgId, assistantContent);
+      log.debug('Message stream completed', { contentLength: assistantContent.length });
     } catch (error) {
+      log.error('Agent request failed', error, { resumeSession: !!resumeSessionId });
       callbacks.onError(error instanceof Error ? error : new Error(String(error)));
     }
   }
@@ -133,6 +173,10 @@ export class AgentService {
       case 'system':
         if (message.subtype === 'init') {
           this.currentSessionId = message.session_id;
+          log.info('Session initialized', {
+            sessionId: message.session_id,
+            toolCount: message.tools?.length ?? 0,
+          });
           callbacks.onSessionInit(message.session_id, message.tools || []);
         }
         break;
@@ -154,6 +198,7 @@ export class AgentService {
                 status: 'pending',
               };
               toolCalls.set(block.id, toolCall);
+              log.debug('Tool call initiated', { tool: block.name, toolUseId: block.id });
               if (this.settings.showToolCalls) {
                 callbacks.onToolCall(assistantMsgId, toolCall);
               }
@@ -203,6 +248,10 @@ export class AgentService {
                 typeof message.tool_use_result === 'string'
                   ? message.tool_use_result
                   : JSON.stringify(message.tool_use_result);
+              log.debug('Tool call completed', {
+                tool: toolCall.name,
+                resultLength: toolCall.result.length,
+              });
               if (this.settings.showToolCalls) {
                 callbacks.onToolResult(assistantMsgId, toolCall.name, toolCall.result);
               }
@@ -223,6 +272,13 @@ export class AgentService {
         if (message.subtype !== 'success' && 'errors' in message) {
           result.errors = message.errors;
         }
+        log.info('Agent conversation completed', {
+          success: result.success,
+          inputTokens: result.inputTokens,
+          outputTokens: result.outputTokens,
+          totalCost: result.totalCost,
+          errorCount: result.errors?.length ?? 0,
+        });
         callbacks.onComplete(result);
         break;
       }

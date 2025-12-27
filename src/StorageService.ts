@@ -3,6 +3,9 @@ import type { ObsidiClaudeSettings, Conversation } from './types';
 import { DEFAULT_SETTINGS, generateId } from './types';
 import * as fs from 'fs';
 import * as path from 'path';
+import { createLogger } from './Logger';
+
+const log = createLogger('StorageService');
 
 /**
  * Handles all plugin data persistence in .obsidian/plugins/obsidi-claude/
@@ -39,9 +42,11 @@ export class StorageService {
    * Initialize storage directories
    */
   async initialize(): Promise<void> {
+    log.info('Initializing storage directories', { basePath: this.basePath });
     await this.ensureDir(this.basePath);
     await this.ensureDir(this.conversationsPath);
     await this.ensureDir(this.vectorsPath);
+    log.debug('Storage directories initialized');
   }
 
   private async ensureDir(dirPath: string): Promise<void> {
@@ -58,11 +63,13 @@ export class StorageService {
       if (fs.existsSync(filePath)) {
         const content = fs.readFileSync(filePath, 'utf-8');
         const saved = JSON.parse(content) as Partial<ObsidiClaudeSettings>;
+        log.debug('Settings loaded from file');
         return this.mergeSettings(saved);
       }
     } catch (error) {
-      console.error('Failed to load settings:', error);
+      log.error('Failed to load settings', error);
     }
+    log.debug('Using default settings');
     return { ...DEFAULT_SETTINGS };
   }
 
@@ -71,8 +78,9 @@ export class StorageService {
     try {
       await this.ensureDir(this.basePath);
       fs.writeFileSync(filePath, JSON.stringify(settings, null, 2));
+      log.debug('Settings saved');
     } catch (error) {
-      console.error('Failed to save settings:', error);
+      log.error('Failed to save settings', error);
       throw error;
     }
   }
@@ -104,10 +112,12 @@ export class StorageService {
     try {
       if (fs.existsSync(indexPath)) {
         const content = fs.readFileSync(indexPath, 'utf-8');
-        return JSON.parse(content);
+        const conversations = JSON.parse(content);
+        log.debug('Loaded conversation index', { count: conversations.length });
+        return conversations;
       }
     } catch (error) {
-      console.error('Failed to load conversation index:', error);
+      log.error('Failed to load conversation index', error);
     }
     return [];
   }
@@ -137,7 +147,7 @@ export class StorageService {
         return data.id || null;
       }
     } catch (error) {
-      console.error('Failed to load current conversation pointer:', error);
+      log.error('Failed to load current conversation pointer', error);
     }
     return null;
   }
@@ -159,10 +169,12 @@ export class StorageService {
     try {
       if (fs.existsSync(filePath)) {
         const content = fs.readFileSync(filePath, 'utf-8');
-        return JSON.parse(content) as Conversation;
+        const conversation = JSON.parse(content) as Conversation;
+        log.debug('Loaded conversation', { id, messageCount: conversation.messages.length });
+        return conversation;
       }
     } catch (error) {
-      console.error(`Failed to load conversation ${id}:`, error);
+      log.error('Failed to load conversation', error, { id });
     }
     return null;
   }
@@ -176,6 +188,7 @@ export class StorageService {
     // Save the conversation file
     const filePath = path.join(this.conversationsPath, `${conversation.id}.json`);
     fs.writeFileSync(filePath, JSON.stringify(conversation, null, 2));
+    log.debug('Saved conversation', { id: conversation.id, messageCount: conversation.messages.length });
 
     // Update the index
     const index = await this.listConversations();
@@ -205,6 +218,7 @@ export class StorageService {
    * Delete a conversation
    */
   async deleteConversation(id: string): Promise<void> {
+    log.info('Deleting conversation', { id });
     const filePath = path.join(this.conversationsPath, `${id}.json`);
 
     // Delete the file
@@ -236,6 +250,7 @@ export class StorageService {
       updatedAt: Date.now(),
     };
 
+    log.info('Creating new conversation', { id: conversation.id, title });
     await this.saveConversation(conversation);
     await this.setCurrentConversationId(conversation.id);
 
@@ -293,6 +308,7 @@ export class StorageService {
     conversations: Conversation[];
     exportedAt: string;
   }> {
+    log.info('Exporting all data');
     const settings = await this.loadSettings();
     const conversationList = await this.listConversations();
     const conversations: Conversation[] = [];
@@ -304,6 +320,7 @@ export class StorageService {
       }
     }
 
+    log.info('Export completed', { conversationCount: conversations.length });
     return {
       settings,
       conversations,
@@ -318,6 +335,11 @@ export class StorageService {
     settings?: ObsidiClaudeSettings;
     conversations?: Conversation[];
   }): Promise<{ settingsImported: boolean; conversationsImported: number }> {
+    log.info('Importing data', {
+      hasSettings: !!data.settings,
+      conversationCount: data.conversations?.length ?? 0,
+    });
+
     let settingsImported = false;
     let conversationsImported = 0;
 
@@ -333,6 +355,7 @@ export class StorageService {
       }
     }
 
+    log.info('Import completed', { settingsImported, conversationsImported });
     return { settingsImported, conversationsImported };
   }
 
@@ -340,6 +363,7 @@ export class StorageService {
    * Clear all data
    */
   async clearAll(): Promise<void> {
+    log.warn('Clearing all data');
     // Clear conversations
     const conversations = await this.listConversations();
     for (const conv of conversations) {
@@ -351,5 +375,6 @@ export class StorageService {
     if (fs.existsSync(vectorIndexPath)) {
       fs.unlinkSync(vectorIndexPath);
     }
+    log.info('All data cleared', { conversationsDeleted: conversations.length });
   }
 }
