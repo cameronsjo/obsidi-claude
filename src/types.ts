@@ -49,6 +49,11 @@ export interface EmbeddingSettings {
   excludeFolders: string[];
 }
 
+export interface MCPSettings {
+  enabled: boolean;
+  serverName: string;
+}
+
 export interface ObsidiClaudeSettings {
   model: 'claude-sonnet-4-5' | 'claude-opus-4' | 'claude-3-5-sonnet-20241022';
   systemPrompt: string;
@@ -60,6 +65,7 @@ export interface ObsidiClaudeSettings {
   showToolCalls: boolean;
   streamResponses: boolean;
   embedding: EmbeddingSettings;
+  mcp: MCPSettings;
 }
 
 export const DEFAULT_EMBEDDING_SETTINGS: EmbeddingSettings = {
@@ -74,6 +80,11 @@ export const DEFAULT_EMBEDDING_SETTINGS: EmbeddingSettings = {
   chunkSize: 512,
   chunkOverlap: 50,
   excludeFolders: ['.obsidian', '.trash', 'node_modules'],
+};
+
+export const DEFAULT_MCP_SETTINGS: MCPSettings = {
+  enabled: false,
+  serverName: 'obsidi-claude',
 };
 
 export const DEFAULT_SETTINGS: ObsidiClaudeSettings = {
@@ -105,6 +116,7 @@ Be concise but thorough. Use markdown formatting in your responses.`,
   showToolCalls: true,
   streamResponses: true,
   embedding: DEFAULT_EMBEDDING_SETTINGS,
+  mcp: DEFAULT_MCP_SETTINGS,
 };
 
 export function generateId(): string {

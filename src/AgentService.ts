@@ -2,7 +2,7 @@ import { query, type SDKMessage, type Options } from '@anthropic-ai/claude-agent
 import type { ObsidiClaudeSettings, ChatMessage, ToolCallInfo } from './types';
 import { generateId } from './types';
 import { createLogger } from './Logger';
-import { findClaudeCliPath } from './claudePath';
+import { findClaudeCliPath, getEnhancedPath } from './claudePath';
 
 const log = createLogger('AgentService');
 
@@ -107,6 +107,13 @@ export class AgentService {
       }
 
       log.debug('Using Claude CLI', { path: cachedCliPath });
+
+      // Enhance PATH for subprocess - needed because Electron's PATH doesn't include Homebrew/node paths
+      const enhancedPath = getEnhancedPath();
+      if (enhancedPath !== process.env.PATH) {
+        process.env.PATH = enhancedPath;
+        log.debug('Enhanced PATH for subprocess');
+      }
 
       const options: Options = {
         model: this.settings.model,

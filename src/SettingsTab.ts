@@ -18,6 +18,7 @@ export class SettingsTab extends PluginSettingTab {
 
     this.addAgentSettings(containerEl);
     this.addEmbeddingSettings(containerEl);
+    this.addMCPSettings(containerEl);
     this.addToolSettings(containerEl);
     this.addResetSettings(containerEl);
   }
@@ -412,6 +413,67 @@ export class SettingsTab extends PluginSettingTab {
         Total chunks: ${stats.totalChunks}
       `;
     }
+  }
+
+  private addMCPSettings(containerEl: HTMLElement): void {
+    containerEl.createEl('h3', { text: 'MCP Server' });
+
+    const mcp = this.plugin.settings.mcp;
+
+    new Setting(containerEl)
+      .setName('Enable MCP Server')
+      .setDesc(
+        'Expose Obsidian vault tools via Model Context Protocol. Allows external Claude instances to interact with your vault.'
+      )
+      .addToggle((toggle) =>
+        toggle.setValue(mcp.enabled).onChange(async (value) => {
+          this.plugin.settings.mcp.enabled = value;
+          await this.plugin.saveSettings();
+
+          // Start or stop the MCP server
+          if (value) {
+            await this.plugin.startMCPServer();
+            new Notice('MCP server enabled');
+          } else {
+            await this.plugin.stopMCPServer();
+            new Notice('MCP server disabled');
+          }
+
+          this.display();
+        })
+      );
+
+    if (!mcp.enabled) return;
+
+    new Setting(containerEl)
+      .setName('Server Name')
+      .setDesc('Name used to identify this MCP server')
+      .addText((text) =>
+        text
+          .setPlaceholder('obsidi-claude')
+          .setValue(mcp.serverName)
+          .onChange(async (value) => {
+            this.plugin.settings.mcp.serverName = value || 'obsidi-claude';
+            await this.plugin.saveSettings();
+          })
+      );
+
+    // Show MCP configuration instructions
+    const infoEl = containerEl.createDiv({ cls: 'setting-item-description' });
+    infoEl.style.marginTop = '10px';
+    infoEl.innerHTML = `
+      <strong>Usage Instructions:</strong><br>
+      Add this to your Claude Code MCP settings (<code>~/.claude/claude_desktop_config.json</code>):<br>
+      <pre style="background: var(--background-secondary); padding: 8px; border-radius: 4px; overflow-x: auto; font-size: 0.85em;">{
+  "mcpServers": {
+    "${mcp.serverName}": {
+      "command": "obsidian",
+      "args": ["--mcp-server"]
+    }
+  }
+}</pre>
+      <em>Note: The MCP server exposes 16 tools for vault interaction including semantic search, file operations, and knowledge graph navigation.</em>
+    `;
   }
 
   private addToolSettings(containerEl: HTMLElement): void {

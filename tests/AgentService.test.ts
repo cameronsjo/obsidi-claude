@@ -10,6 +10,7 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
 // Mock the claudePath module
 vi.mock('../src/claudePath', () => ({
   findClaudeCliPath: vi.fn(() => '/usr/local/bin/claude'),
+  getEnhancedPath: vi.fn(() => '/usr/local/bin:/usr/bin'),
 }));
 
 // Mock the Logger

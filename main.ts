@@ -5,12 +5,17 @@ import { DEFAULT_SETTINGS, type ObsidiClaudeSettings } from './src/types';
 import { RAGService } from './src/RAGService';
 import { ObsidianTools } from './src/ObsidianTools';
 import { StorageService } from './src/StorageService';
+import { MCPServer } from './src/MCPServer';
+import { createLogger } from './src/Logger';
+
+const log = createLogger('Plugin');
 
 export default class ObsidiClaudePlugin extends Plugin {
   settings: ObsidiClaudeSettings;
   ragService: RAGService | null = null;
   obsidianTools: ObsidianTools | null = null;
   storage: StorageService;
+  mcpServer: MCPServer | null = null;
 
   async onload(): Promise<void> {
     console.log('Loading Obsidi-Claude plugin');
@@ -140,9 +145,14 @@ export default class ObsidiClaudePlugin extends Plugin {
         if (this.ragService?.isConfigured()) {
           // Run in background without blocking
           this.ragService.indexVault(false).catch((error) => {
-            console.error('Initial indexing failed:', error);
+            log.error('Initial indexing failed', error);
           });
         }
+      }
+
+      // Start MCP server if enabled
+      if (this.settings.mcp.enabled) {
+        await this.startMCPServer();
       }
     });
   }
@@ -226,7 +236,46 @@ export default class ObsidiClaudePlugin extends Plugin {
     }
   }
 
-  onunload(): void {
-    console.log('Unloading Obsidi-Claude plugin');
+  async startMCPServer(): Promise<void> {
+    if (!this.obsidianTools) {
+      log.warn('Cannot start MCP server: ObsidianTools not initialized');
+      return;
+    }
+
+    if (this.mcpServer?.isServerRunning()) {
+      log.debug('MCP server already running');
+      return;
+    }
+
+    try {
+      this.mcpServer = new MCPServer(this.obsidianTools, {
+        name: this.settings.mcp.serverName,
+        version: this.manifest.version,
+      });
+      await this.mcpServer.start();
+      log.info('MCP server started', { name: this.settings.mcp.serverName });
+    } catch (error) {
+      log.error('Failed to start MCP server', error);
+      new Notice(`Failed to start MCP server: ${error}`);
+    }
+  }
+
+  async stopMCPServer(): Promise<void> {
+    if (!this.mcpServer) return;
+
+    try {
+      await this.mcpServer.stop();
+      this.mcpServer = null;
+      log.info('MCP server stopped');
+    } catch (error) {
+      log.error('Failed to stop MCP server', error);
+    }
+  }
+
+  async onunload(): Promise<void> {
+    log.info('Unloading Obsidi-Claude plugin');
+
+    // Stop MCP server if running
+    await this.stopMCPServer();
   }
 }
