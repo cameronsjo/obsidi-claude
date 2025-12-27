@@ -6,6 +6,7 @@
   height: 100%;
   padding: 0;
   background-color: var(--background-primary);
+  overflow-x: hidden;
 }
 
 /* Header */
@@ -16,6 +17,8 @@
   padding: 0.75rem 1rem;
   border-bottom: 1px solid var(--background-modifier-border);
   background-color: var(--background-secondary);
+  min-width: 0;
+  flex-wrap: wrap;
 }
 
 .chat-history-btn {
@@ -64,6 +67,7 @@
 .chat-messages {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 1rem;
   display: flex;
   flex-direction: column;
@@ -76,6 +80,7 @@
   flex-direction: column;
   max-width: 85%;
   gap: 0.25rem;
+  min-width: 0;
 }
 
 .user-message {
@@ -115,6 +120,8 @@
   border-radius: 1rem;
   word-wrap: break-word;
   overflow-wrap: break-word;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .user-message .message-bubble {
@@ -133,6 +140,9 @@
 /* Message content */
 .message-content {
   line-height: 1.5;
+  min-width: 0;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 .message-content p:first-child {
@@ -150,6 +160,12 @@
   background-color: var(--background-primary);
   overflow-x: auto;
   font-size: 0.85rem;
+  max-width: 100%;
+}
+
+.message-content pre code {
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 
 .user-message .message-content pre {
@@ -161,15 +177,11 @@
   background-color: var(--background-primary);
   padding: 0.1em 0.3em;
   border-radius: 3px;
+  word-break: break-word;
 }
 
 .user-message .message-content code {
   background-color: rgba(0, 0, 0, 0.15);
-}
-
-.message-content pre code {
-  background: none;
-  padding: 0;
 }
 
 /* Typing indicator */
@@ -227,12 +239,16 @@
   border-radius: 0.5rem;
   background-color: var(--background-primary);
   border-left: 3px solid var(--text-faint);
+  min-width: 0;
+  overflow: hidden;
 }
 
 .tool-call-header {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  min-width: 0;
+  flex-wrap: wrap;
 }
 
 .tool-call.tool-status-pending {
@@ -296,6 +312,8 @@
   font-weight: 500;
   color: var(--text-normal);
   font-family: var(--font-monospace);
+  word-break: break-word;
+  min-width: 0;
 }
 
 .tool-result {

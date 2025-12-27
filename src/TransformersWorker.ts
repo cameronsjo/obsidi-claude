@@ -22,19 +22,28 @@ interface WorkerResponse {
 }
 
 // Inline worker code that loads transformers.js from CDN
-// Using @xenova/transformers v2.x which has better browser compatibility
+// Using @xenova/transformers v2.x with importScripts for classic worker compatibility
 const WORKER_CODE = `
-// Transformers.js CDN URL - using v2.x Xenova version for better compatibility
-const TRANSFORMERS_CDN = 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2';
+// Transformers.js CDN URL - UMD build for importScripts compatibility
+const TRANSFORMERS_URL = 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/transformers.min.js';
 
 let extractor = null;
 let modelName = 'Xenova/all-MiniLM-L6-v2';
 let dimensions = 384;
 let isLoading = false;
+let transformersLoaded = false;
 
 // Post progress to main thread
 function postProgress(status) {
   self.postMessage({ id: -1, type: 'progress', payload: { status } });
+}
+
+// Load transformers.js using importScripts (works in classic workers)
+function loadTransformers() {
+  if (transformersLoaded) return;
+  postProgress('Loading transformers.js from CDN...');
+  importScripts(TRANSFORMERS_URL);
+  transformersLoaded = true;
 }
 
 // Initialize embedding pipeline
@@ -46,14 +55,16 @@ async function initPipeline(model) {
   modelName = model;
 
   try {
-    postProgress('Loading transformers.js from CDN...');
+    loadTransformers();
 
-    // Dynamic import from CDN
-    const { pipeline, env } = await import(TRANSFORMERS_CDN);
+    // Access the global Transformers object
+    const { pipeline, env } = self.Transformers || self;
 
     // Configure for browser environment
-    env.allowLocalModels = false;
-    env.useBrowserCache = true;
+    if (env) {
+      env.allowLocalModels = false;
+      env.useBrowserCache = true;
+    }
 
     postProgress('Loading model: ' + model + '...');
 
@@ -61,7 +72,7 @@ async function initPipeline(model) {
     extractor = await pipeline('feature-extraction', model, {
       quantized: true,
       progress_callback: (progress) => {
-        if (progress.status === 'progress') {
+        if (progress.status === 'progress' && progress.total > 0) {
           const pct = Math.round((progress.loaded / progress.total) * 100);
           postProgress('Downloading model: ' + pct + '%');
         }
@@ -123,7 +134,8 @@ self.onmessage = async (event) => {
         throw new Error('Unknown message type: ' + type);
     }
   } catch (error) {
-    self.postMessage({ id, type: 'error', error: error.message || String(error) });
+    const errMsg = error && error.message ? error.message : String(error);
+    self.postMessage({ id, type: 'error', error: errMsg });
   }
 };
 
@@ -155,16 +167,12 @@ export class TransformersWorkerManager {
 
     log.info('Initializing transformers worker', { model: this.modelName });
 
-    // Create worker from inline code
+    // Create classic worker from inline code (not module worker)
+    // Classic workers support importScripts which we use to load transformers.js
     const blob = new Blob([WORKER_CODE], { type: 'application/javascript' });
     const workerUrl = URL.createObjectURL(blob);
 
-    try {
-      this.worker = new Worker(workerUrl, { type: 'module' });
-    } catch {
-      // Fallback for environments that don't support module workers
-      this.worker = new Worker(workerUrl);
-    }
+    this.worker = new Worker(workerUrl);
 
     // Set up message handler
     this.worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
