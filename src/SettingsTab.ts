@@ -458,13 +458,73 @@ export class SettingsTab extends PluginSettingTab {
           })
       );
 
-    // Show MCP configuration instructions
+    new Setting(containerEl)
+      .setName('Transport')
+      .setDesc('How clients connect to the MCP server')
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption('http', 'HTTP (Recommended)')
+          .addOption('stdio', 'Stdio (For CLI integration)')
+          .addOption('both', 'Both (HTTP + Stdio)')
+          .setValue(mcp.transport)
+          .onChange(async (value) => {
+            this.plugin.settings.mcp.transport = value as typeof mcp.transport;
+            await this.plugin.saveSettings();
+
+            // Restart server if running
+            if (mcp.enabled && this.plugin.mcpServer?.isServerRunning()) {
+              await this.plugin.stopMCPServer();
+              await this.plugin.startMCPServer();
+              new Notice('MCP server restarted with new transport');
+            }
+
+            this.display();
+          })
+      );
+
+    if (mcp.transport === 'http' || mcp.transport === 'both') {
+      new Setting(containerEl)
+        .setName('HTTP Port')
+        .setDesc('Port for HTTP transport (default: 3000)')
+        .addText((text) =>
+          text
+            .setPlaceholder('3000')
+            .setValue(String(mcp.httpPort))
+            .onChange(async (value) => {
+              const port = parseInt(value, 10);
+              if (!isNaN(port) && port >= 1024 && port <= 65535) {
+                this.plugin.settings.mcp.httpPort = port;
+                await this.plugin.saveSettings();
+              }
+            })
+        );
+    }
+
+    // Show MCP configuration instructions based on transport
     const infoEl = containerEl.createDiv({ cls: 'setting-item-description' });
     infoEl.style.marginTop = '10px';
-    infoEl.innerHTML = `
-      <strong>Usage Instructions:</strong><br>
-      Add this to your Claude Code MCP settings (<code>~/.claude/claude_desktop_config.json</code>):<br>
-      <pre style="background: var(--background-secondary); padding: 8px; border-radius: 4px; overflow-x: auto; font-size: 0.85em;">{
+
+    if (mcp.transport === 'http' || mcp.transport === 'both') {
+      infoEl.innerHTML = `
+        <strong>HTTP Transport:</strong><br>
+        Server running at <code>http://localhost:${mcp.httpPort}/mcp</code><br>
+        Health check: <code>http://localhost:${mcp.httpPort}/health</code><br><br>
+        <strong>Claude Code Configuration:</strong><br>
+        Add to <code>~/.claude/claude_desktop_config.json</code>:<br>
+        <pre style="background: var(--background-secondary); padding: 8px; border-radius: 4px; overflow-x: auto; font-size: 0.85em;">{
+  "mcpServers": {
+    "${mcp.serverName}": {
+      "url": "http://localhost:${mcp.httpPort}/mcp"
+    }
+  }
+}</pre>
+        <em>Note: The MCP server exposes 16 tools for vault interaction including semantic search, file operations, and knowledge graph navigation.</em>
+      `;
+    } else {
+      infoEl.innerHTML = `
+        <strong>Stdio Transport:</strong><br>
+        Add to <code>~/.claude/claude_desktop_config.json</code>:<br>
+        <pre style="background: var(--background-secondary); padding: 8px; border-radius: 4px; overflow-x: auto; font-size: 0.85em;">{
   "mcpServers": {
     "${mcp.serverName}": {
       "command": "obsidian",
@@ -472,8 +532,9 @@ export class SettingsTab extends PluginSettingTab {
     }
   }
 }</pre>
-      <em>Note: The MCP server exposes 16 tools for vault interaction including semantic search, file operations, and knowledge graph navigation.</em>
-    `;
+        <em>Note: The MCP server exposes 16 tools for vault interaction including semantic search, file operations, and knowledge graph navigation.</em>
+      `;
+    }
   }
 
   private addToolSettings(containerEl: HTMLElement): void {

@@ -251,9 +251,15 @@ export default class ObsidiClaudePlugin extends Plugin {
       this.mcpServer = new MCPServer(this.obsidianTools, {
         name: this.settings.mcp.serverName,
         version: this.manifest.version,
+        transport: this.settings.mcp.transport,
+        httpPort: this.settings.mcp.httpPort,
       });
       await this.mcpServer.start();
-      log.info('MCP server started', { name: this.settings.mcp.serverName });
+      log.info('MCP server started', {
+        name: this.settings.mcp.serverName,
+        transport: this.settings.mcp.transport,
+        httpPort: this.settings.mcp.httpPort,
+      });
     } catch (error) {
       log.error('Failed to start MCP server', error);
       new Notice(`Failed to start MCP server: ${error}`);

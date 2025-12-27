@@ -52,6 +52,8 @@ export interface EmbeddingSettings {
 export interface MCPSettings {
   enabled: boolean;
   serverName: string;
+  transport: 'stdio' | 'http' | 'both';
+  httpPort: number;
 }
 
 export interface ObsidiClaudeSettings {
@@ -85,6 +87,8 @@ export const DEFAULT_EMBEDDING_SETTINGS: EmbeddingSettings = {
 export const DEFAULT_MCP_SETTINGS: MCPSettings = {
   enabled: false,
   serverName: 'obsidi-claude',
+  transport: 'http',
+  httpPort: 3000,
 };
 
 export const DEFAULT_SETTINGS: ObsidiClaudeSettings = {
