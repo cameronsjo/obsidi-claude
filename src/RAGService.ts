@@ -424,46 +424,36 @@ export class RAGService {
     let results: SearchResult[];
 
     if (options.filterTags || options.filterFolders || options.excludeFolders) {
+      // Normalize tags (handle both #tag and tag formats)
+      const normalizedTags = options.filterTags?.flatMap((tag) => {
+        const stripped = tag.replace(/^#/, '');
+        return [stripped, '#' + stripped];
+      });
+
+      // Add trailing slashes to folder paths for proper prefix matching
+      const includeFolders = options.filterFolders?.map((f) =>
+        f.endsWith('/') ? f : f + '/'
+      );
+      const excludeFolders = options.excludeFolders?.map((f) =>
+        f.endsWith('/') ? f : f + '/'
+      );
+
       results = await this.vectorStore.searchWithFilter(
         queryVector,
-        (doc) => {
-          // Filter by tags
-          if (options.filterTags && options.filterTags.length > 0) {
-            const docTags = doc.metadata.tags || [];
-            const hasTag = options.filterTags.some(
-              (tag) =>
-                docTags.includes(tag) ||
-                docTags.includes('#' + tag.replace(/^#/, ''))
-            );
-            if (!hasTag) return false;
-          }
-
-          // Filter by folders
-          if (options.filterFolders && options.filterFolders.length > 0) {
-            const inFolder = options.filterFolders.some((folder) =>
-              doc.filepath.startsWith(folder + '/')
-            );
-            if (!inFolder) return false;
-          }
-
-          // Exclude folders
-          if (options.excludeFolders && options.excludeFolders.length > 0) {
-            const excluded = options.excludeFolders.some((folder) =>
-              doc.filepath.startsWith(folder + '/')
-            );
-            if (excluded) return false;
-          }
-
-          return true;
+        {
+          includeFolders,
+          excludeFolders,
+          includeTags: normalizedTags,
         },
-        limit
+        limit,
+        minScore
       );
     } else {
-      results = await this.vectorStore.search(queryVector, limit);
+      results = await this.vectorStore.search(queryVector, limit, minScore);
     }
 
-    // Filter by minimum score
-    const filtered = results.filter((r) => r.score >= minScore);
+    // Results already filtered by minScore in worker
+    const filtered = results;
     log.info('Search completed', {
       resultCount: filtered.length,
       totalCandidates: results.length,

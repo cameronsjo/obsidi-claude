@@ -1,6 +1,10 @@
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
+import { VectorSearchWorkerManager, type SearchFilter } from './VectorSearchWorker';
+import { createLogger } from './Logger';
+
+const log = createLogger('VectorStore');
 
 export interface VectorDocument {
   id: string;
@@ -35,13 +39,17 @@ interface IndexData {
 }
 
 /**
- * Simple local vector store using JSON storage
- * Implements cosine similarity search
+ * Local vector store using JSON storage with Web Worker search
+ *
+ * Search operations are offloaded to a worker thread to keep the UI responsive.
+ * The worker maintains its own copy of the vector data for fast similarity search.
  */
 export class VectorStore {
   private indexPath: string;
   private data: IndexData;
   private dirty = false;
+  private searchWorker: VectorSearchWorkerManager | null = null;
+  private workerSynced = false;
 
   constructor(storagePath: string) {
     this.indexPath = path.join(storagePath, 'vector-index.json');
@@ -54,14 +62,35 @@ export class VectorStore {
     };
   }
 
+  /**
+   * Initialize the search worker
+   */
+  private async ensureWorker(): Promise<VectorSearchWorkerManager> {
+    if (!this.searchWorker) {
+      this.searchWorker = new VectorSearchWorkerManager();
+      await this.searchWorker.initialize();
+    }
+
+    // Sync entries to worker if not done yet
+    if (!this.workerSynced && this.data.entries.length > 0) {
+      await this.searchWorker.setEntries(this.data.entries);
+      this.workerSynced = true;
+      log.debug('Synced entries to search worker', { count: this.data.entries.length });
+    }
+
+    return this.searchWorker;
+  }
+
   async load(): Promise<void> {
     try {
       if (fs.existsSync(this.indexPath)) {
         const content = fs.readFileSync(this.indexPath, 'utf-8');
         this.data = JSON.parse(content) as IndexData;
+        this.workerSynced = false; // Need to sync to worker
+        log.info('Loaded vector index', { entries: this.data.entries.length });
       }
     } catch (error) {
-      console.error('Failed to load vector index:', error);
+      log.error('Failed to load vector index', error);
       // Start fresh on error
       this.data = {
         version: 1,
@@ -122,11 +151,26 @@ export class VectorStore {
     );
     this.data.entries.push(entry);
     this.dirty = true;
+
+    // Update worker
+    if (this.searchWorker && this.workerSynced) {
+      await this.searchWorker.addEntries([entry]);
+    }
   }
 
   async insertBatch(entries: VectorEntry[]): Promise<void> {
     for (const entry of entries) {
-      await this.insert(entry);
+      // Remove existing entries for this chunk
+      this.data.entries = this.data.entries.filter(
+        (e) => !(e.filepath === entry.filepath && e.chunkIndex === entry.chunkIndex)
+      );
+      this.data.entries.push(entry);
+    }
+    this.dirty = true;
+
+    // Update worker
+    if (this.searchWorker && this.workerSynced) {
+      await this.searchWorker.addEntries(entries);
     }
   }
 
@@ -136,40 +180,49 @@ export class VectorStore {
     delete this.data.fileHashes[filepath];
     if (this.data.entries.length !== initialCount) {
       this.dirty = true;
+
+      // Update worker
+      if (this.searchWorker && this.workerSynced) {
+        await this.searchWorker.removeByFilepath(filepath);
+      }
     }
   }
 
-  async search(queryVector: number[], limit = 10): Promise<SearchResult[]> {
-    const results: SearchResult[] = [];
-
-    for (const entry of this.data.entries) {
-      const score = this.cosineSimilarity(queryVector, entry.vector);
-      results.push({
-        document: {
-          id: entry.id,
-          filepath: entry.filepath,
-          chunkIndex: entry.chunkIndex,
-          content: entry.content,
-          metadata: entry.metadata,
-        },
-        score,
-      });
-    }
-
-    // Sort by score descending
-    results.sort((a, b) => b.score - a.score);
-    return results.slice(0, limit);
+  /**
+   * Search for similar vectors using the worker thread
+   */
+  async search(queryVector: number[], limit = 10, minScore = 0): Promise<SearchResult[]> {
+    const worker = await this.ensureWorker();
+    return worker.search(queryVector, limit, minScore);
   }
 
+  /**
+   * Search with filter criteria using the worker thread
+   */
   async searchWithFilter(
     queryVector: number[],
-    filter: (doc: VectorDocument) => boolean,
+    filter: SearchFilter,
+    limit = 10,
+    minScore = 0
+  ): Promise<SearchResult[]> {
+    const worker = await this.ensureWorker();
+    return worker.searchWithFilter(queryVector, filter, limit, minScore);
+  }
+
+  /**
+   * Legacy search with function filter (falls back to main thread)
+   * @deprecated Use searchWithFilter with SearchFilter object instead
+   */
+  async searchWithFunctionFilter(
+    queryVector: number[],
+    filterFn: (doc: VectorDocument) => boolean,
     limit = 10
   ): Promise<SearchResult[]> {
+    // Function filters can't be serialized to worker, run on main thread
     const results: SearchResult[] = [];
 
     for (const entry of this.data.entries) {
-      if (!filter(entry)) continue;
+      if (!filterFn(entry)) continue;
       const score = this.cosineSimilarity(queryVector, entry.vector);
       results.push({
         document: {
@@ -216,10 +269,16 @@ export class VectorStore {
     return Object.keys(this.data.fileHashes);
   }
 
-  clear(): void {
+  async clear(): Promise<void> {
     this.data.entries = [];
     this.data.fileHashes = {};
     this.dirty = true;
+    this.workerSynced = false;
+
+    // Clear worker
+    if (this.searchWorker) {
+      await this.searchWorker.clear();
+    }
   }
 
   async getEntriesForFile(filepath: string): Promise<VectorDocument[]> {
@@ -232,5 +291,16 @@ export class VectorStore {
         content: e.content,
         metadata: e.metadata,
       }));
+  }
+
+  /**
+   * Terminate the search worker
+   */
+  terminate(): void {
+    if (this.searchWorker) {
+      this.searchWorker.terminate();
+      this.searchWorker = null;
+      this.workerSynced = false;
+    }
   }
 }

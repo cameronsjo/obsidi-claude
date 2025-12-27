@@ -22,47 +22,56 @@ interface WorkerResponse {
 }
 
 // Inline worker code that loads transformers.js from CDN
+// Using @xenova/transformers v2.x which has better browser compatibility
 const WORKER_CODE = `
-// Transformers.js CDN URL
-const TRANSFORMERS_CDN = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.1.2';
+// Transformers.js CDN URL - using v2.x Xenova version for better compatibility
+const TRANSFORMERS_CDN = 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2';
 
-let pipeline = null;
+let extractor = null;
 let modelName = 'Xenova/all-MiniLM-L6-v2';
 let dimensions = 384;
 let isLoading = false;
-let transformers = null;
 
 // Post progress to main thread
 function postProgress(status) {
   self.postMessage({ id: -1, type: 'progress', payload: { status } });
 }
 
-// Load transformers.js from CDN using dynamic import
-async function loadTransformers() {
-  if (transformers) return transformers;
-  postProgress('Loading transformers.js from CDN...');
-  transformers = await import(TRANSFORMERS_CDN);
-  return transformers;
-}
-
 // Initialize embedding pipeline
 async function initPipeline(model) {
   if (isLoading) throw new Error('Model is already loading');
+  if (extractor && modelName === model) return; // Already loaded this model
+
   isLoading = true;
   modelName = model;
 
   try {
-    const tf = await loadTransformers();
+    postProgress('Loading transformers.js from CDN...');
+
+    // Dynamic import from CDN
+    const { pipeline, env } = await import(TRANSFORMERS_CDN);
+
+    // Configure for browser environment
+    env.allowLocalModels = false;
+    env.useBrowserCache = true;
+
     postProgress('Loading model: ' + model + '...');
 
-    pipeline = await tf.pipeline('feature-extraction', model, {
-      dtype: 'q8',
+    // Create the feature extraction pipeline
+    extractor = await pipeline('feature-extraction', model, {
+      quantized: true,
+      progress_callback: (progress) => {
+        if (progress.status === 'progress') {
+          const pct = Math.round((progress.loaded / progress.total) * 100);
+          postProgress('Downloading model: ' + pct + '%');
+        }
+      }
     });
 
     // Set dimensions based on model
     if (model.includes('MiniLM-L6')) dimensions = 384;
     else if (model.includes('bge-small')) dimensions = 384;
-    else if (model.includes('bge-base') || model.includes('nomic')) dimensions = 768;
+    else if (model.includes('bge-base')) dimensions = 768;
     else dimensions = 384;
 
     postProgress('Model loaded successfully');
@@ -73,12 +82,13 @@ async function initPipeline(model) {
 
 // Embed texts
 async function embedTexts(texts) {
-  if (!pipeline) throw new Error('Pipeline not initialized');
+  if (!extractor) throw new Error('Pipeline not initialized');
 
   const results = [];
   for (let i = 0; i < texts.length; i++) {
     postProgress('Embedding ' + (i + 1) + '/' + texts.length + '...');
-    const output = await pipeline(texts[i], { pooling: 'mean', normalize: true });
+    const output = await extractor(texts[i], { pooling: 'mean', normalize: true });
+    // output.data is a Float32Array, convert to regular array
     results.push(Array.from(output.data));
   }
   return results;
@@ -105,7 +115,7 @@ self.onmessage = async (event) => {
         self.postMessage({
           id,
           type: 'success',
-          payload: { status: pipeline ? 'ready' : isLoading ? 'loading' : 'uninitialized', dimensions }
+          payload: { status: extractor ? 'ready' : isLoading ? 'loading' : 'uninitialized', dimensions }
         });
         break;
       }
