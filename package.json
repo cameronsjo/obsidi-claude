@@ -6,6 +6,9 @@
   "scripts": {
     "dev": "node esbuild.config.mjs",
     "build": "node esbuild.config.mjs production",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "version": "node version-bump.mjs && git add manifest.json versions.json"
   },
   "keywords": [
@@ -19,10 +22,12 @@
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^22.10.2",
+    "@vitest/coverage-v8": "^4.0.16",
     "builtin-modules": "^4.0.0",
     "esbuild": "^0.24.2",
     "obsidian": "^1.7.2",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vitest": "^4.0.16"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.1.76",

@@ -34,3 +34,6 @@ data.json
 conversations/
 vectors/
 settings.json
+
+# Test coverage
+coverage/
