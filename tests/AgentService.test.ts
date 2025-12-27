@@ -184,7 +184,9 @@ describe('AgentService', () => {
       expect(agentService.getSessionId()).toBe('test-session-123');
     });
 
-    it('should handle assistant text content', async () => {
+    it('should ignore text in assistant messages (text comes via stream_event)', async () => {
+      // Text content in 'assistant' messages is ignored to prevent duplication
+      // because the same content is already received via stream_event deltas
       const mockQuery = vi.mocked(query);
       mockQuery.mockReturnValue(
         (async function* () {
@@ -203,10 +205,11 @@ describe('AgentService', () => {
 
       await agentService.sendMessage('Hello', [], mockCallbacks);
 
-      expect(mockCallbacks.onStreamingUpdate).toHaveBeenCalledWith(
-        expect.any(String),
-        'Hello there!'
-      );
+      // Should NOT call onStreamingUpdate for assistant text (only stream_event does that)
+      // The only streaming update should be the finalization with empty content
+      const calls = mockCallbacks.onStreamingUpdate.mock.calls;
+      const textCalls = calls.filter(([, content]) => content === 'Hello there!');
+      expect(textCalls).toHaveLength(0);
     });
 
     it('should handle tool use blocks', async () => {

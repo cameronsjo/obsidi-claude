@@ -189,15 +189,14 @@ export class AgentService {
         break;
 
       case 'assistant': {
-        // Handle assistant message content
-        let newContent = '';
+        // Extract tool_use blocks from assistant messages
+        // NOTE: We do NOT accumulate text content here because it's already
+        // received via stream_event deltas. Only extract tool calls.
         const contentBlocks = message.message?.content;
 
         if (Array.isArray(contentBlocks)) {
           for (const block of contentBlocks) {
-            if (block.type === 'text') {
-              newContent += block.text;
-            } else if (block.type === 'tool_use') {
+            if (block.type === 'tool_use') {
               // Track tool use
               const toolCall: ToolCallInfo = {
                 name: block.name,
@@ -211,11 +210,6 @@ export class AgentService {
               }
             }
           }
-        }
-
-        if (newContent) {
-          context.setAssistantContent(context.assistantContent + newContent);
-          callbacks.onStreamingUpdate(assistantMsgId, context.assistantContent + newContent);
         }
         break;
       }
