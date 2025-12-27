@@ -47,6 +47,18 @@ describe('EmbeddingService', () => {
   });
 
   describe('provider selection', () => {
+    it('should select transformers provider', () => {
+      const settings: EmbeddingSettings = {
+        enabled: true,
+        provider: 'transformers',
+        chunkSize: 500,
+        chunkOverlap: 50,
+        excludeFolders: [],
+      };
+      const service = new EmbeddingService(settings);
+      expect(service.getProviderName()).toContain('transformers.js');
+    });
+
     it('should select ollama provider', () => {
       const settings: EmbeddingSettings = {
         enabled: true,

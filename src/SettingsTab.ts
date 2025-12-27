@@ -222,10 +222,11 @@ export class SettingsTab extends PluginSettingTab {
     // Provider selection
     new Setting(containerEl)
       .setName('Embedding Provider')
-      .setDesc('Choose local (Ollama - free, offline) or remote (paid, higher quality)')
+      .setDesc('Choose local (free, offline) or remote (paid, higher quality)')
       .addDropdown((dropdown) =>
         dropdown
-          .addOption('ollama', 'Ollama (Local, Free)')
+          .addOption('transformers', 'Transformers.js (In-Browser, Free)')
+          .addOption('ollama', 'Ollama (Local Server, Free)')
           .addOption('openai', 'OpenAI (Remote, Paid)')
           .addOption('voyage', 'Voyage AI (Remote, Paid)')
           .setValue(embedding.provider)
@@ -238,7 +239,27 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     // Provider-specific settings
-    if (embedding.provider === 'ollama') {
+    if (embedding.provider === 'transformers') {
+      new Setting(containerEl)
+        .setName('Model')
+        .setDesc('Transformers.js model (loaded from HuggingFace CDN)')
+        .addDropdown((dropdown) =>
+          dropdown
+            .addOption('Xenova/all-MiniLM-L6-v2', 'MiniLM-L6-v2 (22MB, Fast)')
+            .addOption('Xenova/bge-small-en-v1.5', 'BGE Small (33MB)')
+            .addOption('Xenova/bge-base-en-v1.5', 'BGE Base (110MB, Better)')
+            .setValue(embedding.localModel || 'Xenova/all-MiniLM-L6-v2')
+            .onChange(async (value) => {
+              this.plugin.settings.embedding.localModel = value;
+              await this.plugin.saveSettings();
+            })
+        );
+
+      containerEl.createEl('p', {
+        text: '⚡ Runs entirely in your browser. First load downloads the model (~22-110MB).',
+        cls: 'setting-item-description',
+      });
+    } else if (embedding.provider === 'ollama') {
       new Setting(containerEl)
         .setName('Ollama Host')
         .setDesc('Ollama server URL (requires Ollama running)')

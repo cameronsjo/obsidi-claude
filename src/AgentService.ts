@@ -96,6 +96,7 @@ export class AgentService {
     // Create streaming assistant message placeholder
     const assistantMsgId = generateId();
     let assistantContent = '';
+    let needsParagraphBreak = false; // Track if we need a break before next text
     const toolCalls: Map<string, ToolCallInfo> = new Map();
 
     callbacks.onMessage({
@@ -201,6 +202,10 @@ export class AgentService {
           setAssistantContent: (content: string) => {
             assistantContent = content;
           },
+          needsParagraphBreak,
+          setNeedsParagraphBreak: (value: boolean) => {
+            needsParagraphBreak = value;
+          },
           toolCalls,
           callbacks,
         });
@@ -221,6 +226,8 @@ export class AgentService {
       assistantMsgId: string;
       assistantContent: string;
       setAssistantContent: (content: string) => void;
+      needsParagraphBreak: boolean;
+      setNeedsParagraphBreak: (value: boolean) => void;
       toolCalls: Map<string, ToolCallInfo>;
       callbacks: AgentCallbacks;
     }
@@ -269,7 +276,14 @@ export class AgentService {
         // Handle streaming events for partial messages
         const event = message.event;
         if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
-          const text = event.delta.text || '';
+          let text = event.delta.text || '';
+
+          // If we need a paragraph break (after tool completion), add it before new text
+          if (context.needsParagraphBreak && text.trim()) {
+            text = '\n\n' + text;
+            context.setNeedsParagraphBreak(false);
+          }
+
           context.setAssistantContent(context.assistantContent + text);
           callbacks.onStreamingUpdate(assistantMsgId, context.assistantContent + text);
         }
@@ -306,6 +320,12 @@ export class AgentService {
               });
               if (this.settings.showToolCalls) {
                 callbacks.onToolResult(assistantMsgId, toolCall.name, toolCall.result);
+              }
+
+              // Mark that we need a paragraph break before next text
+              // This prevents text from different response segments running together
+              if (context.assistantContent.trim()) {
+                context.setNeedsParagraphBreak(true);
               }
             }
           }

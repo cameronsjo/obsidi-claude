@@ -1,4 +1,5 @@
 import type { EmbeddingSettings } from './types';
+import { TransformersWorkerManager } from './TransformersWorker';
 
 export interface EmbeddingProvider {
   embed(texts: string[]): Promise<number[][]>;
@@ -7,16 +8,20 @@ export interface EmbeddingProvider {
 }
 
 /**
- * Local embeddings using Transformers.js (runs in-process with ONNX)
- * No external server required.
- * Note: Requires @xenova/transformers to be installed separately.
+ * Local embeddings using Transformers.js via Web Worker
+ *
+ * Loads @huggingface/transformers from CDN and runs in an isolated
+ * Web Worker to avoid bundling/WASM conflicts with Obsidian.
+ *
+ * Pattern: WebWorker + CDN loading for WASM-based libraries
+ * - Worker code is inlined as a blob URL
+ * - Transformers.js is loaded from jsDelivr CDN at runtime
+ * - WASM/ONNX runtime runs in worker thread, isolated from main thread
  */
 export class TransformersJSProvider implements EmbeddingProvider {
-  private pipeline: unknown;
+  private worker: TransformersWorkerManager | null = null;
   private dimensions: number;
   private modelName: string;
-  private initialized = false;
-  private initError: Error | null = null;
 
   constructor(modelName = 'Xenova/all-MiniLM-L6-v2') {
     this.modelName = modelName;
@@ -24,47 +29,14 @@ export class TransformersJSProvider implements EmbeddingProvider {
     this.dimensions = modelName.includes('MiniLM-L6') ? 384 : 768;
   }
 
-  async initialize(): Promise<void> {
-    if (this.initialized) return;
-    if (this.initError) throw this.initError;
-
-    try {
-      // Dynamic import to avoid bundling issues
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const transformers = await import('@xenova/transformers');
-      const { pipeline } = transformers;
-      this.pipeline = await pipeline('feature-extraction', this.modelName, {
-        quantized: true,
-      });
-      this.initialized = true;
-    } catch (error) {
-      this.initError = new Error(
-        `Transformers.js not available. Install it with: npm install @xenova/transformers\n` +
-        `Or use a different embedding provider (Ollama, OpenAI, or Voyage AI).\n` +
-        `Original error: ${error instanceof Error ? error.message : String(error)}`
-      );
-      throw this.initError;
-    }
-  }
-
   async embed(texts: string[]): Promise<number[][]> {
-    await this.initialize();
-
-    const results: number[][] = [];
-    const extractor = this.pipeline as (
-      text: string,
-      options: { pooling: string; normalize: boolean }
-    ) => Promise<{ data: Float32Array }>;
-
-    for (const text of texts) {
-      const output = await extractor(text, {
-        pooling: 'mean',
-        normalize: true,
-      });
-      results.push(Array.from(output.data));
+    if (!this.worker) {
+      this.worker = new TransformersWorkerManager(this.modelName);
+      await this.worker.initialize();
+      this.dimensions = this.worker.getDimensions();
     }
 
-    return results;
+    return this.worker.embed(texts);
   }
 
   getDimensions(): number {
@@ -246,6 +218,11 @@ export class EmbeddingService {
     if (this.provider) return this.provider;
 
     switch (this.settings.provider) {
+      case 'transformers':
+        this.provider = new TransformersJSProvider(
+          this.settings.localModel || 'Xenova/all-MiniLM-L6-v2'
+        );
+        break;
       case 'ollama':
         this.provider = new OllamaProvider(
           this.settings.localModel || 'nomic-embed-text',

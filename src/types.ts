@@ -24,6 +24,7 @@ export interface Conversation {
 }
 
 export type EmbeddingProviderType =
+  | 'transformers'
   | 'ollama'
   | 'openai'
   | 'voyage';

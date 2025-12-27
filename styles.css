@@ -564,6 +564,96 @@
 }
 
 /* Settings styles */
+.obsidi-claude-settings {
+  max-width: 800px;
+}
+
+.obsidi-claude-settings h2 {
+  margin-bottom: 1rem;
+}
+
+/* Settings tab bar */
+.settings-tab-bar {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid var(--background-modifier-border);
+  padding-bottom: 0.5rem;
+}
+
+.settings-tab {
+  padding: 0.5rem 1rem;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+  border-radius: 4px 4px 0 0;
+  transition: all 0.15s ease;
+}
+
+.settings-tab:hover {
+  color: var(--text-normal);
+  background-color: var(--background-modifier-hover);
+}
+
+.settings-tab.is-active {
+  color: var(--text-accent);
+  background-color: var(--background-secondary);
+  border-bottom: 2px solid var(--interactive-accent);
+  margin-bottom: -1px;
+}
+
+.settings-tab-content {
+  padding: 0;
+}
+
+.settings-tab-content h3 {
+  margin-top: 0;
+  margin-bottom: 1rem;
+}
+
+/* Fix setting item alignment */
+.obsidi-claude-settings .setting-item {
+  align-items: center;
+}
+
+.obsidi-claude-settings .setting-item-control {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.obsidi-claude-settings .setting-item-control button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* MCP server list items */
+.mcp-servers-list .setting-item {
+  border: none;
+  padding: 0.25rem 0;
+}
+
+.mcp-servers-list .setting-item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.mcp-servers-list .setting-item-name {
+  font-weight: 600;
+}
+
+.mcp-servers-list .setting-item-description {
+  font-family: var(--font-monospace);
+  font-size: 0.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .setting-item-description {
   color: var(--text-muted);
   font-size: 0.85rem;
