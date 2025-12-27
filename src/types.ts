@@ -24,7 +24,6 @@ export interface Conversation {
 }
 
 export type EmbeddingProviderType =
-  | 'transformers'
   | 'ollama'
   | 'openai'
   | 'voyage';
@@ -56,6 +55,14 @@ export interface MCPSettings {
   httpPort: number;
 }
 
+export interface ExternalMCPServer {
+  name: string;
+  command: string;
+  args: string[];
+  env?: Record<string, string>;
+  enabled: boolean;
+}
+
 export interface ObsidiClaudeSettings {
   model: 'claude-sonnet-4-5' | 'claude-opus-4' | 'claude-3-5-sonnet-20241022';
   systemPrompt: string;
@@ -68,12 +75,13 @@ export interface ObsidiClaudeSettings {
   streamResponses: boolean;
   embedding: EmbeddingSettings;
   mcp: MCPSettings;
+  externalMcpServers: ExternalMCPServer[];
 }
 
 export const DEFAULT_EMBEDDING_SETTINGS: EmbeddingSettings = {
   enabled: false,
-  provider: 'transformers',
-  localModel: 'Xenova/all-MiniLM-L6-v2',
+  provider: 'ollama',
+  localModel: 'nomic-embed-text',
   ollamaHost: 'http://localhost:11434',
   openaiModel: 'text-embedding-3-small',
   openaiDimensions: 512,
@@ -121,6 +129,7 @@ Be concise but thorough. Use markdown formatting in your responses.`,
   streamResponses: true,
   embedding: DEFAULT_EMBEDDING_SETTINGS,
   mcp: DEFAULT_MCP_SETTINGS,
+  externalMcpServers: [],
 };
 
 export function generateId(): string {

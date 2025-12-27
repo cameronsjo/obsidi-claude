@@ -246,11 +246,6 @@ export class EmbeddingService {
     if (this.provider) return this.provider;
 
     switch (this.settings.provider) {
-      case 'transformers':
-        this.provider = new TransformersJSProvider(
-          this.settings.localModel || 'Xenova/all-MiniLM-L6-v2'
-        );
-        break;
       case 'ollama':
         this.provider = new OllamaProvider(
           this.settings.localModel || 'nomic-embed-text',

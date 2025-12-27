@@ -1,8 +1,10 @@
-import { query, type SDKMessage, type Options } from '@anthropic-ai/claude-agent-sdk';
+import { query, type SDKMessage, type Options, type McpSdkServerConfigWithInstance, type McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import type { ObsidiClaudeSettings, ChatMessage, ToolCallInfo } from './types';
 import { generateId } from './types';
 import { createLogger } from './Logger';
 import { findClaudeCliPath, getEnhancedPath } from './claudePath';
+import type { ObsidianTools } from './ObsidianTools';
+import { createObsidianMCPServer, getObsidianToolNames } from './ObsidianMCPTools';
 
 const log = createLogger('AgentService');
 
@@ -31,9 +33,25 @@ export class AgentService {
   private settings: ObsidiClaudeSettings;
   private abortController: AbortController | null = null;
   private currentSessionId: string | null = null;
+  private obsidianTools: ObsidianTools | null = null;
+  private obsidianMcpServer: McpSdkServerConfigWithInstance | null = null;
 
-  constructor(settings: ObsidiClaudeSettings) {
+  constructor(settings: ObsidiClaudeSettings, obsidianTools?: ObsidianTools) {
     this.settings = settings;
+    if (obsidianTools) {
+      this.setObsidianTools(obsidianTools);
+    }
+  }
+
+  /**
+   * Set the ObsidianTools instance for the agent to use
+   */
+  setObsidianTools(tools: ObsidianTools): void {
+    this.obsidianTools = tools;
+    this.obsidianMcpServer = createObsidianMCPServer(tools, 'obsidian');
+    log.info('Obsidian tools configured for agent', {
+      toolCount: tools.getToolDefinitions().length,
+    });
   }
 
   updateSettings(settings: ObsidiClaudeSettings): void {
@@ -115,17 +133,50 @@ export class AgentService {
         log.debug('Enhanced PATH for subprocess');
       }
 
+      // Build allowed tools list - include both standard tools and Obsidian tools
+      const allowedTools = [...this.settings.allowedTools];
+      if (this.obsidianTools) {
+        allowedTools.push(...getObsidianToolNames(this.obsidianTools, 'obsidian'));
+      }
+
       const options: Options = {
         model: this.settings.model,
         cwd,
         systemPrompt: this.settings.systemPrompt,
         permissionMode: this.settings.permissionMode,
         maxTurns: this.settings.maxTurns,
-        allowedTools: this.settings.allowedTools,
+        allowedTools,
         abortController: this.abortController,
         includePartialMessages: true,
         pathToClaudeCodeExecutable: cachedCliPath,
       };
+
+      // Build MCP servers config
+      const mcpServers: Record<string, McpServerConfig> = {};
+
+      // Add Obsidian MCP server if tools are configured
+      if (this.obsidianMcpServer) {
+        mcpServers.obsidian = this.obsidianMcpServer;
+        log.debug('Added Obsidian MCP server');
+      }
+
+      // Add external MCP servers from settings
+      for (const server of this.settings.externalMcpServers) {
+        if (server.enabled) {
+          mcpServers[server.name] = {
+            type: 'stdio',
+            command: server.command,
+            args: server.args,
+            env: server.env,
+          };
+          log.debug('Added external MCP server', { name: server.name, command: server.command });
+        }
+      }
+
+      if (Object.keys(mcpServers).length > 0) {
+        options.mcpServers = mcpServers;
+        log.info('MCP servers configured', { count: Object.keys(mcpServers).length, names: Object.keys(mcpServers) });
+      }
 
       if (resumeSessionId) {
         options.resume = resumeSessionId;

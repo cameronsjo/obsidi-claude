@@ -38,7 +38,7 @@ export class ChatView extends ItemView {
   constructor(leaf: WorkspaceLeaf, plugin: ObsidiClaudePlugin) {
     super(leaf);
     this.plugin = plugin;
-    this.agentService = new AgentService(plugin.settings);
+    this.agentService = new AgentService(plugin.settings, plugin.obsidianTools ?? undefined);
     this.conversation = this.createNewConversation();
   }
 

@@ -1,9 +1,12 @@
-import { App, PluginSettingTab, Setting, Notice } from 'obsidian';
+import { App, PluginSettingTab, Setting, Notice, Modal, TextComponent, TextAreaComponent } from 'obsidian';
 import type ObsidiClaudePlugin from '../main';
-import type { EmbeddingProviderType } from './types';
+import type { EmbeddingProviderType, ExternalMCPServer } from './types';
+
+type SettingsTabId = 'agent' | 'embedding' | 'mcp' | 'tools';
 
 export class SettingsTab extends PluginSettingTab {
   plugin: ObsidiClaudePlugin;
+  private activeTab: SettingsTabId = 'agent';
 
   constructor(app: App, plugin: ObsidiClaudePlugin) {
     super(app, plugin);
@@ -13,13 +16,51 @@ export class SettingsTab extends PluginSettingTab {
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
+    containerEl.addClass('obsidi-claude-settings');
 
+    // Header
     containerEl.createEl('h2', { text: 'Obsidi-Claude Settings' });
 
-    this.addAgentSettings(containerEl);
-    this.addEmbeddingSettings(containerEl);
-    this.addMCPSettings(containerEl);
-    this.addToolSettings(containerEl);
+    // Tab bar
+    const tabBar = containerEl.createDiv('settings-tab-bar');
+    const tabs: { id: SettingsTabId; label: string }[] = [
+      { id: 'agent', label: 'Agent' },
+      { id: 'embedding', label: 'Embedding' },
+      { id: 'mcp', label: 'MCP Servers' },
+      { id: 'tools', label: 'Tools' },
+    ];
+
+    for (const tab of tabs) {
+      const tabEl = tabBar.createEl('button', {
+        text: tab.label,
+        cls: `settings-tab ${this.activeTab === tab.id ? 'is-active' : ''}`,
+      });
+      tabEl.onclick = () => {
+        this.activeTab = tab.id;
+        this.display();
+      };
+    }
+
+    // Tab content
+    const contentEl = containerEl.createDiv('settings-tab-content');
+
+    switch (this.activeTab) {
+      case 'agent':
+        this.addAgentSettings(contentEl);
+        break;
+      case 'embedding':
+        this.addEmbeddingSettings(contentEl);
+        break;
+      case 'mcp':
+        this.addMCPSettings(contentEl);
+        this.addExternalMCPSettings(contentEl);
+        break;
+      case 'tools':
+        this.addToolSettings(contentEl);
+        break;
+    }
+
+    // Reset always visible at bottom
     this.addResetSettings(containerEl);
   }
 
@@ -181,10 +222,9 @@ export class SettingsTab extends PluginSettingTab {
     // Provider selection
     new Setting(containerEl)
       .setName('Embedding Provider')
-      .setDesc('Choose local (free, offline) or remote (paid, higher quality)')
+      .setDesc('Choose local (Ollama - free, offline) or remote (paid, higher quality)')
       .addDropdown((dropdown) =>
         dropdown
-          .addOption('transformers', 'Transformers.js (Local, Free)')
           .addOption('ollama', 'Ollama (Local, Free)')
           .addOption('openai', 'OpenAI (Remote, Paid)')
           .addOption('voyage', 'Voyage AI (Remote, Paid)')
@@ -198,22 +238,7 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     // Provider-specific settings
-    if (embedding.provider === 'transformers') {
-      new Setting(containerEl)
-        .setName('Model')
-        .setDesc('Transformers.js model (smaller = faster, larger = better quality)')
-        .addDropdown((dropdown) =>
-          dropdown
-            .addOption('Xenova/all-MiniLM-L6-v2', 'MiniLM-L6-v2 (22MB, Fast)')
-            .addOption('Xenova/bge-small-en-v1.5', 'BGE Small (33MB)')
-            .addOption('Xenova/bge-base-en-v1.5', 'BGE Base (110MB, Better)')
-            .setValue(embedding.localModel || 'Xenova/all-MiniLM-L6-v2')
-            .onChange(async (value) => {
-              this.plugin.settings.embedding.localModel = value;
-              await this.plugin.saveSettings();
-            })
-        );
-    } else if (embedding.provider === 'ollama') {
+    if (embedding.provider === 'ollama') {
       new Setting(containerEl)
         .setName('Ollama Host')
         .setDesc('Ollama server URL (requires Ollama running)')
@@ -537,6 +562,138 @@ export class SettingsTab extends PluginSettingTab {
     }
   }
 
+  private addExternalMCPSettings(containerEl: HTMLElement): void {
+    containerEl.createEl('h3', { text: 'External MCP Servers' });
+
+    const servers = this.plugin.settings.externalMcpServers;
+
+    // Add server button
+    new Setting(containerEl)
+      .setName('Add MCP Server')
+      .setDesc('Connect additional MCP servers (mouse, media, etc.)')
+      .addButton((button) =>
+        button.setButtonText('Add Server').onClick(() => {
+          new AddMCPServerModal(this.app, async (server) => {
+            this.plugin.settings.externalMcpServers.push(server);
+            await this.plugin.saveSettings();
+            this.display();
+          }).open();
+        })
+      );
+
+    // List existing servers
+    if (servers.length > 0) {
+      const serversContainer = containerEl.createDiv('mcp-servers-list');
+
+      for (let i = 0; i < servers.length; i++) {
+        const server = servers[i];
+        const serverEl = serversContainer.createDiv('mcp-server-item');
+        serverEl.style.cssText = 'padding: 0.5rem; margin: 0.5rem 0; background: var(--background-secondary); border-radius: 4px;';
+
+        // Build description with command and env count
+        let desc = `${server.command} ${server.args.join(' ')}`;
+        if (server.env && Object.keys(server.env).length > 0) {
+          desc += ` (${Object.keys(server.env).length} env vars)`;
+        }
+
+        new Setting(serverEl)
+          .setName(server.name)
+          .setDesc(desc)
+          .addToggle((toggle) =>
+            toggle.setValue(server.enabled).onChange(async (value) => {
+              this.plugin.settings.externalMcpServers[i].enabled = value;
+              await this.plugin.saveSettings();
+            })
+          )
+          .addButton((button) =>
+            button.setIcon('check-circle').setTooltip('Test Connection').onClick(async () => {
+              await this.testMCPServer(server);
+            })
+          )
+          .addButton((button) =>
+            button.setIcon('pencil').setTooltip('Edit').onClick(() => {
+              new AddMCPServerModal(this.app, async (updated) => {
+                this.plugin.settings.externalMcpServers[i] = updated;
+                await this.plugin.saveSettings();
+                this.display();
+              }, server).open();
+            })
+          )
+          .addButton((button) =>
+            button.setIcon('trash').setTooltip('Remove').setWarning().onClick(async () => {
+              this.plugin.settings.externalMcpServers.splice(i, 1);
+              await this.plugin.saveSettings();
+              this.display();
+            })
+          );
+      }
+    }
+  }
+
+  private async testMCPServer(server: ExternalMCPServer): Promise<void> {
+    new Notice(`Testing ${server.name}...`);
+
+    try {
+      const { spawn } = await import('child_process');
+
+      const proc = spawn(server.command, server.args, {
+        env: { ...process.env, ...server.env },
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+
+      let stdout = '';
+      let stderr = '';
+
+      proc.stdout?.on('data', (data) => {
+        stdout += data.toString();
+      });
+
+      proc.stderr?.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      // Set a timeout for the test
+      const timeout = setTimeout(() => {
+        proc.kill();
+      }, 5000);
+
+      // Wait for the process to start and send an initialize request
+      await new Promise<void>((resolve) => setTimeout(resolve, 500));
+
+      // Send MCP initialize request
+      const initRequest = JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: '2024-11-05',
+          capabilities: {},
+          clientInfo: { name: 'obsidi-claude-test', version: '1.0.0' },
+        },
+      });
+
+      proc.stdin?.write(initRequest + '\n');
+
+      // Wait for response
+      await new Promise<void>((resolve) => setTimeout(resolve, 1500));
+
+      clearTimeout(timeout);
+      proc.kill();
+
+      // Check if we got a response
+      if (stdout.includes('"result"') || stdout.includes('protocolVersion')) {
+        new Notice(`${server.name}: Connected successfully!`, 3000);
+      } else if (stderr) {
+        new Notice(`${server.name}: Error - ${stderr.slice(0, 100)}`, 5000);
+      } else {
+        new Notice(`${server.name}: No response (server may need more time to start)`, 4000);
+      }
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      new Notice(`${server.name}: Failed to start - ${msg}`, 5000);
+    }
+  }
+
   private addToolSettings(containerEl: HTMLElement): void {
     containerEl.createEl('h3', { text: 'Allowed Tools' });
     containerEl.createEl('p', {
@@ -592,5 +749,138 @@ export class SettingsTab extends PluginSettingTab {
           new Notice('Settings reset to defaults');
         })
       );
+  }
+}
+
+/**
+ * Modal for adding/editing external MCP servers
+ */
+class AddMCPServerModal extends Modal {
+  private onSubmit: (server: ExternalMCPServer) => Promise<void>;
+  private existing: ExternalMCPServer | null;
+
+  private nameInput: TextComponent;
+  private commandInput: TextComponent;
+  private argsInput: TextComponent;
+  private envInput: TextAreaComponent;
+
+  constructor(app: App, onSubmit: (server: ExternalMCPServer) => Promise<void>, existing?: ExternalMCPServer) {
+    super(app);
+    this.onSubmit = onSubmit;
+    this.existing = existing || null;
+  }
+
+  onOpen(): void {
+    const { contentEl } = this;
+    contentEl.empty();
+
+    contentEl.createEl('h2', { text: this.existing ? 'Edit MCP Server' : 'Add MCP Server' });
+
+    // Name
+    new Setting(contentEl)
+      .setName('Server Name')
+      .setDesc('Unique name for this MCP server (e.g., "mouse", "media")')
+      .addText((text) => {
+        this.nameInput = text;
+        text
+          .setPlaceholder('my-server')
+          .setValue(this.existing?.name || '')
+          .inputEl.style.width = '100%';
+      });
+
+    // Command
+    new Setting(contentEl)
+      .setName('Command')
+      .setDesc('Executable to run (e.g., "node", "npx", "python")')
+      .addText((text) => {
+        this.commandInput = text;
+        text
+          .setPlaceholder('node')
+          .setValue(this.existing?.command || 'node')
+          .inputEl.style.width = '100%';
+      });
+
+    // Args
+    new Setting(contentEl)
+      .setName('Arguments')
+      .setDesc('Command arguments, space-separated (e.g., "dist/index.js" or "tsx src/index.ts")')
+      .addText((text) => {
+        this.argsInput = text;
+        text
+          .setPlaceholder('/path/to/server/dist/index.js')
+          .setValue(this.existing?.args.join(' ') || '')
+          .inputEl.style.width = '100%';
+      });
+
+    // Environment variables
+    new Setting(contentEl)
+      .setName('Environment Variables')
+      .setDesc('One per line: KEY=value')
+      .addTextArea((text) => {
+        this.envInput = text;
+        const envStr = this.existing?.env
+          ? Object.entries(this.existing.env).map(([k, v]) => `${k}=${v}`).join('\n')
+          : '';
+        text
+          .setPlaceholder('API_KEY=your-key\nDEBUG=true')
+          .setValue(envStr);
+        text.inputEl.rows = 3;
+        text.inputEl.style.width = '100%';
+      });
+
+    // Buttons
+    const buttonContainer = contentEl.createDiv();
+    buttonContainer.style.cssText = 'display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem;';
+
+    const cancelBtn = buttonContainer.createEl('button', { text: 'Cancel' });
+    cancelBtn.onclick = () => this.close();
+
+    const saveBtn = buttonContainer.createEl('button', { text: this.existing ? 'Save' : 'Add', cls: 'mod-cta' });
+    saveBtn.onclick = async () => {
+      const name = this.nameInput.getValue().trim();
+      const command = this.commandInput.getValue().trim();
+      const argsStr = this.argsInput.getValue().trim();
+      const envStr = this.envInput.getValue().trim();
+
+      if (!name) {
+        new Notice('Server name is required');
+        return;
+      }
+      if (!command) {
+        new Notice('Command is required');
+        return;
+      }
+
+      // Parse environment variables
+      const env: Record<string, string> = {};
+      if (envStr) {
+        for (const line of envStr.split('\n')) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith('#')) continue;
+          const eqIdx = trimmed.indexOf('=');
+          if (eqIdx > 0) {
+            const key = trimmed.substring(0, eqIdx).trim();
+            const value = trimmed.substring(eqIdx + 1).trim();
+            if (key) env[key] = value;
+          }
+        }
+      }
+
+      const server: ExternalMCPServer = {
+        name,
+        command,
+        args: argsStr ? argsStr.split(/\s+/) : [],
+        env: Object.keys(env).length > 0 ? env : undefined,
+        enabled: this.existing?.enabled ?? true,
+      };
+
+      await this.onSubmit(server);
+      this.close();
+    };
+  }
+
+  onClose(): void {
+    const { contentEl } = this;
+    contentEl.empty();
   }
 }
