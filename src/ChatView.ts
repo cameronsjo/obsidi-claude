@@ -8,7 +8,7 @@ import {
 import type ObsidiClaudePlugin from '../main';
 import type { ChatMessage, ToolCallInfo, Conversation } from './types';
 import { generateId } from './types';
-import { AgentService, type AgentCallbacks, type AgentResult } from './AgentService';
+import type { AgentBackend, AgentCallbacks, AgentResult } from './backends';
 import { createLogger } from './Logger';
 
 const log = createLogger('ChatView');
@@ -17,7 +17,6 @@ export const CHAT_VIEW_TYPE = 'obsidi-claude-chat';
 
 export class ChatView extends ItemView {
   plugin: ObsidiClaudePlugin;
-  agentService: AgentService;
 
   // UI elements
   private messagesContainer: HTMLElement;
@@ -28,18 +27,37 @@ export class ChatView extends ItemView {
   private historyPanel: HTMLElement;
   private historyList: HTMLElement;
   private chatTitleEl: HTMLElement;
+  private backendBadge: HTMLElement;
+  private searchInput: HTMLInputElement;
+  private searchContainer: HTMLElement;
 
   // State
   private conversation: Conversation;
   private isProcessing = false;
   private messageElements: Map<string, HTMLElement> = new Map();
   private historyVisible = false;
+  private searchVisible = false;
+  private searchQuery = '';
+  private searchMatches: string[] = []; // message IDs that match
+  private currentSearchIndex = -1;
+  private userScrolledUp = false;
+
+  // Input history for up/down arrow navigation
+  private inputHistory: string[] = [];
+  private inputHistoryIndex = -1;
+  private inputDraft = ''; // Saves current input when navigating history
 
   constructor(leaf: WorkspaceLeaf, plugin: ObsidiClaudePlugin) {
     super(leaf);
     this.plugin = plugin;
-    this.agentService = new AgentService(plugin.settings, plugin.obsidianTools ?? undefined);
     this.conversation = this.createNewConversation();
+  }
+
+  /**
+   * Get the current agent backend from the factory.
+   */
+  private getBackend(): AgentBackend {
+    return this.plugin.backendFactory.getBackend();
   }
 
   getViewType(): string {
@@ -69,8 +87,14 @@ export class ChatView extends ItemView {
     this.historyPanel.style.display = 'none';
     this.createHistoryPanel(this.historyPanel);
 
+    // Search bar (hidden by default)
+    this.searchContainer = container.createDiv('chat-search-bar');
+    this.searchContainer.style.display = 'none';
+    this.createSearchBar(this.searchContainer);
+
     // Messages area
     this.messagesContainer = container.createDiv('chat-messages');
+    this.setupScrollTracking();
 
     // Status indicator
     this.statusEl = container.createDiv('chat-status');
@@ -100,7 +124,19 @@ export class ChatView extends ItemView {
     this.chatTitleEl.setText('Claude Chat');
     this.chatTitleEl.onclick = () => this.toggleHistory();
 
+    // Backend indicator badge
+    this.backendBadge = header.createDiv('backend-badge');
+    this.updateBackendBadge();
+
     const actionsEl = header.createDiv('chat-actions');
+
+    // Search button
+    const searchBtn = actionsEl.createEl('button', {
+      cls: 'chat-action-btn',
+      attr: { 'aria-label': 'Search messages' },
+    });
+    setIcon(searchBtn, 'search');
+    searchBtn.onclick = () => this.toggleSearch();
 
     // New conversation button
     const newBtn = actionsEl.createEl('button', {
@@ -109,6 +145,14 @@ export class ChatView extends ItemView {
     });
     setIcon(newBtn, 'plus');
     newBtn.onclick = () => this.newConversation();
+
+    // Export button
+    const exportBtn = actionsEl.createEl('button', {
+      cls: 'chat-action-btn',
+      attr: { 'aria-label': 'Export as note' },
+    });
+    setIcon(exportBtn, 'file-down');
+    exportBtn.onclick = () => this.exportConversation();
 
     // Clear button
     const clearBtn = actionsEl.createEl('button', {
@@ -140,6 +184,168 @@ export class ChatView extends ItemView {
     if (this.historyVisible) {
       await this.refreshHistoryList();
     }
+  }
+
+  private createSearchBar(container: HTMLElement): void {
+    const inputWrapper = container.createDiv('search-input-wrapper');
+
+    this.searchInput = inputWrapper.createEl('input', {
+      cls: 'search-input',
+      attr: {
+        type: 'text',
+        placeholder: 'Search messages...',
+      },
+    });
+
+    this.searchInput.addEventListener('input', () => {
+      this.performSearch(this.searchInput.value);
+    });
+
+    this.searchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          this.navigateSearch(-1);
+        } else {
+          this.navigateSearch(1);
+        }
+      } else if (e.key === 'Escape') {
+        this.toggleSearch();
+      }
+    });
+
+    // Navigation buttons
+    const navButtons = container.createDiv('search-nav-buttons');
+
+    const prevBtn = navButtons.createEl('button', {
+      cls: 'chat-action-btn',
+      attr: { 'aria-label': 'Previous match' },
+    });
+    setIcon(prevBtn, 'chevron-up');
+    prevBtn.onclick = () => this.navigateSearch(-1);
+
+    const nextBtn = navButtons.createEl('button', {
+      cls: 'chat-action-btn',
+      attr: { 'aria-label': 'Next match' },
+    });
+    setIcon(nextBtn, 'chevron-down');
+    nextBtn.onclick = () => this.navigateSearch(1);
+
+    // Match count
+    const countEl = container.createSpan('search-match-count');
+    countEl.dataset.searchCount = '';
+
+    // Close button
+    const closeBtn = navButtons.createEl('button', {
+      cls: 'chat-action-btn',
+      attr: { 'aria-label': 'Close search' },
+    });
+    setIcon(closeBtn, 'x');
+    closeBtn.onclick = () => this.toggleSearch();
+  }
+
+  private toggleSearch(): void {
+    this.searchVisible = !this.searchVisible;
+    this.searchContainer.style.display = this.searchVisible ? 'flex' : 'none';
+
+    if (this.searchVisible) {
+      this.searchInput.focus();
+      this.searchInput.select();
+    } else {
+      this.clearSearchHighlights();
+      this.searchQuery = '';
+      this.searchMatches = [];
+      this.currentSearchIndex = -1;
+      this.searchInput.value = '';
+    }
+  }
+
+  private performSearch(query: string): void {
+    this.searchQuery = query.toLowerCase().trim();
+    this.clearSearchHighlights();
+    this.searchMatches = [];
+    this.currentSearchIndex = -1;
+
+    if (!this.searchQuery) {
+      this.updateSearchCount();
+      return;
+    }
+
+    // Find matching messages
+    for (const msg of this.conversation.messages) {
+      if (msg.content?.toLowerCase().includes(this.searchQuery)) {
+        this.searchMatches.push(msg.id);
+        const msgEl = this.messageElements.get(msg.id);
+        if (msgEl) {
+          msgEl.addClass('search-match');
+        }
+      }
+    }
+
+    this.updateSearchCount();
+
+    // Navigate to first match
+    if (this.searchMatches.length > 0) {
+      this.navigateSearch(1);
+    }
+  }
+
+  private navigateSearch(direction: number): void {
+    if (this.searchMatches.length === 0) return;
+
+    // Remove current highlight
+    if (this.currentSearchIndex >= 0) {
+      const currentId = this.searchMatches[this.currentSearchIndex];
+      const currentEl = this.messageElements.get(currentId);
+      if (currentEl) {
+        currentEl.removeClass('search-current');
+      }
+    }
+
+    // Move to next/previous
+    this.currentSearchIndex += direction;
+    if (this.currentSearchIndex >= this.searchMatches.length) {
+      this.currentSearchIndex = 0;
+    } else if (this.currentSearchIndex < 0) {
+      this.currentSearchIndex = this.searchMatches.length - 1;
+    }
+
+    // Highlight and scroll to current match
+    const targetId = this.searchMatches[this.currentSearchIndex];
+    const targetEl = this.messageElements.get(targetId);
+    if (targetEl) {
+      targetEl.addClass('search-current');
+      targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    this.updateSearchCount();
+  }
+
+  private updateSearchCount(): void {
+    const countEl = this.searchContainer.querySelector('.search-match-count');
+    if (!countEl) return;
+
+    if (this.searchMatches.length === 0) {
+      countEl.textContent = this.searchQuery ? 'No matches' : '';
+    } else {
+      countEl.textContent = `${this.currentSearchIndex + 1}/${this.searchMatches.length}`;
+    }
+  }
+
+  private clearSearchHighlights(): void {
+    for (const msgEl of this.messageElements.values()) {
+      msgEl.removeClass('search-match');
+      msgEl.removeClass('search-current');
+    }
+  }
+
+  private setupScrollTracking(): void {
+    this.messagesContainer.addEventListener('scroll', () => {
+      const { scrollTop, scrollHeight, clientHeight } = this.messagesContainer;
+      const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+      // User is "near bottom" if within 100px of the bottom
+      this.userScrolledUp = distanceFromBottom > 100;
+    });
   }
 
   private async refreshHistoryList(): Promise<void> {
@@ -282,6 +488,14 @@ export class ChatView extends ItemView {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         this.sendMessage();
+      } else if (e.key === 'ArrowUp' && this.inputEl.selectionStart === 0) {
+        // Navigate to previous message when cursor is at start
+        e.preventDefault();
+        this.navigateInputHistory(-1);
+      } else if (e.key === 'ArrowDown' && this.inputEl.selectionStart === this.inputEl.value.length) {
+        // Navigate to next message when cursor is at end
+        e.preventDefault();
+        this.navigateInputHistory(1);
       }
     });
 
@@ -296,13 +510,13 @@ export class ChatView extends ItemView {
 
     // Keyboard hint
     const hintEl = buttonArea.createSpan('chat-input-hint');
-    hintEl.setText('Enter to send, Shift+Enter for newline');
+    hintEl.setText('Enter to send · ↑↓ history');
 
     // Stop button (hidden by default)
     this.stopButton = buttonArea.createEl('button', {
       cls: 'chat-stop-btn',
     });
-    setIcon(this.stopButton, 'square');
+    setIcon(this.stopButton, 'circle-stop');
     this.stopButton.createSpan({ text: 'Stop' });
     this.stopButton.style.display = 'none';
     this.stopButton.onclick = () => this.stopGeneration();
@@ -317,12 +531,19 @@ export class ChatView extends ItemView {
   }
 
   private createNewConversation(): Conversation {
+    // Get current backend type for metadata
+    const backend = this.plugin.backendFactory?.getBackend();
+    const backendType = backend?.type ?? 'api';
+
     return {
       id: generateId(),
       title: 'New Conversation',
       messages: [],
       createdAt: Date.now(),
       updatedAt: Date.now(),
+      metadata: {
+        backendType,
+      },
     };
   }
 
@@ -340,10 +561,15 @@ export class ChatView extends ItemView {
   }
 
   private async saveConversation(): Promise<void> {
-    // Update session ID
-    const sessionId = this.agentService.getSessionId();
+    // Update session ID from current backend
+    const backend = this.getBackend();
+    const sessionId = backend.getSessionId();
     if (sessionId) {
       this.conversation.sessionId = sessionId;
+      if (!this.conversation.metadata) {
+        this.conversation.metadata = { backendType: backend.type };
+      }
+      this.conversation.metadata.sessionId = sessionId;
     }
 
     // Auto-generate title from first user message if still default
@@ -369,7 +595,9 @@ export class ChatView extends ItemView {
     for (const msg of this.conversation.messages) {
       this.renderMessage(msg);
     }
-    this.scrollToBottom();
+    // Force scroll when rendering all messages (loading conversation)
+    this.userScrolledUp = false;
+    this.scrollToBottom(true);
   }
 
   private renderMessage(msg: ChatMessage): HTMLElement | null {
@@ -388,7 +616,15 @@ export class ChatView extends ItemView {
     // Message bubble
     const bubbleDiv = msgDiv.createDiv('message-bubble');
 
-    // Content inside bubble
+    // Tool calls FIRST (shown above content, like Claude Code)
+    if (msg.toolCalls && msg.toolCalls.length > 0 && this.plugin.settings.showToolCalls) {
+      const toolsDiv = bubbleDiv.createDiv('message-tools');
+      for (const tool of msg.toolCalls) {
+        this.renderToolCall(toolsDiv, tool);
+      }
+    }
+
+    // Content inside bubble (after tools)
     const contentDiv = bubbleDiv.createDiv('message-content');
 
     if (msg.content) {
@@ -399,52 +635,150 @@ export class ChatView extends ItemView {
         '',
         new Component()
       );
+      // Add copy buttons to code blocks
+      this.addCodeBlockCopyButtons(contentDiv);
     } else if (msg.isStreaming) {
       contentDiv.createDiv('typing-indicator');
     }
 
-    // Tool calls inside bubble (if any)
-    if (msg.toolCalls && msg.toolCalls.length > 0 && this.plugin.settings.showToolCalls) {
-      const toolsDiv = bubbleDiv.createDiv('message-tools');
-      for (const tool of msg.toolCalls) {
-        this.renderToolCall(toolsDiv, tool);
-      }
-    }
+    // Message action buttons (shown on hover)
+    const actionsDiv = msgDiv.createDiv('message-actions');
+    this.createMessageActions(actionsDiv, msg);
 
     this.messageElements.set(msg.id, msgDiv);
     return msgDiv;
+  }
+
+  private createMessageActions(container: HTMLElement, msg: ChatMessage): void {
+    // Copy button
+    const copyBtn = container.createEl('button', {
+      cls: 'message-action-btn',
+      attr: { 'aria-label': 'Copy message' }
+    });
+    setIcon(copyBtn, 'copy');
+    copyBtn.onclick = (e) => {
+      e.stopPropagation();
+      navigator.clipboard.writeText(msg.content);
+      // Show feedback
+      setIcon(copyBtn, 'check');
+      setTimeout(() => setIcon(copyBtn, 'copy'), 1500);
+    };
+
+    // Only show regenerate for assistant messages
+    if (msg.role === 'assistant') {
+      const regenBtn = container.createEl('button', {
+        cls: 'message-action-btn',
+        attr: { 'aria-label': 'Regenerate response' }
+      });
+      setIcon(regenBtn, 'refresh-cw');
+      regenBtn.onclick = (e) => {
+        e.stopPropagation();
+        // Find the user message before this one and resend
+        const msgIndex = this.conversation.messages.findIndex(m => m.id === msg.id);
+        if (msgIndex > 0) {
+          const userMsg = this.conversation.messages[msgIndex - 1];
+          if (userMsg.role === 'user') {
+            // Remove this assistant message and resend
+            this.conversation.messages = this.conversation.messages.slice(0, msgIndex);
+            this.renderAllMessages();
+            this.inputEl.value = userMsg.content;
+            // Don't auto-send, let user confirm
+          }
+        }
+      };
+    }
   }
 
   private renderToolCall(container: HTMLElement, tool: ToolCallInfo): void {
     const toolDiv = container.createDiv('tool-call');
     toolDiv.addClass(`tool-status-${tool.status}`);
 
-    // Tool header row with icon and name
+    // Tool header row with icon and name (clickable to expand)
     const headerDiv = toolDiv.createDiv('tool-call-header');
+    headerDiv.setAttribute('aria-label', 'Click to expand details');
 
     const iconEl = headerDiv.createSpan('tool-icon');
     const statusIcon =
       tool.status === 'completed'
-        ? 'check'
+        ? 'check-circle'
         : tool.status === 'running'
           ? 'loader'
           : tool.status === 'error'
-            ? 'x'
-            : 'clock';
+            ? 'x-circle'
+            : 'circle';
     setIcon(iconEl, statusIcon);
 
     const nameEl = headerDiv.createSpan('tool-name');
     nameEl.setText(tool.name);
 
-    // Result below header (only show if completed with result)
-    if (tool.result && tool.status === 'completed') {
-      const resultEl = toolDiv.createDiv('tool-result');
-      // Truncate long results
-      const truncated =
-        tool.result.length > 200
-          ? tool.result.substring(0, 200) + '...'
-          : tool.result;
-      resultEl.setText(truncated);
+    // Brief summary on the right
+    const summaryEl = headerDiv.createSpan('tool-summary');
+    summaryEl.setText(this.getToolSummary(tool));
+
+    // Chevron for expand/collapse
+    const chevronEl = headerDiv.createSpan('tool-chevron');
+    setIcon(chevronEl, 'chevron-right');
+
+    // Expandable details section (hidden by default)
+    const detailsDiv = toolDiv.createDiv('tool-details');
+    detailsDiv.style.display = 'none';
+
+    // Input section
+    if (tool.input && Object.keys(tool.input).length > 0) {
+      const inputSection = detailsDiv.createDiv('tool-detail-section');
+      inputSection.createEl('div', { text: 'Input', cls: 'tool-detail-label' });
+      const inputContent = inputSection.createDiv('tool-detail-content');
+      inputContent.createEl('pre').setText(JSON.stringify(tool.input, null, 2));
+    }
+
+    // Result section
+    if (tool.result) {
+      const resultSection = detailsDiv.createDiv('tool-detail-section');
+      resultSection.createEl('div', {
+        text: tool.status === 'error' ? 'Error' : 'Result',
+        cls: 'tool-detail-label'
+      });
+      const resultContent = resultSection.createDiv('tool-detail-content');
+      resultContent.createEl('pre').setText(tool.result);
+    }
+
+    // Toggle expansion on header click
+    headerDiv.onclick = (e) => {
+      e.stopPropagation();
+      const isExpanded = detailsDiv.style.display !== 'none';
+      detailsDiv.style.display = isExpanded ? 'none' : 'block';
+      toolDiv.toggleClass('tool-expanded', !isExpanded);
+      setIcon(chevronEl, isExpanded ? 'chevron-right' : 'chevron-down');
+    };
+  }
+
+  private getToolSummary(tool: ToolCallInfo): string {
+    // Generate a brief summary based on tool type and input
+    const input = tool.input as Record<string, unknown>;
+
+    switch (tool.name) {
+      case 'semantic_search':
+      case 'search_content':
+        return input.query ? `"${String(input.query).slice(0, 30)}..."` : '';
+      case 'create_note':
+      case 'append_to_note':
+      case 'rename_note':
+      case 'open_note':
+        return input.path ? String(input.path).split('/').pop() || '' : '';
+      case 'vault_structure':
+        return input.path ? String(input.path) : 'root';
+      case 'file_metadata':
+      case 'backlinks':
+      case 'outgoing_links':
+        return input.path ? String(input.path).split('/').pop() || '' : '';
+      default:
+        // For other tools, show first string value
+        for (const val of Object.values(input)) {
+          if (typeof val === 'string' && val.length > 0) {
+            return val.length > 30 ? val.slice(0, 30) + '...' : val;
+          }
+        }
+        return '';
     }
   }
 
@@ -465,22 +799,57 @@ export class ChatView extends ItemView {
         '',
         new Component()
       );
+      // Add copy buttons to code blocks
+      this.addCodeBlockCopyButtons(contentDiv as HTMLElement);
     }
 
     this.scrollToBottom();
+  }
+
+  private addCodeBlockCopyButtons(container: HTMLElement): void {
+    const codeBlocks = container.querySelectorAll('pre > code');
+    codeBlocks.forEach((codeEl) => {
+      const pre = codeEl.parentElement;
+      if (!pre || pre.querySelector('.code-copy-btn')) return; // Already has button
+
+      // Make pre position relative for absolute button positioning
+      pre.style.position = 'relative';
+
+      const copyBtn = document.createElement('button');
+      copyBtn.className = 'code-copy-btn';
+      copyBtn.setAttribute('aria-label', 'Copy code');
+      setIcon(copyBtn, 'copy');
+
+      copyBtn.onclick = (e) => {
+        e.stopPropagation();
+        const code = codeEl.textContent || '';
+        navigator.clipboard.writeText(code);
+        setIcon(copyBtn, 'check');
+        setTimeout(() => setIcon(copyBtn, 'copy'), 1500);
+      };
+
+      pre.appendChild(copyBtn);
+    });
   }
 
   private updateMessageTools(messageId: string, toolCalls: ToolCallInfo[]): void {
     const msgEl = this.messageElements.get(messageId);
     if (!msgEl) return;
 
-    // Find the bubble, or create tools in message if no bubble
     const bubbleDiv = msgEl.querySelector('.message-bubble') as HTMLElement;
-    const parentEl = bubbleDiv || msgEl;
+    if (!bubbleDiv) return;
 
-    let toolsDiv = parentEl.querySelector('.message-tools') as HTMLElement;
+    let toolsDiv = bubbleDiv.querySelector('.message-tools') as HTMLElement;
     if (!toolsDiv) {
-      toolsDiv = parentEl.createDiv('message-tools');
+      // Insert tools BEFORE content div
+      const contentDiv = bubbleDiv.querySelector('.message-content');
+      toolsDiv = document.createElement('div');
+      toolsDiv.className = 'message-tools';
+      if (contentDiv) {
+        bubbleDiv.insertBefore(toolsDiv, contentDiv);
+      } else {
+        bubbleDiv.appendChild(toolsDiv);
+      }
     }
 
     toolsDiv.empty();
@@ -496,6 +865,22 @@ export class ChatView extends ItemView {
     this.statusEl.style.display = message ? 'block' : 'none';
   }
 
+  private updateBackendBadge(): void {
+    if (!this.backendBadge) return;
+
+    const backend = this.getBackend();
+    const type = backend.type.toUpperCase();
+
+    this.backendBadge.empty();
+    this.backendBadge.setText(type);
+    this.backendBadge.className = `backend-badge backend-${backend.type}`;
+    this.backendBadge.setAttribute('aria-label',
+      backend.type === 'sdk'
+        ? 'Using Claude Code SDK (full features)'
+        : 'Using direct API (mobile compatible)'
+    );
+  }
+
   private setProcessing(processing: boolean): void {
     this.isProcessing = processing;
     if (!this.sendButton || !this.stopButton || !this.inputEl) return;
@@ -504,18 +889,68 @@ export class ChatView extends ItemView {
     this.inputEl.disabled = processing;
   }
 
+  private navigateInputHistory(direction: number): void {
+    if (this.inputHistory.length === 0) return;
+
+    // Save current input as draft when starting to navigate
+    if (this.inputHistoryIndex === -1) {
+      this.inputDraft = this.inputEl.value;
+    }
+
+    // Calculate new index
+    const newIndex = this.inputHistoryIndex + direction;
+
+    if (newIndex < -1) {
+      // Already at oldest, do nothing
+      return;
+    } else if (newIndex >= this.inputHistory.length) {
+      // Past newest, do nothing
+      return;
+    } else if (newIndex === -1) {
+      // Back to draft
+      this.inputHistoryIndex = -1;
+      this.inputEl.value = this.inputDraft;
+    } else {
+      // Navigate to history entry (newest is at end of array)
+      this.inputHistoryIndex = newIndex;
+      const historyIndex = this.inputHistory.length - 1 - newIndex;
+      this.inputEl.value = this.inputHistory[historyIndex];
+    }
+
+    // Move cursor to end
+    this.inputEl.selectionStart = this.inputEl.value.length;
+    this.inputEl.selectionEnd = this.inputEl.value.length;
+
+    // Trigger resize
+    this.inputEl.style.height = 'auto';
+    this.inputEl.style.height = Math.min(this.inputEl.scrollHeight, 180) + 'px';
+  }
+
   private async sendMessage(): Promise<void> {
     const content = this.inputEl.value.trim();
     if (!content || this.isProcessing) return;
 
     log.info('User sending message', { contentLength: content.length });
 
+    // Add to input history (avoid duplicates of last entry)
+    if (this.inputHistory.length === 0 || this.inputHistory[this.inputHistory.length - 1] !== content) {
+      this.inputHistory.push(content);
+      // Keep history manageable (last 50 messages)
+      if (this.inputHistory.length > 50) {
+        this.inputHistory.shift();
+      }
+    }
+    // Reset history navigation
+    this.inputHistoryIndex = -1;
+    this.inputDraft = '';
+
     this.inputEl.value = '';
     this.setProcessing(true);
     this.setStatus('Thinking...', 'info');
 
-    // Update agent service settings
-    this.agentService.updateSettings(this.plugin.settings);
+    // Get the backend and update settings
+    const backend = this.getBackend();
+    backend.updateSettings(this.plugin.settings);
 
     // Track current assistant message for updates
     let currentAssistantMsgId: string | null = null;
@@ -530,6 +965,10 @@ export class ChatView extends ItemView {
           currentAssistantMsgId = msg.id;
         }
 
+        // Force scroll when user sends a message or assistant starts replying
+        if (msg.role === 'user') {
+          this.userScrolledUp = false;
+        }
         this.scrollToBottom();
       },
 
@@ -579,8 +1018,13 @@ export class ChatView extends ItemView {
       },
 
       onSessionInit: (sessionId, tools) => {
-        this.conversation.sessionId = sessionId;
-        log.info('Session initialized', { sessionId, toolCount: tools.length });
+        // Update metadata with session info
+        if (!this.conversation.metadata) {
+          this.conversation.metadata = { backendType: backend.type };
+        }
+        this.conversation.metadata.sessionId = sessionId;
+        this.conversation.sessionId = sessionId; // Legacy support
+        log.info('Session initialized', { sessionId, toolCount: tools.length, backendType: backend.type });
         log.debug('Available tools', { tools });
       },
 
@@ -615,11 +1059,21 @@ export class ChatView extends ItemView {
     };
 
     try {
-      await this.agentService.sendMessage(
+      // Build enhanced system prompt with active skills
+      const basePrompt = this.plugin.settings.systemPrompt;
+      const enhancedPrompt = this.plugin.skillRegistry.buildSystemPrompt(
+        basePrompt,
+        content
+      );
+
+      await backend.sendMessage(
         content,
-        this.conversation.messages,
+        this.conversation,
         callbacks,
-        this.conversation.sessionId
+        {
+          resumeSessionId: this.conversation.metadata?.sessionId ?? this.conversation.sessionId,
+          systemPrompt: enhancedPrompt,
+        }
       );
     } catch (error) {
       callbacks.onError(
@@ -630,7 +1084,7 @@ export class ChatView extends ItemView {
 
   private stopGeneration(): void {
     log.info('User stopped generation');
-    this.agentService.abort();
+    this.getBackend().abort();
     this.setProcessing(false);
     this.setStatus('Stopped', 'info');
   }
@@ -651,6 +1105,112 @@ export class ChatView extends ItemView {
     this.inputEl.focus();
   }
 
+  private async exportConversation(): Promise<void> {
+    if (this.conversation.messages.length === 0) {
+      this.setStatus('No messages to export', 'info');
+      setTimeout(() => this.setStatus(''), 2000);
+      return;
+    }
+
+    log.info('Exporting conversation', { id: this.conversation.id });
+
+    // Build markdown content
+    const lines: string[] = [];
+    const date = new Date(this.conversation.createdAt);
+    const dateStr = date.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+
+    // Frontmatter
+    lines.push('---');
+    lines.push(`title: "${this.conversation.title}"`);
+    lines.push(`date: ${date.toISOString()}`);
+    lines.push('tags:');
+    lines.push('  - claude-chat');
+    lines.push('---');
+    lines.push('');
+
+    // Header
+    lines.push(`# ${this.conversation.title}`);
+    lines.push('');
+    lines.push(`*Exported from Claude Chat on ${dateStr}*`);
+    lines.push('');
+    lines.push('---');
+    lines.push('');
+
+    // Messages
+    for (const msg of this.conversation.messages) {
+      const role = msg.role === 'user' ? '**You**' : '**Claude**';
+      const time = new Date(msg.timestamp).toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+
+      lines.push(`### ${role} *${time}*`);
+      lines.push('');
+      lines.push(msg.content);
+      lines.push('');
+
+      // Include tool calls if present
+      if (msg.toolCalls && msg.toolCalls.length > 0) {
+        lines.push('<details>');
+        lines.push('<summary>Tool calls</summary>');
+        lines.push('');
+        for (const tool of msg.toolCalls) {
+          lines.push(`- **${tool.name}**`);
+          if (tool.result) {
+            lines.push('  ```');
+            lines.push(`  ${tool.result.slice(0, 200)}${tool.result.length > 200 ? '...' : ''}`);
+            lines.push('  ```');
+          }
+        }
+        lines.push('');
+        lines.push('</details>');
+        lines.push('');
+      }
+
+      lines.push('---');
+      lines.push('');
+    }
+
+    const content = lines.join('\n');
+
+    // Generate filename
+    const sanitizedTitle = this.conversation.title
+      .replace(/[\\/:*?"<>|]/g, '-')
+      .slice(0, 50);
+    const filename = `Claude Chat - ${sanitizedTitle}.md`;
+
+    // Create in vault root or a claude-exports folder
+    const folderPath = 'Claude Exports';
+    const folder = this.plugin.app.vault.getAbstractFileByPath(folderPath);
+    if (!folder) {
+      await this.plugin.app.vault.createFolder(folderPath);
+    }
+
+    const filePath = `${folderPath}/${filename}`;
+
+    try {
+      const existingFile = this.plugin.app.vault.getAbstractFileByPath(filePath);
+      if (existingFile) {
+        // Overwrite existing file
+        await this.plugin.app.vault.modify(existingFile as import('obsidian').TFile, content);
+      } else {
+        await this.plugin.app.vault.create(filePath, content);
+      }
+
+      this.setStatus(`Exported to "${filename}"`, 'success');
+      setTimeout(() => this.setStatus(''), 3000);
+
+      log.info('Conversation exported', { path: filePath });
+    } catch (error) {
+      log.error('Failed to export conversation', error);
+      this.setStatus('Export failed', 'error');
+    }
+  }
+
   private async clearMessages(): Promise<void> {
     log.info('Clearing messages', { conversationId: this.conversation.id });
     this.conversation.messages = [];
@@ -661,9 +1221,12 @@ export class ChatView extends ItemView {
     setTimeout(() => this.setStatus(''), 2000);
   }
 
-  private scrollToBottom(): void {
+  private scrollToBottom(force = false): void {
     if (!this.messagesContainer) return;
-    this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
+    // Only auto-scroll if user hasn't scrolled up, or if forced
+    if (!this.userScrolledUp || force) {
+      this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
+    }
   }
 
   async onClose(): Promise<void> {

@@ -1,0 +1,105 @@
+import type { Conversation, ChatMessage, ToolCallInfo, ObsidiClaudeSettings } from '../types';
+
+/**
+ * Features that may or may not be supported by a backend
+ */
+export type BackendFeature =
+  | 'session-resume'
+  | 'mcp-servers'
+  | 'hooks'
+  | 'subagents'
+  | 'file-checkpointing'
+  | 'structured-output';
+
+/**
+ * Options for sending a message
+ */
+export interface BackendOptions {
+  /** Resume from a previous session ID (SDK backend only) */
+  resumeSessionId?: string;
+  /** Override the default model */
+  model?: string;
+  /** Maximum conversation turns */
+  maxTurns?: number;
+  /** Custom system prompt */
+  systemPrompt?: string;
+}
+
+/**
+ * Result of a completed agent conversation
+ */
+export interface AgentResult {
+  success: boolean;
+  totalCost?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  errors?: string[];
+}
+
+/**
+ * Callbacks for streaming updates during message processing
+ */
+export interface AgentCallbacks {
+  /** Called when a new message (user or assistant) is created */
+  onMessage: (message: ChatMessage) => void;
+  /** Called with incremental content updates during streaming */
+  onStreamingUpdate: (messageId: string, content: string) => void;
+  /** Called when a tool call is initiated */
+  onToolCall: (messageId: string, toolCall: ToolCallInfo) => void;
+  /** Called when a tool call completes with a result */
+  onToolResult: (messageId: string, toolName: string, result: string) => void;
+  /** Called when the session is initialized (SDK backend) */
+  onSessionInit: (sessionId: string, tools: string[]) => void;
+  /** Called when the conversation is complete */
+  onComplete: (result: AgentResult) => void;
+  /** Called when an error occurs */
+  onError: (error: Error) => void;
+}
+
+/**
+ * Abstract backend interface for Claude agent implementations.
+ *
+ * Two implementations:
+ * - SDKAgentBackend: Desktop, uses Claude Agent SDK with full features
+ * - APIAgentBackend: Mobile, uses direct Anthropic API with lighter footprint
+ */
+export interface AgentBackend {
+  /** Unique identifier for this backend type */
+  readonly type: 'sdk' | 'api';
+
+  /** Check if the backend is available on this platform */
+  isAvailable(): boolean;
+
+  /** Initialize the backend (called once on activation) */
+  initialize(): Promise<void>;
+
+  /** Clean up resources */
+  dispose(): Promise<void>;
+
+  /**
+   * Send a message and stream the response
+   *
+   * @param userMessage - The user's message content
+   * @param conversation - Current conversation with history
+   * @param callbacks - Streaming update callbacks
+   * @param options - Additional options
+   */
+  sendMessage(
+    userMessage: string,
+    conversation: Conversation,
+    callbacks: AgentCallbacks,
+    options?: BackendOptions
+  ): Promise<void>;
+
+  /** Abort the current request */
+  abort(): void;
+
+  /** Get the current session ID (SDK backend only) */
+  getSessionId(): string | null;
+
+  /** Check if the backend supports a specific feature */
+  supports(feature: BackendFeature): boolean;
+
+  /** Update settings */
+  updateSettings(settings: ObsidiClaudeSettings): void;
+}

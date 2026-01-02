@@ -1,5 +1,5 @@
 import type { EmbeddingSettings } from './types';
-import { TransformersWorkerManager } from './TransformersWorker';
+import { TransformersIframeManager } from './TransformersIframe';
 
 export interface EmbeddingProvider {
   embed(texts: string[]): Promise<number[][]>;
@@ -8,18 +8,21 @@ export interface EmbeddingProvider {
 }
 
 /**
- * Local embeddings using Transformers.js via Web Worker
+ * Local embeddings using Transformers.js via iframe
  *
  * Loads @huggingface/transformers from CDN and runs in an isolated
- * Web Worker to avoid bundling/WASM conflicts with Obsidian.
+ * iframe to avoid bundling/WASM conflicts with Obsidian.
  *
- * Pattern: WebWorker + CDN loading for WASM-based libraries
- * - Worker code is inlined as a blob URL
+ * Pattern: iframe + CDN loading for WASM-based libraries
+ * - Iframe content is created from a blob URL
  * - Transformers.js is loaded from jsDelivr CDN at runtime
- * - WASM/ONNX runtime runs in worker thread, isolated from main thread
+ * - WASM/ONNX runtime runs in iframe context, isolated from main thread
+ * - Communication via postMessage
+ *
+ * Inspired by obsidian-smart-connections approach.
  */
 export class TransformersJSProvider implements EmbeddingProvider {
-  private worker: TransformersWorkerManager | null = null;
+  private iframe: TransformersIframeManager | null = null;
   private initPromise: Promise<void> | null = null;
   private dimensions: number;
   private modelName: string;
@@ -32,7 +35,7 @@ export class TransformersJSProvider implements EmbeddingProvider {
 
   private async ensureInitialized(): Promise<void> {
     // If already initialized, return immediately
-    if (this.worker) {
+    if (this.iframe) {
       return;
     }
 
@@ -44,10 +47,10 @@ export class TransformersJSProvider implements EmbeddingProvider {
 
     // Start initialization - set promise FIRST to prevent race condition
     this.initPromise = (async () => {
-      const worker = new TransformersWorkerManager(this.modelName);
-      await worker.initialize();
-      this.dimensions = worker.getDimensions();
-      this.worker = worker; // Set worker LAST after fully initialized
+      const iframe = new TransformersIframeManager(this.modelName);
+      await iframe.initialize();
+      this.dimensions = iframe.getDimensions();
+      this.iframe = iframe; // Set iframe LAST after fully initialized
     })();
 
     await this.initPromise;
@@ -55,7 +58,7 @@ export class TransformersJSProvider implements EmbeddingProvider {
 
   async embed(texts: string[]): Promise<number[][]> {
     await this.ensureInitialized();
-    return this.worker!.embed(texts);
+    return this.iframe!.embed(texts);
   }
 
   getDimensions(): number {
@@ -300,6 +303,21 @@ export class EmbeddingService {
       return true;
     } catch {
       return false;
+    }
+  }
+
+  /**
+   * Test the embedding provider connection by generating a test embedding
+   */
+  async testConnection(): Promise<{ ok: boolean; error?: string }> {
+    try {
+      await this.embed(['test connection']);
+      return { ok: true };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
     }
   }
 }

@@ -1,6 +1,9 @@
 import { App, PluginSettingTab, Setting, Notice, Modal, TextComponent, TextAreaComponent } from 'obsidian';
 import type ObsidiClaudePlugin from '../main';
 import type { EmbeddingProviderType, ExternalMCPServer } from './types';
+import { createLogger } from './Logger';
+
+const log = createLogger('SettingsTab');
 
 type SettingsTabId = 'agent' | 'embedding' | 'mcp' | 'tools';
 
@@ -66,6 +69,46 @@ export class SettingsTab extends PluginSettingTab {
 
   private addAgentSettings(containerEl: HTMLElement): void {
     containerEl.createEl('h3', { text: 'Agent Configuration' });
+
+    // Backend selection
+    new Setting(containerEl)
+      .setName('Backend')
+      .setDesc('Which backend to use for Claude interactions')
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption('auto', 'Auto (SDK on desktop, API on mobile)')
+          .addOption('sdk', 'SDK (Claude Code CLI - desktop only)')
+          .addOption('api', 'API (Direct Anthropic API)')
+          .setValue(this.plugin.settings.preferredBackend)
+          .onChange(async (value) => {
+            this.plugin.settings.preferredBackend = value as 'auto' | 'sdk' | 'api';
+            await this.plugin.saveSettings();
+            this.display();
+          })
+      );
+
+    // Show current backend info
+    const backendInfo = this.plugin.backendFactory?.getBackendInfo();
+    if (backendInfo) {
+      const infoEl = containerEl.createDiv({ cls: 'setting-item-description' });
+      infoEl.style.marginTop = '-0.5rem';
+      infoEl.style.marginBottom = '0.5rem';
+      infoEl.innerHTML = `<em>Current: ${backendInfo.current.toUpperCase()} backend (${backendInfo.sdkAvailable ? 'SDK available' : 'SDK unavailable'})</em>`;
+    }
+
+    // Anthropic API Key (for API backend)
+    new Setting(containerEl)
+      .setName('Anthropic API Key')
+      .setDesc('Required for API backend. Checked after ANTHROPIC_API_KEY env var.')
+      .addText((text) =>
+        text
+          .setPlaceholder('sk-ant-...')
+          .setValue(this.plugin.settings.anthropicApiKey)
+          .onChange(async (value) => {
+            this.plugin.settings.anthropicApiKey = value;
+            await this.plugin.saveSettings();
+          })
+      );
 
     // Model selection
     new Setting(containerEl)
@@ -196,6 +239,61 @@ export class SettingsTab extends PluginSettingTab {
         text.inputEl.rows = 8;
         text.inputEl.cols = 50;
       });
+
+    // Skills settings
+    containerEl.createEl('h4', { text: 'Skills' });
+
+    new Setting(containerEl)
+      .setName('Enable Skills')
+      .setDesc('Load SKILL.md files from your vault to enhance Claude\'s capabilities')
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.skills.enabled)
+          .onChange(async (value) => {
+            this.plugin.settings.skills.enabled = value;
+            await this.plugin.saveSettings();
+            this.display();
+          })
+      );
+
+    if (this.plugin.settings.skills.enabled) {
+      new Setting(containerEl)
+        .setName('Skills Folder')
+        .setDesc('Vault folder containing SKILL.md files')
+        .addText((text) =>
+          text
+            .setPlaceholder('.claude/skills')
+            .setValue(this.plugin.settings.skills.folderPath)
+            .onChange(async (value) => {
+              this.plugin.settings.skills.folderPath = value;
+              await this.plugin.saveSettings();
+            })
+        );
+
+      // Skills management
+      const skills = this.plugin.skillRegistry?.getSkills() ?? [];
+      new Setting(containerEl)
+        .setName('Loaded Skills')
+        .setDesc(`${skills.length} skill${skills.length !== 1 ? 's' : ''} loaded`)
+        .addButton((button) =>
+          button.setButtonText('Reload Skills').onClick(async () => {
+            try {
+              await this.plugin.skillRegistry.reload();
+              new Notice(`Loaded ${this.plugin.skillRegistry.getSkills().length} skills`);
+              this.display();
+            } catch (error) {
+              new Notice(`Failed to reload skills: ${error}`);
+            }
+          })
+        );
+
+      // List loaded skills
+      if (skills.length > 0) {
+        const skillsListEl = containerEl.createDiv({ cls: 'setting-item-description' });
+        skillsListEl.style.marginTop = '0.5rem';
+        skillsListEl.innerHTML = `<strong>Active skills:</strong> ${skills.map(s => s.name).join(', ')}`;
+      }
+    }
   }
 
   private addEmbeddingSettings(containerEl: HTMLElement): void {
@@ -238,8 +336,18 @@ export class SettingsTab extends PluginSettingTab {
           })
       );
 
-    // Provider-specific settings
+    // Provider-specific warnings and settings
     if (embedding.provider === 'transformers') {
+      const warningEl = containerEl.createDiv({ cls: 'setting-warning' });
+      warningEl.innerHTML = `
+        <strong>⚠️  Performance Notice</strong>
+        Transformers.js runs in your browser and may cause brief UI freezes during indexing.
+        <ul>
+          <li><strong>Recommended for:</strong> Small vaults (&lt;500 files)</li>
+          <li><strong>For larger vaults:</strong> Use Ollama (free, local, no UI blocking)</li>
+        </ul>
+      `;
+
       new Setting(containerEl)
         .setName('Model')
         .setDesc('Transformers.js model (loaded from HuggingFace CDN)')
@@ -652,67 +760,49 @@ export class SettingsTab extends PluginSettingTab {
   }
 
   private async testMCPServer(server: ExternalMCPServer): Promise<void> {
-    new Notice(`Testing ${server.name}...`);
+    log.info('Validating MCP server config', {
+      name: server.name,
+      command: server.command,
+      args: server.args,
+      env: server.env ? Object.keys(server.env) : [],
+    });
 
-    try {
-      const { spawn } = await import('child_process');
+    // Validate configuration
+    const issues: string[] = [];
 
-      const proc = spawn(server.command, server.args, {
-        env: { ...process.env, ...server.env },
-        stdio: ['pipe', 'pipe', 'pipe'],
-      });
-
-      let stdout = '';
-      let stderr = '';
-
-      proc.stdout?.on('data', (data) => {
-        stdout += data.toString();
-      });
-
-      proc.stderr?.on('data', (data) => {
-        stderr += data.toString();
-      });
-
-      // Set a timeout for the test
-      const timeout = setTimeout(() => {
-        proc.kill();
-      }, 5000);
-
-      // Wait for the process to start and send an initialize request
-      await new Promise<void>((resolve) => setTimeout(resolve, 500));
-
-      // Send MCP initialize request
-      const initRequest = JSON.stringify({
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'initialize',
-        params: {
-          protocolVersion: '2024-11-05',
-          capabilities: {},
-          clientInfo: { name: 'obsidi-claude-test', version: '1.0.0' },
-        },
-      });
-
-      proc.stdin?.write(initRequest + '\n');
-
-      // Wait for response
-      await new Promise<void>((resolve) => setTimeout(resolve, 1500));
-
-      clearTimeout(timeout);
-      proc.kill();
-
-      // Check if we got a response
-      if (stdout.includes('"result"') || stdout.includes('protocolVersion')) {
-        new Notice(`${server.name}: Connected successfully!`, 3000);
-      } else if (stderr) {
-        new Notice(`${server.name}: Error - ${stderr.slice(0, 100)}`, 5000);
-      } else {
-        new Notice(`${server.name}: No response (server may need more time to start)`, 4000);
-      }
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      new Notice(`${server.name}: Failed to start - ${msg}`, 5000);
+    if (!server.command.trim()) {
+      issues.push('Command is empty');
     }
+
+    if (!server.name.trim()) {
+      issues.push('Name is empty');
+    }
+
+    // Check if command is an absolute path and exists
+    if (server.command.startsWith('/') || server.command.match(/^[A-Z]:\\/i)) {
+      try {
+        const { existsSync } = require('fs') as typeof import('fs');
+        if (!existsSync(server.command)) {
+          issues.push(`Command not found: ${server.command}`);
+        }
+      } catch {
+        // Can't check, assume OK
+      }
+    }
+
+    if (issues.length > 0) {
+      log.warn('MCP server config validation failed', { name: server.name, issues });
+      new Notice(`${server.name}: ${issues.join(', ')}`, 5000);
+      return;
+    }
+
+    // Configuration looks valid
+    log.info('MCP server config validated', { name: server.name });
+    new Notice(
+      `${server.name}: Configuration valid. ` +
+      `Server will be started by Claude Code when used in conversation.`,
+      4000
+    );
   }
 
   private addToolSettings(containerEl: HTMLElement): void {

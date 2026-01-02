@@ -36,6 +36,11 @@ Runs entirely in your browser using WebAssembly. First use downloads the model f
 - First load downloads model (22-110MB)
 - Slower than native code
 - Limited to smaller models
+- **May cause brief UI freezes** during indexing (runs on main thread)
+
+> **⚠️ Performance Notice:** Transformers.js runs in your browser and may cause brief UI freezes during indexing. Recommended for small vaults (<500 files). For larger vaults, use Ollama instead (free, local, no UI blocking).
+
+**How it works:** Transformers.js can't be bundled directly into Obsidian plugins due to WASM loading conflicts. We use an [iframe isolation pattern](./adr/0001-transformers-js-iframe-pattern.md) that loads the library from CDN at runtime in a hidden iframe. This approach is battle-tested by [obsidian-smart-connections](https://github.com/brianpetro/obsidian-smart-connections).
 
 ### Ollama (Local Server)
 

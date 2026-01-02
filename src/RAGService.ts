@@ -183,6 +183,13 @@ export class RAGService {
     log.info('Initializing RAG service');
     await this.vectorStore.load();
 
+    // Skip provider initialization for transformers.js on startup to avoid blocking
+    // It will be lazily initialized when first used
+    if (this.settings.provider === 'transformers') {
+      log.info('RAG service initialized (transformers.js will load on first use)');
+      return;
+    }
+
     // Set provider info (will clear index if provider changed)
     if (this.embeddingService.isConfigured()) {
       const providerName = this.embeddingService.getProviderName();
@@ -320,6 +327,10 @@ export class RAGService {
     let skipped = 0;
     let failed = 0;
 
+    // Batch settings for UI responsiveness
+    const batchSize = this.settings.batchSize ?? 10;
+    const batchDelayMs = this.settings.batchDelayMs ?? 100;
+
     try {
       for (const file of files) {
         this.progress.currentFile = file.path;
@@ -343,6 +354,11 @@ export class RAGService {
 
         this.progress.processed++;
         this.notifyProgress();
+
+        // Yield to main thread after each batch to keep UI responsive
+        if (this.progress.processed % batchSize === 0) {
+          await new Promise((r) => setTimeout(r, batchDelayMs));
+        }
       }
 
       // Remove entries for deleted files

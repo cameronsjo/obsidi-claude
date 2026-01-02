@@ -6,6 +6,8 @@ import { RAGService } from './src/RAGService';
 import { ObsidianTools } from './src/ObsidianTools';
 import { StorageService } from './src/StorageService';
 import { MCPServer } from './src/MCPServer';
+import { BackendFactory } from './src/backends';
+import { SkillRegistry } from './src/skills';
 import { createLogger } from './src/Logger';
 
 const log = createLogger('Plugin');
@@ -16,6 +18,8 @@ export default class ObsidiClaudePlugin extends Plugin {
   obsidianTools: ObsidianTools | null = null;
   storage: StorageService;
   mcpServer: MCPServer | null = null;
+  backendFactory: BackendFactory;
+  skillRegistry: SkillRegistry;
 
   async onload(): Promise<void> {
     console.log('Loading Obsidi-Claude plugin');
@@ -43,6 +47,15 @@ export default class ObsidiClaudePlugin extends Plugin {
 
     // Initialize Obsidian tools
     this.obsidianTools = new ObsidianTools(this.app, this.ragService || undefined);
+
+    // Initialize backend factory
+    this.backendFactory = new BackendFactory(this.settings, this.obsidianTools);
+    log.info('Backend factory initialized', this.backendFactory.getBackendInfo());
+
+    // Initialize skill registry
+    this.skillRegistry = new SkillRegistry(this.app, this.settings.skills);
+    await this.skillRegistry.initialize();
+    log.info('Skill registry initialized', { skillCount: this.skillRegistry.getSkills().length });
 
     // Register the chat view
     this.registerView(
@@ -102,6 +115,25 @@ export default class ObsidiClaudePlugin extends Plugin {
       },
     });
 
+    // Add command to reload skills
+    this.addCommand({
+      id: 'reload-skills',
+      name: 'Reload Skills',
+      callback: async () => {
+        if (!this.settings.skills.enabled) {
+          new Notice('Skills are disabled. Enable them in settings.');
+          return;
+        }
+        try {
+          await this.skillRegistry.reload();
+          const skills = this.skillRegistry.getSkills();
+          new Notice(`Loaded ${skills.length} skill${skills.length !== 1 ? 's' : ''}`);
+        } catch (error) {
+          new Notice(`Failed to reload skills: ${error}`);
+        }
+      },
+    });
+
     // Add settings tab
     this.addSettingTab(new SettingsTab(this.app, this));
 
@@ -140,9 +172,13 @@ export default class ObsidiClaudePlugin extends Plugin {
 
     // Auto-open on workspace ready if configured
     this.app.workspace.onLayoutReady(async () => {
-      // Initial indexing if configured
+      // Initial indexing if configured (skip transformers.js to avoid blocking UI)
       if (this.settings.embedding.enabled && this.settings.embedding.autoIndex) {
-        if (this.ragService?.isConfigured()) {
+        // Skip auto-index for transformers.js - it blocks the main thread
+        // User can manually trigger via "Rebuild Index" command
+        if (this.settings.embedding.provider === 'transformers') {
+          log.info('Skipping auto-index for transformers.js (use Rebuild Index command)');
+        } else if (this.ragService?.isConfigured()) {
           // Run in background without blocking
           this.ragService.indexVault(false).catch((error) => {
             log.error('Initial indexing failed', error);
@@ -177,7 +213,9 @@ export default class ObsidiClaudePlugin extends Plugin {
     if (
       !this.settings.embedding.enabled ||
       !this.settings.embedding.autoIndex ||
-      !this.ragService?.isConfigured()
+      !this.ragService?.isConfigured() ||
+      // Skip auto-indexing for transformers.js to avoid blocking UI
+      this.settings.embedding.provider === 'transformers'
     ) {
       return;
     }
@@ -201,7 +239,11 @@ export default class ObsidiClaudePlugin extends Plugin {
     // Remove old path, index new path
     this.ragService.removeFile(oldPath).catch(console.error);
 
-    if (this.settings.embedding.enabled && this.settings.embedding.autoIndex) {
+    if (
+      this.settings.embedding.enabled &&
+      this.settings.embedding.autoIndex &&
+      this.settings.embedding.provider !== 'transformers'
+    ) {
       this.ragService.indexSingleFile(file).catch(console.error);
     }
   }
@@ -233,6 +275,16 @@ export default class ObsidiClaudePlugin extends Plugin {
     // Update RAG service with new settings
     if (this.ragService) {
       this.ragService.updateSettings(this.settings.embedding);
+    }
+
+    // Update backend factory with new settings
+    if (this.backendFactory) {
+      this.backendFactory.updateSettings(this.settings);
+    }
+
+    // Update skill registry with new settings
+    if (this.skillRegistry) {
+      await this.skillRegistry.updateSettings(this.settings.skills);
     }
   }
 
@@ -283,5 +335,10 @@ export default class ObsidiClaudePlugin extends Plugin {
 
     // Stop MCP server if running
     await this.stopMCPServer();
+
+    // Dispose backend factory
+    if (this.backendFactory) {
+      await this.backendFactory.dispose();
+    }
   }
 }

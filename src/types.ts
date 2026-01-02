@@ -14,11 +14,25 @@ export interface ToolCallInfo {
   status: 'pending' | 'running' | 'completed' | 'error';
 }
 
+/**
+ * Metadata for cross-platform conversation continuity
+ */
+export interface ConversationMetadata {
+  /** Which backend created/last used this conversation */
+  backendType: 'sdk' | 'api';
+  /** SDK session ID (desktop only, enables resume) */
+  sessionId?: string;
+  /** Timestamp of last sync (for Obsidian Sync) */
+  lastSyncAt?: number;
+}
+
 export interface Conversation {
   id: string;
   title: string;
   messages: ChatMessage[];
+  /** @deprecated Use metadata.sessionId instead */
   sessionId?: string;
+  metadata?: ConversationMetadata;
   createdAt: number;
   updatedAt: number;
 }
@@ -47,6 +61,9 @@ export interface EmbeddingSettings {
   chunkSize: number;
   chunkOverlap: number;
   excludeFolders: string[];
+  // Performance options
+  batchSize?: number;        // Files to process before yielding (default: 10)
+  batchDelayMs?: number;     // Delay between batches in ms (default: 100)
 }
 
 export interface MCPSettings {
@@ -64,6 +81,39 @@ export interface ExternalMCPServer {
   enabled: boolean;
 }
 
+export interface SkillSettings {
+  enabled: boolean;
+  /** Folder path within vault for skills (e.g., ".claude/skills") */
+  folderPath: string;
+}
+
+/**
+ * Parsed skill from a SKILL.md file.
+ * Skills are markdown files with YAML frontmatter that define context
+ * to inject into Claude's system prompt.
+ */
+export interface Skill {
+  /** Unique skill identifier (from frontmatter or filename) */
+  name: string;
+  /** Human-readable description */
+  description: string;
+  /** File path within vault */
+  path: string;
+  /** Keywords/patterns that trigger this skill */
+  triggers: string[];
+  /** Tool names this skill is relevant for */
+  tools?: string[];
+  /** The skill content (instructions to inject) */
+  content: string;
+  /** Whether this skill is always active */
+  alwaysActive?: boolean;
+}
+
+export const DEFAULT_SKILL_SETTINGS: SkillSettings = {
+  enabled: true,
+  folderPath: '.claude/skills',
+};
+
 export interface ObsidiClaudeSettings {
   model: 'claude-sonnet-4-5' | 'claude-opus-4' | 'claude-3-5-sonnet-20241022';
   systemPrompt: string;
@@ -77,6 +127,12 @@ export interface ObsidiClaudeSettings {
   embedding: EmbeddingSettings;
   mcp: MCPSettings;
   externalMcpServers: ExternalMCPServer[];
+  /** Anthropic API key for direct API backend (mobile) - overrides env var */
+  anthropicApiKey: string;
+  /** Preferred backend when both are available */
+  preferredBackend: 'auto' | 'sdk' | 'api';
+  /** Skills configuration */
+  skills: SkillSettings;
 }
 
 export const DEFAULT_EMBEDDING_SETTINGS: EmbeddingSettings = {
@@ -91,6 +147,8 @@ export const DEFAULT_EMBEDDING_SETTINGS: EmbeddingSettings = {
   chunkSize: 512,
   chunkOverlap: 50,
   excludeFolders: ['.obsidian', '.trash', 'node_modules'],
+  batchSize: 10,
+  batchDelayMs: 100,
 };
 
 export const DEFAULT_MCP_SETTINGS: MCPSettings = {
@@ -102,16 +160,43 @@ export const DEFAULT_MCP_SETTINGS: MCPSettings = {
 
 export const DEFAULT_SETTINGS: ObsidiClaudeSettings = {
   model: 'claude-sonnet-4-5',
-  systemPrompt: `You are an AI assistant integrated into Obsidian, a knowledge management application.
+  systemPrompt: `You are Claude, an AI assistant deeply integrated with Obsidian. You have direct access to the user's knowledge base and can read, write, search, and navigate their vault.
 
-You have access to the user's vault (notes directory) and can help with:
-- Answering questions about their notes
-- Writing and editing content
-- Analyzing and organizing information
-- Running commands and scripts when needed
+## Core Capabilities
 
-Use the semantic_search tool to find relevant notes based on meaning, not just keywords.
-Be concise but thorough. Use markdown formatting in your responses.`,
+**Knowledge Discovery**
+- \`semantic_search\` - Find relevant notes by meaning, not just keywords
+- \`search_content\` - Full-text search across all notes
+- \`search_by_property\` - Query notes by frontmatter properties
+- \`vault_tags\` - Explore the tag taxonomy
+
+**Note Operations**
+- \`create_note\` - Create new notes with proper frontmatter
+- \`append_to_note\` - Add content to existing notes
+- \`rename_note\` - Rename and refactor notes
+- \`daily_note\` - Access or create daily notes
+
+**Navigation & Context**
+- \`active_note\` - See what the user is currently viewing
+- \`open_note\` - Open notes in the Obsidian editor
+- \`file_metadata\` - Get frontmatter, dates, and stats
+- \`recent_files\` - Find recently modified notes
+
+**Graph & Links**
+- \`backlinks\` - Find all notes linking to a given note
+- \`outgoing_links\` - See what a note links to
+- \`graph_neighbors\` - Discover related notes via the knowledge graph
+- \`vault_structure\` - Understand folder organization
+
+## Guidelines
+
+1. **Search before creating** - Check if relevant notes exist before making new ones
+2. **Preserve structure** - Follow the user's existing folder and naming conventions
+3. **Use frontmatter** - Add appropriate metadata (tags, aliases, dates) to new notes
+4. **Link liberally** - Connect new content to existing notes with [[wikilinks]]
+5. **Be concise** - Use markdown formatting, keep responses focused
+
+When the user asks about their notes, always search first to ground your response in their actual content.`,
   maxTurns: 50,
   workingDirectory: '',
   claudeCodePath: '',
@@ -131,6 +216,9 @@ Be concise but thorough. Use markdown formatting in your responses.`,
   embedding: DEFAULT_EMBEDDING_SETTINGS,
   mcp: DEFAULT_MCP_SETTINGS,
   externalMcpServers: [],
+  anthropicApiKey: '',
+  preferredBackend: 'auto',
+  skills: DEFAULT_SKILL_SETTINGS,
 };
 
 export function generateId(): string {
