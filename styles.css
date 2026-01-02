@@ -62,6 +62,35 @@
   color: var(--text-muted);
 }
 
+/* Active note context badge */
+.context-badge {
+  display: none;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.65rem;
+  font-weight: 500;
+  padding: 0.15rem 0.5rem;
+  border-radius: 9999px;
+  background-color: var(--background-modifier-success);
+  color: var(--text-normal);
+  cursor: default;
+  flex-shrink: 0;
+  max-width: 120px;
+  overflow: hidden;
+}
+
+.context-badge svg {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+
+.context-badge span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .chat-actions {
   display: flex;
   gap: 0.5rem;
@@ -573,14 +602,28 @@ pre:hover .code-copy-btn {
 .chat-buttons {
   display: flex;
   gap: 0.5rem;
-  justify-content: flex-end;
+  justify-content: space-between;
   align-items: center;
 }
 
-.chat-input-hint {
+.chat-buttons-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
   flex: 1;
+  min-width: 0;
+}
+
+.chat-input-hint {
   font-size: 0.7rem;
   color: var(--text-faint);
+}
+
+.chat-token-counter {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .chat-send-btn,

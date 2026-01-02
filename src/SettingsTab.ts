@@ -222,6 +222,19 @@ export class SettingsTab extends PluginSettingTab {
           })
       );
 
+    // Active note context
+    new Setting(containerEl)
+      .setName('Include Active Note')
+      .setDesc('Automatically include the currently open note as context when chatting')
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.activeNoteContext)
+          .onChange(async (value) => {
+            this.plugin.settings.activeNoteContext = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
     // System prompt
     containerEl.createEl('h4', { text: 'System Prompt' });
 

@@ -28,6 +28,8 @@ export class ChatView extends ItemView {
   private historyList: HTMLElement;
   private chatTitleEl: HTMLElement;
   private backendBadge: HTMLElement;
+  private contextBadge: HTMLElement;
+  private tokenCounter: HTMLElement;
   private searchInput: HTMLInputElement;
   private searchContainer: HTMLElement;
 
@@ -104,10 +106,44 @@ export class ChatView extends ItemView {
     const inputArea = container.createDiv('chat-input-area');
     this.createInputArea(inputArea);
 
+    // Register keyboard shortcuts
+    this.registerKeyboardShortcuts(container);
+
+    // Listen for active file changes to update context badge
+    this.registerEvent(
+      this.plugin.app.workspace.on('active-leaf-change', () => {
+        this.updateContextBadge();
+      })
+    );
+
     // Load saved conversation
     await this.loadConversation();
     this.renderAllMessages();
     log.debug('Chat view opened', { conversationId: this.conversation.id });
+  }
+
+  private registerKeyboardShortcuts(container: HTMLElement): void {
+    // Use keydown on the container for global shortcuts
+    container.addEventListener('keydown', (e) => {
+      // Ctrl/Cmd+F for search
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+        e.preventDefault();
+        e.stopPropagation();
+        this.toggleSearch();
+      }
+
+      // Escape to close search or history
+      if (e.key === 'Escape') {
+        if (this.searchVisible) {
+          this.toggleSearch();
+        } else if (this.historyVisible) {
+          this.toggleHistory();
+        }
+      }
+    });
+
+    // Make container focusable for keyboard events
+    container.setAttribute('tabindex', '-1');
   }
 
   private createHeader(header: HTMLElement): void {
@@ -127,6 +163,11 @@ export class ChatView extends ItemView {
     // Backend indicator badge
     this.backendBadge = header.createDiv('backend-badge');
     this.updateBackendBadge();
+
+    // Active note context badge
+    this.contextBadge = header.createDiv('context-badge');
+    this.contextBadge.setAttribute('aria-label', 'Active note will be included as context');
+    this.updateContextBadge();
 
     const actionsEl = header.createDiv('chat-actions');
 
@@ -508,9 +549,16 @@ export class ChatView extends ItemView {
     // Button container
     const buttonArea = inputWrapper.createDiv('chat-buttons');
 
+    // Left side: hint and token counter
+    const leftArea = buttonArea.createDiv('chat-buttons-left');
+
     // Keyboard hint
-    const hintEl = buttonArea.createSpan('chat-input-hint');
-    hintEl.setText('Enter to send · ↑↓ history');
+    const hintEl = leftArea.createSpan('chat-input-hint');
+    hintEl.setText('Enter to send · /help for commands');
+
+    // Token counter
+    this.tokenCounter = leftArea.createSpan('chat-token-counter');
+    this.updateTokenCounter();
 
     // Stop button (hidden by default)
     this.stopButton = buttonArea.createEl('button', {
@@ -598,6 +646,9 @@ export class ChatView extends ItemView {
     // Force scroll when rendering all messages (loading conversation)
     this.userScrolledUp = false;
     this.scrollToBottom(true);
+
+    // Update token counter
+    this.updateTokenCounter();
   }
 
   private renderMessage(msg: ChatMessage): HTMLElement | null {
@@ -881,12 +932,183 @@ export class ChatView extends ItemView {
     );
   }
 
+  private updateContextBadge(): void {
+    if (!this.contextBadge) return;
+
+    const enabled = this.plugin.settings.activeNoteContext;
+    const activeFile = this.plugin.app.workspace.getActiveFile();
+    const hasActiveNote = activeFile && activeFile.extension === 'md';
+
+    this.contextBadge.empty();
+
+    if (enabled && hasActiveNote) {
+      // Show badge with file icon and truncated name
+      const fileName = activeFile.basename;
+      const displayName = fileName.length > 15 ? fileName.slice(0, 12) + '...' : fileName;
+      setIcon(this.contextBadge, 'file-text');
+      this.contextBadge.createSpan({ text: displayName });
+      this.contextBadge.style.display = 'flex';
+      this.contextBadge.setAttribute('aria-label', `Context: ${activeFile.path}`);
+    } else {
+      this.contextBadge.style.display = 'none';
+    }
+  }
+
+  /**
+   * Estimate token count for the conversation.
+   * Uses a rough approximation of ~4 characters per token.
+   */
+  private estimateTokens(): number {
+    let totalChars = 0;
+
+    // Count message content
+    for (const msg of this.conversation.messages) {
+      totalChars += msg.content.length;
+      // Add overhead for role and structure
+      totalChars += 20;
+    }
+
+    // System prompt
+    totalChars += this.plugin.settings.systemPrompt.length;
+
+    // Rough estimate: ~4 chars per token
+    return Math.ceil(totalChars / 4);
+  }
+
+  private updateTokenCounter(): void {
+    if (!this.tokenCounter) return;
+
+    const tokens = this.estimateTokens();
+    if (tokens === 0) {
+      this.tokenCounter.style.display = 'none';
+      return;
+    }
+
+    // Format with K suffix for thousands
+    const formatted = tokens >= 1000
+      ? `${(tokens / 1000).toFixed(1)}K`
+      : tokens.toString();
+
+    this.tokenCounter.setText(`~${formatted} tokens`);
+    this.tokenCounter.style.display = 'inline';
+    this.tokenCounter.setAttribute('aria-label', `Estimated ${tokens.toLocaleString()} tokens in conversation`);
+  }
+
   private setProcessing(processing: boolean): void {
     this.isProcessing = processing;
     if (!this.sendButton || !this.stopButton || !this.inputEl) return;
     this.sendButton.style.display = processing ? 'none' : 'block';
     this.stopButton.style.display = processing ? 'block' : 'none';
     this.inputEl.disabled = processing;
+  }
+
+  /**
+   * Handle slash commands like /clear, /new, /note, /help
+   * Returns true if the command was handled, false if it should be sent as a message
+   */
+  private async handleSlashCommand(input: string): Promise<boolean> {
+    const parts = input.slice(1).split(/\s+/);
+    const command = parts[0].toLowerCase();
+    const args = parts.slice(1).join(' ');
+
+    log.debug('Processing slash command', { command, args });
+
+    switch (command) {
+      case 'clear':
+        await this.clearMessages();
+        return true;
+
+      case 'new':
+        await this.newConversation();
+        return true;
+
+      case 'export':
+        await this.exportConversation();
+        return true;
+
+      case 'note': {
+        // Insert current note content into the input
+        const activeFile = this.plugin.app.workspace.getActiveFile();
+        if (!activeFile) {
+          this.setStatus('No active note', 'info');
+          setTimeout(() => this.setStatus(''), 2000);
+          return true;
+        }
+
+        try {
+          const noteContent = await this.plugin.app.vault.read(activeFile);
+          const contextMessage = `[Context from "${activeFile.basename}"]\n\n${noteContent}`;
+
+          // If there are additional args, append them as a question
+          if (args) {
+            this.inputEl.value = `${contextMessage}\n\n---\n\n${args}`;
+          } else {
+            this.inputEl.value = contextMessage;
+          }
+
+          // Trigger resize
+          this.inputEl.style.height = 'auto';
+          this.inputEl.style.height = Math.min(this.inputEl.scrollHeight, 180) + 'px';
+          this.inputEl.focus();
+          this.setStatus(`Added "${activeFile.basename}" to input`, 'success');
+          setTimeout(() => this.setStatus(''), 2000);
+        } catch (error) {
+          log.error('Failed to read active note', error);
+          this.setStatus('Failed to read note', 'error');
+        }
+        return true;
+      }
+
+      case 'search':
+        if (args) {
+          this.searchInput.value = args;
+          this.performSearch(args);
+        }
+        if (!this.searchVisible) {
+          this.toggleSearch();
+        }
+        return true;
+
+      case 'help':
+      case '?':
+        this.showSlashCommandHelp();
+        return true;
+
+      default:
+        // Unknown command - show help hint
+        this.setStatus(`Unknown command: /${command}. Type /help for available commands.`, 'info');
+        setTimeout(() => this.setStatus(''), 3000);
+        return true;
+    }
+  }
+
+  private showSlashCommandHelp(): void {
+    const helpText = `
+**Available Commands:**
+- \`/clear\` - Clear all messages
+- \`/new\` - Start new conversation
+- \`/export\` - Export chat as markdown note
+- \`/note [question]\` - Insert current note as context
+- \`/search <query>\` - Search messages
+- \`/help\` - Show this help
+
+**Keyboard Shortcuts:**
+- \`Enter\` - Send message
+- \`Shift+Enter\` - New line
+- \`↑/↓\` - Navigate input history
+- \`Ctrl/Cmd+F\` - Search messages
+    `.trim();
+
+    // Create a temporary system message to show help
+    const helpMsg: ChatMessage = {
+      id: generateId(),
+      role: 'assistant',
+      content: helpText,
+      timestamp: Date.now(),
+    };
+
+    this.renderMessage(helpMsg);
+    this.scrollToBottom(true);
   }
 
   private navigateInputHistory(direction: number): void {
@@ -930,6 +1152,15 @@ export class ChatView extends ItemView {
     const content = this.inputEl.value.trim();
     if (!content || this.isProcessing) return;
 
+    // Check for slash commands
+    if (content.startsWith('/')) {
+      const handled = await this.handleSlashCommand(content);
+      if (handled) {
+        this.inputEl.value = '';
+        return;
+      }
+    }
+
     log.info('User sending message', { contentLength: content.length });
 
     // Add to input history (avoid duplicates of last entry)
@@ -960,6 +1191,7 @@ export class ChatView extends ItemView {
       onMessage: (msg) => {
         this.conversation.messages.push(msg);
         this.renderMessage(msg);
+        this.updateTokenCounter();
 
         if (msg.role === 'assistant') {
           currentAssistantMsgId = msg.id;
@@ -1066,8 +1298,23 @@ export class ChatView extends ItemView {
         content
       );
 
+      // Build message with optional active note context
+      let messageContent = content;
+      if (this.plugin.settings.activeNoteContext) {
+        const activeFile = this.plugin.app.workspace.getActiveFile();
+        if (activeFile && activeFile.extension === 'md') {
+          try {
+            const noteContent = await this.plugin.app.vault.read(activeFile);
+            messageContent = `<active_note path="${activeFile.path}">\n${noteContent}\n</active_note>\n\n${content}`;
+            log.debug('Included active note context', { path: activeFile.path, contentLength: noteContent.length });
+          } catch (err) {
+            log.warn('Failed to read active note for context', { path: activeFile.path, error: err });
+          }
+        }
+      }
+
       await backend.sendMessage(
-        content,
+        messageContent,
         this.conversation,
         callbacks,
         {

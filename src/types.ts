@@ -133,6 +133,8 @@ export interface ObsidiClaudeSettings {
   preferredBackend: 'auto' | 'sdk' | 'api';
   /** Skills configuration */
   skills: SkillSettings;
+  /** Automatically include active note as context */
+  activeNoteContext: boolean;
 }
 
 export const DEFAULT_EMBEDDING_SETTINGS: EmbeddingSettings = {
@@ -219,6 +221,7 @@ When the user asks about their notes, always search first to ground your respons
   anthropicApiKey: '',
   preferredBackend: 'auto',
   skills: DEFAULT_SKILL_SETTINGS,
+  activeNoteContext: true,
 };
 
 export function generateId(): string {
