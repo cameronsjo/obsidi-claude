@@ -107,7 +107,8 @@ describe('VectorStore', () => {
       store.setProviderInfo('test', 3);
       await store.insert(createEntry('doc1', [1, 0, 0]));
 
-      const results = await store.search([-1, 0, 0], 10);
+      // Need to pass minScore=-1 to get negative scores (default minScore=0 filters them)
+      const results = await store.search([-1, 0, 0], 10, -1);
       expect(results[0].score).toBeCloseTo(-1.0, 5);
     });
   });
@@ -134,7 +135,24 @@ describe('VectorStore', () => {
       await store.insert(createEntry('doc1', [1, 0, 0], ['important']));
       await store.insert(createEntry('doc2', [0.9, 0.1, 0], []));
 
+      // Use SearchFilter object instead of function
       const results = await store.searchWithFilter(
+        [1, 0, 0],
+        { includeTags: ['important'] },
+        10
+      );
+
+      expect(results).toHaveLength(1);
+      expect(results[0].document.id).toBe('doc1');
+    });
+
+    it('should filter with function (legacy)', async () => {
+      store.setProviderInfo('test', 3);
+      await store.insert(createEntry('doc1', [1, 0, 0], ['important']));
+      await store.insert(createEntry('doc2', [0.9, 0.1, 0], []));
+
+      // Use legacy function filter (runs on main thread)
+      const results = await store.searchWithFunctionFilter(
         [1, 0, 0],
         (doc) => doc.metadata.tags?.includes('important') ?? false,
         10
