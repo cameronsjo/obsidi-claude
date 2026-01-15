@@ -19,6 +19,14 @@ const MAX_TEXTAREA_HEIGHT_PX = 180;
 const CHARS_PER_TOKEN_ESTIMATE = 4;
 const MAX_INPUT_HISTORY_SIZE = 50;
 
+// Tool status to icon mapping
+const TOOL_STATUS_ICONS: Record<ToolCallInfo['status'], string> = {
+  completed: 'check-circle',
+  running: 'loader',
+  error: 'x-circle',
+  pending: 'circle',
+};
+
 export const CHAT_VIEW_TYPE = 'obsidi-claude-chat';
 
 export class ChatView extends ItemView {
@@ -753,15 +761,7 @@ export class ChatView extends ItemView {
     headerDiv.setAttribute('aria-label', 'Click to expand details');
 
     const iconEl = headerDiv.createSpan('tool-icon');
-    const statusIcon =
-      tool.status === 'completed'
-        ? 'check-circle'
-        : tool.status === 'running'
-          ? 'loader'
-          : tool.status === 'error'
-            ? 'x-circle'
-            : 'circle';
-    setIcon(iconEl, statusIcon);
+    setIcon(iconEl, TOOL_STATUS_ICONS[tool.status]);
 
     const nameEl = headerDiv.createSpan('tool-name');
     nameEl.setText(tool.name);

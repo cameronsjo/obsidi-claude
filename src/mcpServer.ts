@@ -261,44 +261,45 @@ export class MCPServer {
       return;
     }
 
-    const transport = new StreamableHTTPServerTransport({
+    await this.createSessionWithTransport({
       sessionIdGenerator: () => crypto.randomUUID(),
-      onsessioninitialized: (id: string) => {
-        const server = this.createMcpServer();
-        this.httpSessions.set(id, { transport, server, lastActivityTime: Date.now() });
-        log.info('HTTP session initialized', { sessionId: id, activeSessions: this.httpSessions.size });
-      },
-      onsessionclosed: (id: string) => {
-        this.httpSessions.delete(id);
-        log.info('HTTP session closed', { sessionId: id });
-      },
+      logMessage: 'HTTP session initialized',
+      req,
+      res,
     });
-
-    transport.onclose = () => {
-      if (transport.sessionId) {
-        this.httpSessions.delete(transport.sessionId);
-      }
-    };
-
-    const server = this.createMcpServer();
-    await server.connect(transport);
-    await transport.handleRequest(req, res, req.body);
   }
 
   /**
    * Recover a stale session by creating a new transport with the same session ID
    */
   private async recoverStaleSession(sessionId: string, req: Request, res: Response): Promise<void> {
-    // Remove from stale set since we're recovering it
     this.staleSessionIds.delete(sessionId);
 
-    // Create new transport that will use the existing session ID
+    await this.createSessionWithTransport({
+      sessionIdGenerator: () => sessionId,
+      logMessage: 'Stale session recovered',
+      req,
+      res,
+    });
+  }
+
+  /**
+   * Create a session with transport - shared logic for new and recovered sessions
+   */
+  private async createSessionWithTransport(options: {
+    sessionIdGenerator: () => string;
+    logMessage: string;
+    req: Request;
+    res: Response;
+  }): Promise<void> {
+    const { sessionIdGenerator, logMessage, req, res } = options;
+
     const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: () => sessionId, // Reuse the old session ID
+      sessionIdGenerator,
       onsessioninitialized: (id: string) => {
         const server = this.createMcpServer();
         this.httpSessions.set(id, { transport, server, lastActivityTime: Date.now() });
-        log.info('Stale session recovered', { sessionId: id, activeSessions: this.httpSessions.size });
+        log.info(logMessage, { sessionId: id, activeSessions: this.httpSessions.size });
       },
       onsessionclosed: (id: string) => {
         this.httpSessions.delete(id);
@@ -314,11 +315,6 @@ export class MCPServer {
 
     const server = this.createMcpServer();
     await server.connect(transport);
-
-    // Manually register the session since we're not going through initialize
-    this.httpSessions.set(sessionId, { transport, server, lastActivityTime: Date.now() });
-
-    // Handle the original request
     await transport.handleRequest(req, res, req.body);
   }
 

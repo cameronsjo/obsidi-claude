@@ -146,21 +146,6 @@ describe('VectorStore', () => {
       expect(results[0].document.id).toBe('doc1');
     });
 
-    it('should filter with function (legacy)', async () => {
-      store.setProviderInfo('test', 3);
-      await store.insert(createEntry('doc1', [1, 0, 0], ['important']));
-      await store.insert(createEntry('doc2', [0.9, 0.1, 0], []));
-
-      // Use legacy function filter (runs on main thread)
-      const results = await store.searchWithFunctionFilter(
-        [1, 0, 0],
-        (doc) => doc.metadata.tags?.includes('important') ?? false,
-        10
-      );
-
-      expect(results).toHaveLength(1);
-      expect(results[0].document.id).toBe('doc1');
-    });
   });
 
   describe('file operations', () => {

@@ -209,37 +209,6 @@ export class VectorStore {
     return worker.searchWithFilter(queryVector, filter, limit, minScore);
   }
 
-  /**
-   * Legacy search with function filter (falls back to main thread)
-   * @deprecated Use searchWithFilter with SearchFilter object instead
-   */
-  async searchWithFunctionFilter(
-    queryVector: number[],
-    filterFn: (doc: VectorDocument) => boolean,
-    limit = 10
-  ): Promise<SearchResult[]> {
-    // Function filters can't be serialized to worker, run on main thread
-    const results: SearchResult[] = [];
-
-    for (const entry of this.data.entries) {
-      if (!filterFn(entry)) continue;
-      const score = this.cosineSimilarity(queryVector, entry.vector);
-      results.push({
-        document: {
-          id: entry.id,
-          filepath: entry.filepath,
-          chunkIndex: entry.chunkIndex,
-          content: entry.content,
-          metadata: entry.metadata,
-        },
-        score,
-      });
-    }
-
-    results.sort((a, b) => b.score - a.score);
-    return results.slice(0, limit);
-  }
-
   private cosineSimilarity(a: number[], b: number[]): number {
     if (a.length !== b.length) {
       throw new Error('Vector dimensions must match');
