@@ -1,8 +1,8 @@
 import { tool, createSdkMcpServer } from '@anthropic-ai/claude-agent-sdk';
 import type { McpSdkServerConfigWithInstance } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
-import type { ObsidianTools, ToolDefinition } from './ObsidianTools';
-import { createLogger } from './Logger';
+import type { ObsidianTools, ToolDefinition } from './obsidianTools';
+import { createLogger } from './logger';
 
 const log = createLogger('ObsidianMCPTools');
 

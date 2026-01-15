@@ -1,6 +1,6 @@
 import type { App, TFile } from 'obsidian';
 import type { Skill, SkillSettings } from '../types';
-import { createLogger } from '../Logger';
+import { createLogger } from '../logger';
 
 const log = createLogger('SkillLoader');
 

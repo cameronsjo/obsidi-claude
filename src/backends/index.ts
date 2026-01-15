@@ -4,8 +4,8 @@ export type {
   AgentResult,
   BackendFeature,
   BackendOptions,
-} from './AgentBackend';
+} from './agentBackend';
 
-export { BackendFactory } from './BackendFactory';
-export { SDKAgentBackend } from './SDKAgentBackend';
-export { APIAgentBackend } from './APIAgentBackend';
+export { BackendFactory } from './backendFactory';
+export { SDKAgentBackend } from './sdkAgentBackend';
+export { APIAgentBackend } from './apiAgentBackend';

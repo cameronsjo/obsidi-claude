@@ -1,9 +1,9 @@
 import type { App, TFile, CachedMetadata } from 'obsidian';
 import type { EmbeddingSettings } from './types';
 import { generateId } from './types';
-import { EmbeddingService } from './EmbeddingService';
-import { VectorStore, type VectorEntry, type SearchResult } from './VectorStore';
-import { createLogger } from './Logger';
+import { EmbeddingService } from './embeddingService';
+import { VectorStore, type VectorEntry, type SearchResult } from './vectorStore';
+import { createLogger } from './logger';
 
 const log = createLogger('RAGService');
 
@@ -239,20 +239,22 @@ export class RAGService {
   }
 
   /**
+   * Check if a file path should be excluded based on excludeFolders setting
+   */
+  private isExcluded(filepath: string): boolean {
+    for (const folder of this.settings.excludeFolders || []) {
+      if (filepath.startsWith(folder + '/') || filepath.startsWith(folder)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
    * Get all markdown files to index (respecting exclusions)
    */
   private getFilesToIndex(): TFile[] {
-    const files = this.app.vault.getMarkdownFiles();
-    const excludeFolders = this.settings.excludeFolders || [];
-
-    return files.filter((file) => {
-      for (const folder of excludeFolders) {
-        if (file.path.startsWith(folder + '/') || file.path.startsWith(folder)) {
-          return false;
-        }
-      }
-      return true;
-    });
+    return this.app.vault.getMarkdownFiles().filter((file) => !this.isExcluded(file.path));
   }
 
   /**
@@ -392,12 +394,9 @@ export class RAGService {
   async indexSingleFile(file: TFile): Promise<void> {
     if (!this.isConfigured()) return;
 
-    // Check exclusions
-    for (const folder of this.settings.excludeFolders || []) {
-      if (file.path.startsWith(folder + '/') || file.path.startsWith(folder)) {
-        log.debug('Skipping excluded file', { path: file.path, excludedBy: folder });
-        return;
-      }
+    if (this.isExcluded(file.path)) {
+      log.debug('Skipping excluded file', { path: file.path });
+      return;
     }
 
     try {

@@ -1,4 +1,5 @@
 import type { Conversation, ChatMessage, ToolCallInfo, ObsidiClaudeSettings } from '../types';
+import { generateId } from '../types';
 
 /**
  * Features that may or may not be supported by a backend
@@ -102,4 +103,28 @@ export interface AgentBackend {
 
   /** Update settings */
   updateSettings(settings: ObsidiClaudeSettings): void;
+}
+
+/**
+ * Factory functions for consistent message creation across backends
+ */
+
+export function createUserMessage(content: string): ChatMessage {
+  return {
+    id: generateId(),
+    role: 'user',
+    content,
+    timestamp: Date.now(),
+  };
+}
+
+export function createStreamingAssistantMessage(): ChatMessage {
+  return {
+    id: generateId(),
+    role: 'assistant',
+    content: '',
+    timestamp: Date.now(),
+    isStreaming: true,
+    toolCalls: [],
+  };
 }

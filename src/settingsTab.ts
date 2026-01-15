@@ -1,7 +1,7 @@
 import { App, PluginSettingTab, Setting, Notice, Modal, TextComponent, TextAreaComponent } from 'obsidian';
 import type ObsidiClaudePlugin from '../main';
 import type { EmbeddingProviderType, ExternalMCPServer } from './types';
-import { createLogger } from './Logger';
+import { createLogger } from './logger';
 
 const log = createLogger('SettingsTab');
 

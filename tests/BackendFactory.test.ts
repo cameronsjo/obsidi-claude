@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
 import type { ObsidiClaudeSettings } from '../src/types';
 import { DEFAULT_SETTINGS } from '../src/types';
-import type { ObsidianTools } from '../src/ObsidianTools';
+import type { ObsidianTools } from '../src/obsidianTools';
 
 // Track mock instances for verification
 let mockSDKInstance: ReturnType<typeof createMockBackend>;
@@ -28,7 +28,7 @@ vi.mock('obsidian', () => ({
 }));
 
 // Mock the SDK backend - use function constructor pattern
-vi.mock('../src/backends/SDKAgentBackend', () => {
+vi.mock('../src/backends/sdkAgentBackend', () => {
   return {
     SDKAgentBackend: function SDKAgentBackend() {
       mockSDKInstance = createMockBackend('sdk');
@@ -38,7 +38,7 @@ vi.mock('../src/backends/SDKAgentBackend', () => {
 });
 
 // Mock the API backend - use function constructor pattern
-vi.mock('../src/backends/APIAgentBackend', () => {
+vi.mock('../src/backends/apiAgentBackend', () => {
   return {
     APIAgentBackend: function APIAgentBackend() {
       mockAPIInstance = createMockBackend('api');
@@ -48,7 +48,7 @@ vi.mock('../src/backends/APIAgentBackend', () => {
 });
 
 // Import after mocks are set up
-import { BackendFactory } from '../src/backends/BackendFactory';
+import { BackendFactory } from '../src/backends/backendFactory';
 import { Platform } from 'obsidian';
 
 describe('BackendFactory', () => {

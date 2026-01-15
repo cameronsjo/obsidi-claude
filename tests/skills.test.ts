@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { SkillLoader } from '../src/skills/SkillLoader';
-import { SkillRegistry } from '../src/skills/SkillRegistry';
+import { SkillLoader } from '../src/skills/skillLoader';
+import { SkillRegistry } from '../src/skills/skillRegistry';
 import type { Skill, SkillSettings } from '../src/types';
 import type { App, TFile, TFolder } from 'obsidian';
 

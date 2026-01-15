@@ -9,15 +9,17 @@ import type {
 } from '@anthropic-ai/sdk/resources/messages';
 import type { ObsidiClaudeSettings, Conversation, ChatMessage, ToolCallInfo } from '../types';
 import { generateId } from '../types';
-import type {
-  AgentBackend,
-  AgentCallbacks,
-  AgentResult,
-  BackendFeature,
-  BackendOptions,
-} from './AgentBackend';
-import { createLogger } from '../Logger';
-import type { ObsidianTools } from '../ObsidianTools';
+import {
+  type AgentBackend,
+  type AgentCallbacks,
+  type AgentResult,
+  type BackendFeature,
+  type BackendOptions,
+  createUserMessage,
+  createStreamingAssistantMessage,
+} from './agentBackend';
+import { createLogger } from '../logger';
+import type { ObsidianTools } from '../obsidianTools';
 
 const log = createLogger('APIAgentBackend');
 
@@ -130,13 +132,8 @@ export class APIAgentBackend implements AgentBackend {
     log.debug('Message preview', { preview: messagePreview });
 
     // Create user message
-    const userMsgId = generateId();
-    callbacks.onMessage({
-      id: userMsgId,
-      role: 'user',
-      content: userMessage,
-      timestamp: Date.now(),
-    });
+    const userMsg = createUserMessage(userMessage);
+    callbacks.onMessage(userMsg);
 
     // Emit a fake session init for compatibility
     callbacks.onSessionInit('api-backend', this.getToolNames());
@@ -146,20 +143,13 @@ export class APIAgentBackend implements AgentBackend {
     messages.push({ role: 'user', content: userMessage });
 
     // Create streaming assistant message
-    const assistantMsgId = generateId();
-    callbacks.onMessage({
-      id: assistantMsgId,
-      role: 'assistant',
-      content: '',
-      timestamp: Date.now(),
-      isStreaming: true,
-      toolCalls: [],
-    });
+    const assistantMsg = createStreamingAssistantMessage();
+    callbacks.onMessage(assistantMsg);
 
     try {
       await this.processConversation(
         messages,
-        assistantMsgId,
+        assistantMsg.id,
         callbacks,
         options
       );

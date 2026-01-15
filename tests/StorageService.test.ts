@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { StorageService } from '../src/StorageService';
+import { StorageService } from '../src/storageService';
 import { DEFAULT_SETTINGS, type Conversation, type ChatMessage } from '../src/types';
 import * as fs from 'fs';
 import * as path from 'path';

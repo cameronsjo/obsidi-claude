@@ -9,8 +9,8 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import express, { type Express, type Request, type Response } from 'express';
 import type { Server as HttpServer } from 'http';
-import type { ObsidianTools } from './ObsidianTools';
-import { createLogger } from './Logger';
+import type { ObsidianTools } from './obsidianTools';
+import { createLogger } from './logger';
 
 const log = createLogger('MCPServer');
 
@@ -21,11 +21,22 @@ export interface MCPServerConfig {
   version: string;
   transport: MCPTransportType;
   httpPort: number;
+  /** Session idle timeout in milliseconds (default: 30 minutes) */
+  sessionTimeoutMs?: number;
+  /** How often to check for expired sessions in milliseconds (default: 5 minutes) */
+  cleanupIntervalMs?: number;
+  /** Maximum concurrent sessions (default: 100) */
+  maxSessions?: number;
 }
+
+const DEFAULT_SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+const DEFAULT_CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+const DEFAULT_MAX_SESSIONS = 100;
 
 interface SessionTransport {
   transport: StreamableHTTPServerTransport;
   server: Server;
+  lastActivityTime: number;
 }
 
 /**
@@ -40,6 +51,7 @@ export class MCPServer {
   private httpApp: Express | null = null;
   private httpServer: HttpServer | null = null;
   private httpSessions: Map<string, SessionTransport> = new Map();
+  private cleanupInterval: ReturnType<typeof setInterval> | null = null;
   private tools: ObsidianTools;
   private config: MCPServerConfig;
   private isRunning = false;
@@ -155,6 +167,9 @@ export class MCPServer {
         reject(error);
       }
     });
+
+    // Start session cleanup interval
+    this.startCleanupInterval();
   }
 
   /**
@@ -167,18 +182,35 @@ export class MCPServer {
       // Check for existing session
       if (sessionId && this.httpSessions.has(sessionId)) {
         const session = this.httpSessions.get(sessionId)!;
+        // Refresh activity time on each request
+        session.lastActivityTime = Date.now();
         await session.transport.handleRequest(req, res, req.body);
         return;
       }
 
       // New session - only allow if it's an initialize request
       if (!sessionId && req.method === 'POST' && isInitializeRequest(req.body)) {
+        // Check max sessions limit
+        const maxSessions = this.config.maxSessions ?? DEFAULT_MAX_SESSIONS;
+        if (this.httpSessions.size >= maxSessions) {
+          log.warn('Max sessions limit reached', { current: this.httpSessions.size, max: maxSessions });
+          res.status(503).json({
+            jsonrpc: '2.0',
+            error: {
+              code: -32000,
+              message: 'Server is at maximum capacity. Please try again later.',
+            },
+            id: null,
+          });
+          return;
+        }
+
         const transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: () => crypto.randomUUID(),
           onsessioninitialized: (id: string) => {
             const server = this.createMcpServer();
-            this.httpSessions.set(id, { transport, server });
-            log.info('HTTP session initialized', { sessionId: id });
+            this.httpSessions.set(id, { transport, server, lastActivityTime: Date.now() });
+            log.info('HTTP session initialized', { sessionId: id, activeSessions: this.httpSessions.size });
           },
           onsessionclosed: (id: string) => {
             this.httpSessions.delete(id);
@@ -233,6 +265,59 @@ export class MCPServer {
   }
 
   /**
+   * Start the session cleanup interval
+   */
+  private startCleanupInterval(): void {
+    const intervalMs = this.config.cleanupIntervalMs ?? DEFAULT_CLEANUP_INTERVAL_MS;
+    this.cleanupInterval = setInterval(() => this.cleanupExpiredSessions(), intervalMs);
+    log.debug('Session cleanup interval started', { intervalMs });
+  }
+
+  /**
+   * Stop the session cleanup interval
+   */
+  private stopCleanupInterval(): void {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
+      log.debug('Session cleanup interval stopped');
+    }
+  }
+
+  /**
+   * Remove sessions that have been idle longer than the timeout
+   */
+  private cleanupExpiredSessions(): void {
+    const timeoutMs = this.config.sessionTimeoutMs ?? DEFAULT_SESSION_TIMEOUT_MS;
+    const now = Date.now();
+    const expiredSessions: string[] = [];
+
+    for (const [sessionId, session] of this.httpSessions) {
+      const idleTime = now - session.lastActivityTime;
+      if (idleTime > timeoutMs) {
+        expiredSessions.push(sessionId);
+      }
+    }
+
+    for (const sessionId of expiredSessions) {
+      const session = this.httpSessions.get(sessionId);
+      if (session) {
+        try {
+          session.server.close();
+        } catch {
+          // Ignore close errors
+        }
+        this.httpSessions.delete(sessionId);
+        log.info('Expired session cleaned up', { sessionId, idleTimeMs: now - session.lastActivityTime });
+      }
+    }
+
+    if (expiredSessions.length > 0) {
+      log.debug('Session cleanup completed', { removed: expiredSessions.length, remaining: this.httpSessions.size });
+    }
+  }
+
+  /**
    * Stop the MCP server
    */
   async stop(): Promise<void> {
@@ -243,6 +328,9 @@ export class MCPServer {
     log.info('Stopping MCP server');
 
     try {
+      // Stop cleanup interval
+      this.stopCleanupInterval();
+
       // Stop stdio server
       if (this.stdioServer) {
         await this.stdioServer.close();

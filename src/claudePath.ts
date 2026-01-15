@@ -2,7 +2,7 @@ import { existsSync, readdirSync } from 'fs';
 import { execSync } from 'child_process';
 import { join, dirname } from 'path';
 import { homedir, platform } from 'os';
-import { createLogger } from './Logger';
+import { createLogger } from './logger';
 
 const log = createLogger('ClaudePath');
 

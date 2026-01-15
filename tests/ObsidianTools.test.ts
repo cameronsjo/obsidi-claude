@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { ObsidianTools, type ToolDefinition } from '../src/ObsidianTools';
+import { ObsidianTools, type ToolDefinition } from '../src/obsidianTools';
 import { TAbstractFile, TFile, TFolder } from 'obsidian';
 
 // Create mock files as instances of TFile
@@ -162,7 +162,7 @@ describe('ObsidianTools', () => {
   describe('getToolDefinitions', () => {
     it('should return 16 tool definitions', () => {
       const definitions = tools.getToolDefinitions();
-      expect(definitions).toHaveLength(16);
+      expect(definitions).toHaveLength(18);
     });
 
     it('should return tools with required properties', () => {
@@ -186,7 +186,7 @@ describe('ObsidianTools', () => {
   describe('getToolSchemas', () => {
     it('should return schemas in MCP format', () => {
       const schemas = tools.getToolSchemas();
-      expect(schemas).toHaveLength(16);
+      expect(schemas).toHaveLength(18);
       for (const schema of schemas) {
         expect(schema).toHaveProperty('name');
         expect(schema).toHaveProperty('description');
@@ -710,14 +710,14 @@ describe('ObsidianTools', () => {
     });
   });
 
-  describe('rename_note tool', () => {
+  describe('rename tool', () => {
     it('should rename file', async () => {
       mockApp.vault.getAbstractFileByPath.mockImplementation((path: string) => {
         if (path === 'old-name.md') return mockFiles[0];
         return null;
       });
 
-      const result = await tools.executeTool('rename_note', {
+      const result = await tools.executeTool('rename', {
         oldPath: 'old-name.md',
         newPath: 'new-name.md',
       });
@@ -730,13 +730,13 @@ describe('ObsidianTools', () => {
     it('should return error for missing source file', async () => {
       mockApp.vault.getAbstractFileByPath.mockReturnValue(null);
 
-      const result = await tools.executeTool('rename_note', {
+      const result = await tools.executeTool('rename', {
         oldPath: 'missing.md',
         newPath: 'new.md',
       });
       const parsed = JSON.parse(result);
 
-      expect(parsed.error).toContain('File not found');
+      expect(parsed.error).toContain('Path not found');
     });
 
     it('should return error if destination exists', async () => {
@@ -745,7 +745,7 @@ describe('ObsidianTools', () => {
         return mockFiles[0];
       });
 
-      const result = await tools.executeTool('rename_note', {
+      const result = await tools.executeTool('rename', {
         oldPath: 'old.md',
         newPath: 'existing.md',
       });
@@ -805,6 +805,6 @@ describe('ObsidianTools without RAG', () => {
     const tools = new ObsidianTools(mockApp);
     const definitions = tools.getToolDefinitions();
 
-    expect(definitions).toHaveLength(16);
+    expect(definitions).toHaveLength(18);
   });
 });

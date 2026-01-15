@@ -5,8 +5,8 @@
  * to keep the UI responsive during semantic search.
  */
 
-import { createLogger } from './Logger';
-import type { VectorDocument, VectorEntry, SearchResult } from './VectorStore';
+import { createLogger } from './logger';
+import type { VectorDocument, VectorEntry, SearchResult } from './vectorStore';
 
 const log = createLogger('VectorSearchWorker');
 

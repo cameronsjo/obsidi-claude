@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { VectorStore, type VectorEntry } from '../src/VectorStore';
+import { VectorStore, type VectorEntry } from '../src/vectorStore';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';

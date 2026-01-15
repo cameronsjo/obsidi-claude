@@ -1,5 +1,5 @@
 import type { EmbeddingSettings } from './types';
-import { TransformersIframeManager } from './TransformersIframe';
+import { TransformersIframeManager } from './transformersIframe';
 
 export interface EmbeddingProvider {
   embed(texts: string[]): Promise<number[][]>;

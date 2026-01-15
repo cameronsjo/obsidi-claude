@@ -1,9 +1,15 @@
 import type { App } from 'obsidian';
 import type { ObsidiClaudeSettings, Conversation } from './types';
-import { DEFAULT_SETTINGS, generateId } from './types';
+import {
+  DEFAULT_SETTINGS,
+  DEFAULT_EMBEDDING_SETTINGS,
+  DEFAULT_MCP_SETTINGS,
+  DEFAULT_SKILL_SETTINGS,
+  generateId,
+} from './types';
 import * as fs from 'fs';
 import * as path from 'path';
-import { createLogger } from './Logger';
+import { createLogger } from './logger';
 
 const log = createLogger('StorageService');
 
@@ -89,10 +95,9 @@ export class StorageService {
     return {
       ...DEFAULT_SETTINGS,
       ...saved,
-      embedding: {
-        ...DEFAULT_SETTINGS.embedding,
-        ...(saved.embedding || {}),
-      },
+      embedding: { ...DEFAULT_EMBEDDING_SETTINGS, ...(saved.embedding || {}) },
+      mcp: { ...DEFAULT_MCP_SETTINGS, ...(saved.mcp || {}) },
+      skills: { ...DEFAULT_SKILL_SETTINGS, ...(saved.skills || {}) },
     };
   }
 

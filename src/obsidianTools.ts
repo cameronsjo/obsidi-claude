@@ -1,6 +1,6 @@
-import type { App, TFile, TFolder, CachedMetadata } from 'obsidian';
+import type { App, TFile, TFolder } from 'obsidian';
 import { TAbstractFile } from 'obsidian';
-import type { RAGService } from './RAGService';
+import type { RAGService } from './ragService';
 
 /**
  * Tool definitions that can be exposed to Claude via MCP or custom handlers
@@ -31,6 +31,36 @@ export class ObsidianTools {
   }
 
   /**
+   * Ensures parent folders exist for a given file path.
+   * Creates any missing folders in the path hierarchy.
+   */
+  private async ensureParentFolder(filepath: string): Promise<void> {
+    const parentPath = filepath.split('/').slice(0, -1).join('/');
+    if (parentPath && !this.app.vault.getAbstractFileByPath(parentPath)) {
+      await this.app.vault.createFolder(parentPath);
+    }
+  }
+
+  /**
+   * Wraps a handler function with standard error handling and JSON serialization.
+   * Reduces boilerplate across all tool handlers.
+   */
+  private wrapHandler<T>(
+    fn: (params: Record<string, unknown>) => Promise<T>
+  ): (params: Record<string, unknown>) => Promise<string> {
+    return async (params) => {
+      try {
+        const result = await fn(params);
+        return JSON.stringify(result);
+      } catch (error) {
+        return JSON.stringify({
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    };
+  }
+
+  /**
    * Get all tool definitions
    */
   getToolDefinitions(): ToolDefinition[] {
@@ -49,8 +79,10 @@ export class ObsidianTools {
       this.getSearchContentTool(),
       this.getOpenNoteTool(),
       this.getActiveNoteTool(),
+      this.getReadNoteTool(),
+      this.getDeleteTool(),
       this.getGraphNeighborsTool(),
-      this.getRenameNoteTool(),
+      this.getRenameTool(),
     ];
 
     return tools;
@@ -88,35 +120,27 @@ export class ObsidianTools {
         },
         required: ['query'],
       },
-      handler: async (params) => {
+      handler: this.wrapHandler(async (params) => {
         if (!this.ragService || !this.ragService.isConfigured()) {
-          return JSON.stringify({
-            error: 'Semantic search is not configured. Enable embeddings in settings.',
-          });
+          return { error: 'Semantic search is not configured. Enable embeddings in settings.' };
         }
 
-        try {
-          const results = await this.ragService.search(params.query as string, {
-            limit: (params.limit as number) || 5,
-            filterTags: params.tags as string[] | undefined,
-            filterFolders: params.folders as string[] | undefined,
-          });
+        const results = await this.ragService.search(params.query as string, {
+          limit: (params.limit as number) || 5,
+          filterTags: params.tags as string[] | undefined,
+          filterFolders: params.folders as string[] | undefined,
+        });
 
-          return JSON.stringify({
-            results: results.map((r) => ({
-              filepath: r.document.filepath,
-              title: r.document.metadata.title,
-              score: Math.round(r.score * 100) / 100,
-              excerpt: r.document.content.slice(0, 500),
-              tags: r.document.metadata.tags,
-            })),
-          });
-        } catch (error) {
-          return JSON.stringify({
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
-      },
+        return {
+          results: results.map((r) => ({
+            filepath: r.document.filepath,
+            title: r.document.metadata.title,
+            score: Math.round(r.score * 100) / 100,
+            excerpt: r.document.content.slice(0, 500),
+            tags: r.document.metadata.tags,
+          })),
+        };
+      }),
     };
   }
 
@@ -145,7 +169,7 @@ export class ObsidianTools {
           },
         },
       },
-      handler: async (params) => {
+      handler: this.wrapHandler(async (params) => {
         const startPath = (params.path as string) || '';
         const maxDepth = (params.depth as number) || 3;
         const includeFiles = (params.includeFiles as boolean) || false;
@@ -157,10 +181,7 @@ export class ObsidianTools {
           fileCount?: number;
         }
 
-        const buildTree = (
-          folder: TFolder,
-          depth: number
-        ): TreeNode | null => {
+        const buildTree = (folder: TFolder, depth: number): TreeNode | null => {
           if (depth > maxDepth) return null;
 
           const children: TreeNode[] = [];
@@ -169,17 +190,12 @@ export class ObsidianTools {
           for (const child of folder.children) {
             if (child instanceof TAbstractFile) {
               if ('children' in child) {
-                // It's a folder
                 const subTree = buildTree(child as TFolder, depth + 1);
                 if (subTree) children.push(subTree);
               } else {
-                // It's a file
                 fileCount++;
                 if (includeFiles && child.name.endsWith('.md')) {
-                  children.push({
-                    name: child.name,
-                    type: 'file',
-                  });
+                  children.push({ name: child.name, type: 'file' });
                 }
               }
             }
@@ -197,16 +213,15 @@ export class ObsidianTools {
         if (startPath) {
           const abstractFile = this.app.vault.getAbstractFileByPath(startPath);
           if (!abstractFile || !('children' in abstractFile)) {
-            return JSON.stringify({ error: `Folder not found: ${startPath}` });
+            return { error: `Folder not found: ${startPath}` };
           }
           startFolder = abstractFile as TFolder;
         } else {
           startFolder = this.app.vault.getRoot();
         }
 
-        const tree = buildTree(startFolder, 0);
-        return JSON.stringify(tree, null, 2);
-      },
+        return buildTree(startFolder, 0);
+      }),
     };
   }
 
@@ -228,37 +243,31 @@ export class ObsidianTools {
         },
         required: ['filepath'],
       },
-      handler: async (params) => {
+      handler: this.wrapHandler(async (params) => {
         const filepath = params.filepath as string;
         const file = this.app.vault.getAbstractFileByPath(filepath);
 
         if (!file || !(file instanceof TAbstractFile) || !('extension' in file)) {
-          return JSON.stringify({ error: `File not found: ${filepath}` });
+          return { error: `File not found: ${filepath}` };
         }
 
         const tfile = file as TFile;
         const cache = this.app.metadataCache.getFileCache(tfile);
 
-        const metadata = {
+        return {
           path: tfile.path,
           name: tfile.basename,
           extension: tfile.extension,
-          created: tfile.stat.ctime,
-          modified: tfile.stat.mtime,
+          created: new Date(tfile.stat.ctime).toISOString(),
+          modified: new Date(tfile.stat.mtime).toISOString(),
           size: tfile.stat.size,
           frontmatter: cache?.frontmatter || {},
           tags: cache?.tags?.map((t) => t.tag) || [],
-          headings:
-            cache?.headings?.map((h) => ({
-              level: h.level,
-              text: h.heading,
-            })) || [],
+          headings: cache?.headings?.map((h) => ({ level: h.level, text: h.heading })) || [],
           links: cache?.links?.map((l) => l.link) || [],
           embeds: cache?.embeds?.map((e) => e.link) || [],
         };
-
-        return JSON.stringify(metadata, null, 2);
-      },
+      }),
     };
   }
 
@@ -280,34 +289,23 @@ export class ObsidianTools {
         },
         required: ['filepath'],
       },
-      handler: async (params) => {
+      handler: this.wrapHandler(async (params) => {
         const filepath = params.filepath as string;
         const file = this.app.vault.getAbstractFileByPath(filepath);
 
         if (!file) {
-          return JSON.stringify({ error: `File not found: ${filepath}` });
+          return { error: `File not found: ${filepath}` };
         }
 
-        const backlinks: Array<{
-          filepath: string;
-          title: string;
-          linkText: string;
-        }> = [];
-
-        // Get resolved links from metadata cache
+        const backlinks: Array<{ filepath: string; title: string; linkText: string }> = [];
         const resolvedLinks = this.app.metadataCache.resolvedLinks;
 
         for (const [sourcePath, links] of Object.entries(resolvedLinks)) {
           if (links[filepath]) {
             const sourceFile = this.app.vault.getAbstractFileByPath(sourcePath);
             if (sourceFile && 'basename' in sourceFile) {
-              const sourceCache = this.app.metadataCache.getFileCache(
-                sourceFile as TFile
-              );
-              const title =
-                (sourceCache?.frontmatter?.title as string) ||
-                (sourceFile as TFile).basename;
-
+              const sourceCache = this.app.metadataCache.getFileCache(sourceFile as TFile);
+              const title = (sourceCache?.frontmatter?.title as string) || (sourceFile as TFile).basename;
               backlinks.push({
                 filepath: sourcePath,
                 title,
@@ -317,12 +315,8 @@ export class ObsidianTools {
           }
         }
 
-        return JSON.stringify({
-          file: filepath,
-          backlinkCount: backlinks.length,
-          backlinks,
-        });
-      },
+        return { file: filepath, backlinkCount: backlinks.length, backlinks };
+      }),
     };
   }
 
@@ -348,58 +342,37 @@ export class ObsidianTools {
         },
         required: ['filepath'],
       },
-      handler: async (params) => {
+      handler: this.wrapHandler(async (params) => {
         const filepath = params.filepath as string;
         const includeUnresolved = (params.includeUnresolved as boolean) || false;
 
         const file = this.app.vault.getAbstractFileByPath(filepath);
         if (!file || !('extension' in file)) {
-          return JSON.stringify({ error: `File not found: ${filepath}` });
+          return { error: `File not found: ${filepath}` };
         }
 
         const cache = this.app.metadataCache.getFileCache(file as TFile);
         const resolvedLinks = this.app.metadataCache.resolvedLinks[filepath] || {};
-        const unresolvedLinks =
-          this.app.metadataCache.unresolvedLinks[filepath] || {};
+        const unresolvedLinks = this.app.metadataCache.unresolvedLinks[filepath] || {};
 
-        const links: Array<{
-          link: string;
-          resolved: boolean;
-          targetPath?: string;
-        }> = [];
+        const links: Array<{ link: string; resolved: boolean; targetPath?: string }> = [];
 
-        // Add resolved links
         for (const targetPath of Object.keys(resolvedLinks)) {
           const linkInfo = cache?.links?.find((l) => {
-            const resolved = this.app.metadataCache.getFirstLinkpathDest(
-              l.link,
-              filepath
-            );
+            const resolved = this.app.metadataCache.getFirstLinkpathDest(l.link, filepath);
             return resolved?.path === targetPath;
           });
-          links.push({
-            link: linkInfo?.link || targetPath,
-            resolved: true,
-            targetPath,
-          });
+          links.push({ link: linkInfo?.link || targetPath, resolved: true, targetPath });
         }
 
-        // Add unresolved links
         if (includeUnresolved) {
           for (const link of Object.keys(unresolvedLinks)) {
-            links.push({
-              link,
-              resolved: false,
-            });
+            links.push({ link, resolved: false });
           }
         }
 
-        return JSON.stringify({
-          file: filepath,
-          linkCount: links.length,
-          links,
-        });
-      },
+        return { file: filepath, linkCount: links.length, links };
+      }),
     };
   }
 
@@ -420,30 +393,20 @@ export class ObsidianTools {
           },
         },
       },
-      handler: async (params) => {
+      handler: this.wrapHandler(async (params) => {
         const prefix = params.prefix as string | undefined;
         const allTags = (this.app.metadataCache as unknown as { getTags(): Record<string, number> }).getTags();
 
-        let tags = Object.entries(allTags).map(([tag, count]) => ({
-          tag,
-          count,
-        }));
+        let tags = Object.entries(allTags).map(([tag, count]) => ({ tag, count }));
 
         if (prefix) {
           const normalizedPrefix = prefix.startsWith('#') ? prefix : '#' + prefix;
-          tags = tags.filter((t) =>
-            t.tag.toLowerCase().startsWith(normalizedPrefix.toLowerCase())
-          );
+          tags = tags.filter((t) => t.tag.toLowerCase().startsWith(normalizedPrefix.toLowerCase()));
         }
 
-        // Sort by count descending
         tags.sort((a, b) => b.count - a.count);
-
-        return JSON.stringify({
-          totalTags: tags.length,
-          tags: tags.slice(0, 100), // Limit to top 100
-        });
-      },
+        return { totalTags: tags.length, tags: tags.slice(0, 100) };
+      }),
     };
   }
 
@@ -467,33 +430,42 @@ export class ObsidianTools {
             enum: ['modified', 'created'],
             description: 'Sort by modification time or creation time (default: modified)',
           },
+          folder: {
+            type: 'string',
+            description: 'Optional: limit to files in this folder',
+          },
         },
       },
-      handler: async (params) => {
+      handler: this.wrapHandler(async (params) => {
         const limit = (params.limit as number) || 10;
         const sortBy = (params.sortBy as string) || 'modified';
+        const folder = params.folder as string | undefined;
 
-        const files = this.app.vault.getMarkdownFiles();
+        let files = this.app.vault.getMarkdownFiles();
+        if (folder) {
+          files = files.filter((f) => f.path.startsWith(folder + '/'));
+        }
+
         const sorted = files.sort((a, b) => {
           const timeA = sortBy === 'created' ? a.stat.ctime : a.stat.mtime;
           const timeB = sortBy === 'created' ? b.stat.ctime : b.stat.mtime;
           return timeB - timeA;
         });
 
-        const result = sorted.slice(0, limit).map((file) => {
-          const cache = this.app.metadataCache.getFileCache(file);
-          return {
-            path: file.path,
-            name: file.basename,
-            modified: new Date(file.stat.mtime).toISOString(),
-            created: new Date(file.stat.ctime).toISOString(),
-            title: (cache?.frontmatter?.title as string) || file.basename,
-            tags: cache?.tags?.map((t) => t.tag) || [],
-          };
-        });
-
-        return JSON.stringify({ files: result });
-      },
+        return {
+          files: sorted.slice(0, limit).map((file) => {
+            const cache = this.app.metadataCache.getFileCache(file);
+            return {
+              path: file.path,
+              name: file.basename,
+              modified: new Date(file.stat.mtime).toISOString(),
+              created: new Date(file.stat.ctime).toISOString(),
+              title: (cache?.frontmatter?.title as string) || file.basename,
+              tags: cache?.tags?.map((t) => t.tag) || [],
+            };
+          }),
+        };
+      }),
     };
   }
 
@@ -523,33 +495,22 @@ export class ObsidianTools {
         },
         required: ['property'],
       },
-      handler: async (params) => {
+      handler: this.wrapHandler(async (params) => {
         const property = params.property as string;
         const value = (params.value as string | undefined)?.toLowerCase();
         const limit = (params.limit as number) || 20;
 
         const files = this.app.vault.getMarkdownFiles();
-        const matches: Array<{
-          path: string;
-          title: string;
-          propertyValue: unknown;
-        }> = [];
+        const matches: Array<{ path: string; title: string; propertyValue: unknown }> = [];
 
         for (const file of files) {
           if (matches.length >= limit) break;
-
           const cache = this.app.metadataCache.getFileCache(file);
           const frontmatter = cache?.frontmatter;
-
           if (!frontmatter || !(property in frontmatter)) continue;
 
           const propValue = frontmatter[property];
-
-          // Check if value matches (if value filter provided)
-          if (value) {
-            const propStr = String(propValue).toLowerCase();
-            if (!propStr.includes(value)) continue;
-          }
+          if (value && !String(propValue).toLowerCase().includes(value)) continue;
 
           matches.push({
             path: file.path,
@@ -558,13 +519,8 @@ export class ObsidianTools {
           });
         }
 
-        return JSON.stringify({
-          property,
-          searchValue: value,
-          matchCount: matches.length,
-          matches,
-        });
-      },
+        return { property, searchValue: value, matchCount: matches.length, matches };
+      }),
     };
   }
 
@@ -594,36 +550,29 @@ export class ObsidianTools {
         },
         required: ['path', 'content'],
       },
-      handler: async (params) => {
+      handler: this.wrapHandler(async (params) => {
         const filepath = params.path as string;
         const content = params.content as string;
         const overwrite = (params.overwrite as boolean) || false;
 
-        // Check if file exists
         const existing = this.app.vault.getAbstractFileByPath(filepath);
         if (existing && !overwrite) {
-          return JSON.stringify({
-            error: `File already exists: ${filepath}. Use overwrite: true to replace.`,
-          });
+          return { error: `File already exists: ${filepath}. Use overwrite: true to replace.` };
         }
 
-        try {
-          if (existing && overwrite) {
-            await this.app.vault.modify(existing as TFile, content);
-          } else {
-            await this.app.vault.create(filepath, content);
-          }
-          return JSON.stringify({
-            success: true,
-            path: filepath,
-            message: overwrite && existing ? 'File overwritten' : 'File created',
-          });
-        } catch (error) {
-          return JSON.stringify({
-            error: error instanceof Error ? error.message : String(error),
-          });
+        if (existing && overwrite) {
+          await this.app.vault.modify(existing as TFile, content);
+        } else {
+          await this.ensureParentFolder(filepath);
+          await this.app.vault.create(filepath, content);
         }
-      },
+
+        return {
+          success: true,
+          path: filepath,
+          message: overwrite && existing ? 'File overwritten' : 'File created',
+        };
+      }),
     };
   }
 
@@ -657,74 +606,60 @@ export class ObsidianTools {
         },
         required: ['path', 'content'],
       },
-      handler: async (params) => {
+      handler: this.wrapHandler(async (params) => {
         const filepath = params.path as string;
         const content = params.content as string;
         const heading = params.heading as string | undefined;
         const createIfMissing = (params.createIfMissing as boolean) || false;
 
-        let file = this.app.vault.getAbstractFileByPath(filepath);
+        const file = this.app.vault.getAbstractFileByPath(filepath);
 
         if (!file) {
           if (createIfMissing) {
+            await this.ensureParentFolder(filepath);
             const initialContent = heading ? `# ${heading}\n\n${content}` : content;
             await this.app.vault.create(filepath, initialContent);
-            return JSON.stringify({ success: true, path: filepath, created: true });
+            return { success: true, path: filepath, created: true };
           }
-          return JSON.stringify({ error: `File not found: ${filepath}` });
+          return { error: `File not found: ${filepath}` };
         }
 
         if (!(file instanceof TAbstractFile) || !('extension' in file)) {
-          return JSON.stringify({ error: `Not a file: ${filepath}` });
+          return { error: `Not a file: ${filepath}` };
         }
 
-        try {
-          const tfile = file as TFile;
-          let existingContent = await this.app.vault.read(tfile);
+        const tfile = file as TFile;
+        let existingContent = await this.app.vault.read(tfile);
 
-          if (heading) {
-            // Find the heading and append after its section
-            const headingPattern = new RegExp(
-              `^(#{1,6})\\s+${heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`,
-              'm'
-            );
-            const match = existingContent.match(headingPattern);
+        if (heading) {
+          const headingPattern = new RegExp(
+            `^(#{1,6})\\s+${heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`,
+            'm'
+          );
+          const match = existingContent.match(headingPattern);
 
-            if (match) {
-              const headingLevel = match[1].length;
-              const insertPos = match.index! + match[0].length;
+          if (match) {
+            const headingLevel = match[1].length;
+            const insertPos = match.index! + match[0].length;
+            const afterHeading = existingContent.slice(insertPos);
+            const nextHeadingMatch = afterHeading.match(new RegExp(`^#{1,${headingLevel}}\\s+`, 'm'));
 
-              // Find next heading of same or higher level
-              const afterHeading = existingContent.slice(insertPos);
-              const nextHeadingMatch = afterHeading.match(
-                new RegExp(`^#{1,${headingLevel}}\\s+`, 'm')
-              );
-
-              if (nextHeadingMatch) {
-                const insertAt = insertPos + nextHeadingMatch.index!;
-                existingContent =
-                  existingContent.slice(0, insertAt) +
-                  '\n' + content + '\n\n' +
-                  existingContent.slice(insertAt);
-              } else {
-                existingContent += '\n\n' + content;
-              }
+            if (nextHeadingMatch) {
+              const insertAt = insertPos + nextHeadingMatch.index!;
+              existingContent = existingContent.slice(0, insertAt) + '\n' + content + '\n\n' + existingContent.slice(insertAt);
             } else {
-              // Heading doesn't exist, add it at the end
-              existingContent += `\n\n## ${heading}\n\n${content}`;
+              existingContent += '\n\n' + content;
             }
           } else {
-            existingContent += '\n\n' + content;
+            existingContent += `\n\n## ${heading}\n\n${content}`;
           }
-
-          await this.app.vault.modify(tfile, existingContent);
-          return JSON.stringify({ success: true, path: filepath });
-        } catch (error) {
-          return JSON.stringify({
-            error: error instanceof Error ? error.message : String(error),
-          });
+        } else {
+          existingContent += '\n\n' + content;
         }
-      },
+
+        await this.app.vault.modify(tfile, existingContent);
+        return { success: true, path: filepath };
+      }),
     };
   }
 
@@ -749,19 +684,16 @@ export class ObsidianTools {
           },
         },
       },
-      handler: async (params) => {
+      handler: this.wrapHandler(async (params) => {
         const dateStr = (params.date as string) || new Date().toISOString().split('T')[0];
         const shouldCreate = params.create !== false;
 
-        // Parse date
         const date = new Date(dateStr);
         if (isNaN(date.getTime())) {
-          return JSON.stringify({ error: `Invalid date: ${dateStr}` });
+          return { error: `Invalid date: ${dateStr}` };
         }
 
-        // Format: YYYY-MM-DD by default, could read from daily notes plugin config
         const filename = `${dateStr}.md`;
-        // Check common daily note locations
         const possiblePaths = [
           filename,
           `Daily/${filename}`,
@@ -771,37 +703,23 @@ export class ObsidianTools {
           `journal/${filename}`,
         ];
 
-        let foundPath: string | null = null;
-        let foundFile: TFile | null = null;
-
         for (const path of possiblePaths) {
           const file = this.app.vault.getAbstractFileByPath(path);
           if (file && 'extension' in file) {
-            foundPath = path;
-            foundFile = file as TFile;
-            break;
+            const content = await this.app.vault.cachedRead(file as TFile);
+            return {
+              path,
+              exists: true,
+              content: content.slice(0, 2000),
+              truncated: content.length > 2000,
+            };
           }
         }
 
-        if (foundFile) {
-          const content = await this.app.vault.cachedRead(foundFile);
-          return JSON.stringify({
-            path: foundPath,
-            exists: true,
-            content: content.slice(0, 2000), // Truncate for response
-            truncated: content.length > 2000,
-          });
-        }
-
         if (!shouldCreate) {
-          return JSON.stringify({
-            exists: false,
-            message: `No daily note found for ${dateStr}`,
-            searchedPaths: possiblePaths,
-          });
+          return { exists: false, message: `No daily note found for ${dateStr}`, searchedPaths: possiblePaths };
         }
 
-        // Create in first existing parent folder
         let createPath = filename;
         for (const path of possiblePaths) {
           const folder = path.split('/').slice(0, -1).join('/');
@@ -818,20 +736,10 @@ export class ObsidianTools {
           day: 'numeric',
         })}\n\n`;
 
-        try {
-          await this.app.vault.create(createPath, template);
-          return JSON.stringify({
-            path: createPath,
-            exists: false,
-            created: true,
-            content: template,
-          });
-        } catch (error) {
-          return JSON.stringify({
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
-      },
+        await this.ensureParentFolder(createPath);
+        await this.app.vault.create(createPath, template);
+        return { path: createPath, exists: false, created: true, content: template };
+      }),
     };
   }
 
@@ -865,7 +773,7 @@ export class ObsidianTools {
         },
         required: ['query'],
       },
-      handler: async (params) => {
+      handler: this.wrapHandler(async (params) => {
         const query = params.query as string;
         const caseSensitive = (params.caseSensitive as boolean) || false;
         const limit = (params.limit as number) || 20;
@@ -876,17 +784,11 @@ export class ObsidianTools {
         try {
           regex = new RegExp(query, flags);
         } catch {
-          // If invalid regex, escape and try as literal
           regex = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), flags);
         }
 
         const files = this.app.vault.getMarkdownFiles();
-        const results: Array<{
-          path: string;
-          title: string;
-          matches: Array<{ line: number; text: string }>;
-          matchCount: number;
-        }> = [];
+        const results: Array<{ path: string; title: string; matches: Array<{ line: number; text: string }>; matchCount: number }> = [];
 
         for (const file of files) {
           if (results.length >= limit) break;
@@ -898,13 +800,10 @@ export class ObsidianTools {
 
           for (let i = 0; i < lines.length; i++) {
             if (regex.test(lines[i])) {
-              matches.push({
-                line: i + 1,
-                text: lines[i].slice(0, 200),
-              });
-              if (matches.length >= 5) break; // Max 5 matches per file
+              matches.push({ line: i + 1, text: lines[i].slice(0, 200) });
+              if (matches.length >= 5) break;
             }
-            regex.lastIndex = 0; // Reset regex state
+            regex.lastIndex = 0;
           }
 
           if (matches.length > 0) {
@@ -918,12 +817,8 @@ export class ObsidianTools {
           }
         }
 
-        return JSON.stringify({
-          query,
-          resultCount: results.length,
-          results,
-        });
-      },
+        return { query, resultCount: results.length, results };
+      }),
     };
   }
 
@@ -937,64 +832,43 @@ export class ObsidianTools {
       parameters: {
         type: 'object',
         properties: {
-          path: {
-            type: 'string',
-            description: 'Path to the note to open',
-          },
-          newLeaf: {
-            type: 'boolean',
-            description: 'Open in new pane (default: false)',
-          },
-          line: {
-            type: 'number',
-            description: 'Optional: scroll to specific line',
-          },
+          path: { type: 'string', description: 'Path to the note to open' },
+          newLeaf: { type: 'boolean', description: 'Open in new pane (default: false)' },
+          line: { type: 'number', description: 'Optional: scroll to specific line' },
         },
         required: ['path'],
       },
-      handler: async (params) => {
+      handler: this.wrapHandler(async (params) => {
         const filepath = params.path as string;
         const newLeaf = (params.newLeaf as boolean) || false;
         const line = params.line as number | undefined;
 
         const file = this.app.vault.getAbstractFileByPath(filepath);
         if (!file || !('extension' in file)) {
-          return JSON.stringify({ error: `File not found: ${filepath}` });
+          return { error: `File not found: ${filepath}` };
         }
 
-        try {
-          const leaf = this.app.workspace.getLeaf(newLeaf);
-          await leaf.openFile(file as TFile);
+        const leaf = this.app.workspace.getLeaf(newLeaf);
+        await leaf.openFile(file as TFile);
 
-          if (line !== undefined) {
-            // Scroll to line after a short delay
-            setTimeout(() => {
-              const view = this.app.workspace.getActiveViewOfType(
-                // Using any since MarkdownView isn't imported
-                this.app.workspace.activeLeaf?.view?.constructor as unknown as new () => unknown
-              );
-              if (view && 'editor' in (view as Record<string, unknown>)) {
-                const editor = (view as Record<string, unknown>).editor as {
-                  setCursor: (pos: { line: number; ch: number }) => void;
-                  scrollIntoView: (range: { from: { line: number }; to: { line: number } }) => void;
-                };
-                editor.setCursor({ line: line - 1, ch: 0 });
-                editor.scrollIntoView({ from: { line: line - 1 }, to: { line: line - 1 } });
-              }
-            }, 100);
-          }
-
-          return JSON.stringify({
-            success: true,
-            path: filepath,
-            opened: true,
-          });
-        } catch (error) {
-          return JSON.stringify({
-            error: error instanceof Error ? error.message : String(error),
-          });
+        if (line !== undefined) {
+          setTimeout(() => {
+            const view = this.app.workspace.getActiveViewOfType(
+              this.app.workspace.activeLeaf?.view?.constructor as unknown as new () => unknown
+            );
+            if (view && 'editor' in (view as Record<string, unknown>)) {
+              const editor = (view as Record<string, unknown>).editor as {
+                setCursor: (pos: { line: number; ch: number }) => void;
+                scrollIntoView: (range: { from: { line: number }; to: { line: number } }) => void;
+              };
+              editor.setCursor({ line: line - 1, ch: 0 });
+              editor.scrollIntoView({ from: { line: line - 1 }, to: { line: line - 1 } });
+            }
+          }, 100);
         }
-      },
+
+        return { success: true, path: filepath, opened: true };
+      }),
     };
   }
 
@@ -1004,31 +878,21 @@ export class ObsidianTools {
   private getActiveNoteTool(): ToolDefinition {
     return {
       name: 'active_note',
-      description:
-        'Get information about the currently open/active note including its content.',
+      description: 'Get information about the currently open/active note including its content.',
       parameters: {
         type: 'object',
         properties: {
-          includeContent: {
-            type: 'boolean',
-            description: 'Include full note content (default: true)',
-          },
-          maxContentLength: {
-            type: 'number',
-            description: 'Max content length to return (default: 5000)',
-          },
+          includeContent: { type: 'boolean', description: 'Include full note content (default: true)' },
+          maxContentLength: { type: 'number', description: 'Max content length to return (default: 5000)' },
         },
       },
-      handler: async (params) => {
+      handler: this.wrapHandler(async (params) => {
         const includeContent = params.includeContent !== false;
         const maxLength = (params.maxContentLength as number) || 5000;
 
         const file = this.app.workspace.getActiveFile();
         if (!file) {
-          return JSON.stringify({
-            active: false,
-            message: 'No file is currently open',
-          });
+          return { active: false, message: 'No file is currently open' };
         }
 
         const cache = this.app.metadataCache.getFileCache(file);
@@ -1052,8 +916,79 @@ export class ObsidianTools {
           result.totalLength = content.length;
         }
 
-        return JSON.stringify(result);
+        return result;
+      }),
+    };
+  }
+
+  /**
+   * Read the full content of a note
+   */
+  private getReadNoteTool(): ToolDefinition {
+    return {
+      name: 'read_note',
+      description: 'Read the full content of a note. Use this when you need the actual text content of a file.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Path to the note to read' },
+          maxLength: { type: 'number', description: 'Maximum content length to return (default: 10000)' },
+        },
+        required: ['path'],
       },
+      handler: this.wrapHandler(async (params) => {
+        const filepath = params.path as string;
+        const maxLength = (params.maxLength as number) || 10000;
+
+        const file = this.app.vault.getAbstractFileByPath(filepath);
+        if (!file || !('extension' in file)) {
+          return { error: `File not found: ${filepath}` };
+        }
+
+        const content = await this.app.vault.cachedRead(file as TFile);
+        return {
+          path: filepath,
+          content: content.slice(0, maxLength),
+          truncated: content.length > maxLength,
+          totalLength: content.length,
+        };
+      }),
+    };
+  }
+
+  /**
+   * Delete a file or folder
+   */
+  private getDeleteTool(): ToolDefinition {
+    return {
+      name: 'delete',
+      description: 'Delete a file or folder from the vault. Moves to system trash by default.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Path to the file or folder to delete' },
+          permanent: { type: 'boolean', description: 'Permanently delete instead of moving to trash (default: false)' },
+        },
+        required: ['path'],
+      },
+      handler: this.wrapHandler(async (params) => {
+        const filepath = params.path as string;
+        const permanent = (params.permanent as boolean) || false;
+
+        const item = this.app.vault.getAbstractFileByPath(filepath);
+        if (!item) {
+          return { error: `Path not found: ${filepath}` };
+        }
+
+        const isFolder = 'children' in item;
+        if (permanent) {
+          await this.app.vault.delete(item, true);
+        } else {
+          await this.app.vault.trash(item, false);
+        }
+
+        return { success: true, path: filepath, type: isFolder ? 'folder' : 'file', method: permanent ? 'deleted' : 'trashed' };
+      }),
     };
   }
 
@@ -1079,29 +1014,23 @@ export class ObsidianTools {
         },
         required: ['path'],
       },
-      handler: async (params) => {
+      handler: this.wrapHandler(async (params) => {
         const filepath = params.path as string;
-        const depth = Math.min((params.depth as number) || 1, 2);
+        const maxDepth = Math.min((params.depth as number) || 1, 2);
 
         const file = this.app.vault.getAbstractFileByPath(filepath);
         if (!file) {
-          return JSON.stringify({ error: `File not found: ${filepath}` });
+          return { error: `File not found: ${filepath}` };
         }
 
         const resolvedLinks = this.app.metadataCache.resolvedLinks;
         const visited = new Set<string>();
-        const neighbors: Array<{
-          path: string;
-          title: string;
-          direction: 'outgoing' | 'incoming';
-          depth: number;
-        }> = [];
+        const neighbors: Array<{ path: string; title: string; direction: 'outgoing' | 'incoming'; depth: number }> = [];
 
         const explore = (currentPath: string, currentDepth: number) => {
-          if (currentDepth > depth || visited.has(currentPath)) return;
+          if (currentDepth > maxDepth || visited.has(currentPath)) return;
           visited.add(currentPath);
 
-          // Outgoing links
           const outgoing = resolvedLinks[currentPath] || {};
           for (const targetPath of Object.keys(outgoing)) {
             if (!visited.has(targetPath)) {
@@ -1114,14 +1043,11 @@ export class ObsidianTools {
                   direction: 'outgoing',
                   depth: currentDepth,
                 });
-                if (currentDepth < depth) {
-                  explore(targetPath, currentDepth + 1);
-                }
+                if (currentDepth < maxDepth) explore(targetPath, currentDepth + 1);
               }
             }
           }
 
-          // Incoming links
           for (const [sourcePath, links] of Object.entries(resolvedLinks)) {
             if (links[currentPath] && !visited.has(sourcePath)) {
               const sourceFile = this.app.vault.getAbstractFileByPath(sourcePath);
@@ -1133,82 +1059,65 @@ export class ObsidianTools {
                   direction: 'incoming',
                   depth: currentDepth,
                 });
-                if (currentDepth < depth) {
-                  explore(sourcePath, currentDepth + 1);
-                }
+                if (currentDepth < maxDepth) explore(sourcePath, currentDepth + 1);
               }
             }
           }
         };
 
         explore(filepath, 1);
-
-        return JSON.stringify({
-          centerNote: filepath,
-          depth,
-          neighborCount: neighbors.length,
-          neighbors,
-        });
-      },
+        return { centerNote: filepath, depth: maxDepth, neighborCount: neighbors.length, neighbors };
+      }),
     };
   }
 
   /**
-   * Rename/move a note
+   * Rename/move a file or folder
    */
-  private getRenameNoteTool(): ToolDefinition {
+  private getRenameTool(): ToolDefinition {
     return {
-      name: 'rename_note',
+      name: 'rename',
       description:
-        'Rename or move a note to a new path. Updates all links to the note automatically.',
+        'Rename or move a file or folder to a new path. Updates all links automatically.',
       parameters: {
         type: 'object',
         properties: {
           oldPath: {
             type: 'string',
-            description: 'Current path of the note',
+            description: 'Current path of the file or folder',
           },
           newPath: {
             type: 'string',
-            description: 'New path for the note',
+            description: 'New path for the file or folder',
           },
         },
         required: ['oldPath', 'newPath'],
       },
-      handler: async (params) => {
+      handler: this.wrapHandler(async (params) => {
         const oldPath = params.oldPath as string;
         const newPath = params.newPath as string;
 
-        const file = this.app.vault.getAbstractFileByPath(oldPath);
-        if (!file) {
-          return JSON.stringify({ error: `File not found: ${oldPath}` });
+        const item = this.app.vault.getAbstractFileByPath(oldPath);
+        if (!item) {
+          return { error: `Path not found: ${oldPath}` };
         }
 
-        // Check if destination exists
         if (this.app.vault.getAbstractFileByPath(newPath)) {
-          return JSON.stringify({ error: `Destination already exists: ${newPath}` });
+          return { error: `Destination already exists: ${newPath}` };
         }
 
-        try {
-          // Ensure parent folder exists
-          const parentPath = newPath.split('/').slice(0, -1).join('/');
-          if (parentPath && !this.app.vault.getAbstractFileByPath(parentPath)) {
-            await this.app.vault.createFolder(parentPath);
-          }
+        const isFolder = 'children' in item;
+        await this.ensureParentFolder(newPath);
+        await this.app.fileManager.renameFile(item, newPath);
 
-          await this.app.fileManager.renameFile(file, newPath);
-          return JSON.stringify({
-            success: true,
-            oldPath,
-            newPath,
-            message: 'File renamed and links updated',
-          });
-        } catch (error) {
-          return JSON.stringify({
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
-      },
+        return {
+          success: true,
+          oldPath,
+          newPath,
+          type: isFolder ? 'folder' : 'file',
+          message: `${isFolder ? 'Folder' : 'File'} renamed and links updated`,
+        };
+      }),
     };
   }
 

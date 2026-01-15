@@ -5,7 +5,7 @@ import {
   OllamaProvider,
   OpenAIProvider,
   VoyageAIProvider,
-} from '../src/EmbeddingService';
+} from '../src/embeddingService';
 import type { EmbeddingSettings } from '../src/types';
 
 // Mock fetch globally

@@ -1,8 +1,8 @@
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
-import { VectorSearchWorkerManager, type SearchFilter } from './VectorSearchWorker';
-import { createLogger } from './Logger';
+import { VectorSearchWorkerManager, type SearchFilter } from './vectorSearchWorker';
+import { createLogger } from './logger';
 
 const log = createLogger('VectorStore');
 

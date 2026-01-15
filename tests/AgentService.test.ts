@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { AgentService, type AgentCallbacks } from '../src/AgentService';
+import { AgentService, type AgentCallbacks } from '../src/agentService';
 import { DEFAULT_SETTINGS } from '../src/types';
 
 // Mock the claude-agent-sdk

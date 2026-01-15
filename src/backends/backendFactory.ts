@@ -1,10 +1,10 @@
 import { Platform } from 'obsidian';
 import type { ObsidiClaudeSettings } from '../types';
-import type { ObsidianTools } from '../ObsidianTools';
-import type { AgentBackend } from './AgentBackend';
-import { SDKAgentBackend } from './SDKAgentBackend';
-import { APIAgentBackend } from './APIAgentBackend';
-import { createLogger } from '../Logger';
+import type { ObsidianTools } from '../obsidianTools';
+import type { AgentBackend } from './agentBackend';
+import { SDKAgentBackend } from './sdkAgentBackend';
+import { APIAgentBackend } from './apiAgentBackend';
+import { createLogger } from '../logger';
 
 const log = createLogger('BackendFactory');
 

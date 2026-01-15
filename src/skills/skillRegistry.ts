@@ -1,7 +1,7 @@
 import type { App } from 'obsidian';
 import type { Skill, SkillSettings } from '../types';
-import { SkillLoader } from './SkillLoader';
-import { createLogger } from '../Logger';
+import { SkillLoader } from './skillLoader';
+import { createLogger } from '../logger';
 
 const log = createLogger('SkillRegistry');
 

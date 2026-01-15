@@ -1,89 +1,57 @@
-import {
-  query,
-  type SDKMessage,
-  type Options,
-  type McpSdkServerConfigWithInstance,
-  type McpServerConfig,
-} from '@anthropic-ai/claude-agent-sdk';
-import type { ObsidiClaudeSettings, Conversation, ToolCallInfo } from '../types';
-import { generateId } from '../types';
-import type {
-  AgentBackend,
-  AgentCallbacks,
-  AgentResult,
-  BackendFeature,
-  BackendOptions,
-} from './AgentBackend';
-import { createLogger } from '../Logger';
-import { findClaudeCliPath, getEnhancedPath } from '../claudePath';
-import type { ObsidianTools } from '../ObsidianTools';
-import { createObsidianMCPServer, getObsidianToolNames } from '../ObsidianMCPTools';
+import { query, type SDKMessage, type Options, type McpSdkServerConfigWithInstance, type McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
+import type { ObsidiClaudeSettings, ChatMessage, ToolCallInfo } from './types';
+import { generateId } from './types';
+import { createLogger } from './logger';
+import { findClaudeCliPath, getEnhancedPath } from './claudePath';
+import type { ObsidianTools } from './obsidianTools';
+import { createObsidianMCPServer, getObsidianToolNames } from './obsidianMcpTools';
 
-const log = createLogger('SDKAgentBackend');
+const log = createLogger('AgentService');
 
 // Cache the detected CLI path
 let cachedCliPath: string | null = null;
 
-/**
- * SDK Agent Backend for desktop.
- *
- * Uses the Claude Agent SDK which spawns Claude Code CLI as a subprocess.
- * Provides full feature set: session resume, MCP servers, hooks, subagents.
- */
-export class SDKAgentBackend implements AgentBackend {
-  readonly type = 'sdk' as const;
+export interface AgentCallbacks {
+  onMessage: (message: ChatMessage) => void;
+  onStreamingUpdate: (messageId: string, content: string) => void;
+  onToolCall: (messageId: string, toolCall: ToolCallInfo) => void;
+  onToolResult: (messageId: string, toolName: string, result: string) => void;
+  onSessionInit: (sessionId: string, tools: string[]) => void;
+  onComplete: (result: AgentResult) => void;
+  onError: (error: Error) => void;
+}
 
+export interface AgentResult {
+  success: boolean;
+  totalCost?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  errors?: string[];
+}
+
+export class AgentService {
   private settings: ObsidiClaudeSettings;
   private abortController: AbortController | null = null;
   private currentSessionId: string | null = null;
-  private obsidianTools: ObsidianTools;
+  private obsidianTools: ObsidianTools | null = null;
   private obsidianMcpServer: McpSdkServerConfigWithInstance | null = null;
-  private initialized = false;
 
-  constructor(settings: ObsidiClaudeSettings, obsidianTools: ObsidianTools) {
+  constructor(settings: ObsidiClaudeSettings, obsidianTools?: ObsidianTools) {
     this.settings = settings;
-    this.obsidianTools = obsidianTools;
-  }
-
-  isAvailable(): boolean {
-    // Check if Claude CLI is available
-    if (!cachedCliPath) {
-      cachedCliPath = findClaudeCliPath(this.settings.claudeCodePath);
+    if (obsidianTools) {
+      this.setObsidianTools(obsidianTools);
     }
-    return cachedCliPath !== null;
   }
 
-  async initialize(): Promise<void> {
-    if (this.initialized) return;
-
-    log.info('Initializing SDK backend');
-
-    // Set up Obsidian MCP server
-    this.obsidianMcpServer = createObsidianMCPServer(this.obsidianTools, 'obsidian');
-    log.info('Obsidian tools configured for SDK backend', {
-      toolCount: this.obsidianTools.getToolDefinitions().length,
+  /**
+   * Set the ObsidianTools instance for the agent to use
+   */
+  setObsidianTools(tools: ObsidianTools): void {
+    this.obsidianTools = tools;
+    this.obsidianMcpServer = createObsidianMCPServer(tools, 'obsidian');
+    log.info('Obsidian tools configured for agent', {
+      toolCount: tools.getToolDefinitions().length,
     });
-
-    this.initialized = true;
-  }
-
-  async dispose(): Promise<void> {
-    log.info('Disposing SDK backend');
-    this.abort();
-    this.obsidianMcpServer = null;
-    this.initialized = false;
-  }
-
-  supports(feature: BackendFeature): boolean {
-    const supportedFeatures: BackendFeature[] = [
-      'session-resume',
-      'mcp-servers',
-      'hooks',
-      'subagents',
-      'file-checkpointing',
-      'structured-output',
-    ];
-    return supportedFeatures.includes(feature);
   }
 
   updateSettings(settings: ObsidiClaudeSettings): void {
@@ -101,27 +69,18 @@ export class SDKAgentBackend implements AgentBackend {
 
   async sendMessage(
     userMessage: string,
-    conversation: Conversation,
+    previousMessages: ChatMessage[],
     callbacks: AgentCallbacks,
-    options?: BackendOptions
+    resumeSessionId?: string
   ): Promise<void> {
-    if (!this.initialized) {
-      await this.initialize();
-    }
-
     this.abortController = new AbortController();
     const messagePreview = userMessage.slice(0, 50) + (userMessage.length > 50 ? '...' : '');
 
-    // Determine session ID to resume
-    const resumeSessionId = options?.resumeSessionId ??
-      conversation.metadata?.sessionId ??
-      conversation.sessionId; // Legacy fallback
-
-    log.info('Sending message via SDK backend', {
+    log.info('Sending message to agent', {
       messageLength: userMessage.length,
-      previousMessageCount: conversation.messages.length,
+      previousMessageCount: previousMessages.length,
       resumeSession: !!resumeSessionId,
-      model: options?.model ?? this.settings.model,
+      model: this.settings.model,
     });
     log.debug('Message preview', { preview: messagePreview });
 
@@ -137,7 +96,7 @@ export class SDKAgentBackend implements AgentBackend {
     // Create streaming assistant message placeholder
     const assistantMsgId = generateId();
     let assistantContent = '';
-    let needsParagraphBreak = false;
+    let needsParagraphBreak = false; // Track if we need a break before next text
     const toolCalls: Map<string, ToolCallInfo> = new Map();
 
     callbacks.onMessage({
@@ -168,23 +127,25 @@ export class SDKAgentBackend implements AgentBackend {
 
       log.debug('Using Claude CLI', { path: cachedCliPath });
 
-      // Enhance PATH for subprocess
+      // Enhance PATH for subprocess - needed because Electron's PATH doesn't include Homebrew/node paths
       const enhancedPath = getEnhancedPath();
       if (enhancedPath !== process.env.PATH) {
         process.env.PATH = enhancedPath;
         log.debug('Enhanced PATH for subprocess');
       }
 
-      // Build allowed tools list
+      // Build allowed tools list - include both standard tools and Obsidian tools
       const allowedTools = [...this.settings.allowedTools];
-      allowedTools.push(...getObsidianToolNames(this.obsidianTools, 'obsidian'));
+      if (this.obsidianTools) {
+        allowedTools.push(...getObsidianToolNames(this.obsidianTools, 'obsidian'));
+      }
 
-      const queryOptions: Options = {
-        model: options?.model ?? this.settings.model,
+      const options: Options = {
+        model: this.settings.model,
         cwd,
-        systemPrompt: options?.systemPrompt ?? this.settings.systemPrompt,
+        systemPrompt: this.settings.systemPrompt,
         permissionMode: this.settings.permissionMode,
-        maxTurns: options?.maxTurns ?? this.settings.maxTurns,
+        maxTurns: this.settings.maxTurns,
         allowedTools,
         abortController: this.abortController,
         includePartialMessages: true,
@@ -194,6 +155,7 @@ export class SDKAgentBackend implements AgentBackend {
       // Build MCP servers config
       const mcpServers: Record<string, McpServerConfig> = {};
 
+      // Add Obsidian MCP server if tools are configured
       if (this.obsidianMcpServer) {
         mcpServers.obsidian = this.obsidianMcpServer;
         log.debug('Added Obsidian MCP server');
@@ -208,29 +170,29 @@ export class SDKAgentBackend implements AgentBackend {
             args: server.args,
             env: server.env,
           };
-          log.debug('Added external MCP server', { name: server.name });
+          log.debug('Added external MCP server', { name: server.name, command: server.command });
         }
       }
 
       if (Object.keys(mcpServers).length > 0) {
-        queryOptions.mcpServers = mcpServers;
-        log.info('MCP servers configured', { count: Object.keys(mcpServers).length });
+        options.mcpServers = mcpServers;
+        log.info('MCP servers configured', { count: Object.keys(mcpServers).length, names: Object.keys(mcpServers) });
       }
 
       if (resumeSessionId) {
-        queryOptions.resume = resumeSessionId;
+        options.resume = resumeSessionId;
       }
 
       const response = query({
         prompt: userMessage,
-        options: queryOptions,
+        options,
       });
 
-      log.debug('SDK query initiated', { cwd, permissionMode: this.settings.permissionMode });
+      log.debug('Agent query initiated', { cwd, permissionMode: this.settings.permissionMode });
 
       for await (const message of response) {
         if (this.abortController?.signal.aborted) {
-          log.info('Request aborted by user');
+          log.info('Agent request aborted by user');
           break;
         }
 
@@ -253,7 +215,7 @@ export class SDKAgentBackend implements AgentBackend {
       callbacks.onStreamingUpdate(assistantMsgId, assistantContent);
       log.debug('Message stream completed', { contentLength: assistantContent.length });
     } catch (error) {
-      log.error('SDK request failed', error, { resumeSession: !!resumeSessionId });
+      log.error('Agent request failed', error, { resumeSession: !!resumeSessionId });
       callbacks.onError(error instanceof Error ? error : new Error(String(error)));
     }
   }
@@ -285,11 +247,15 @@ export class SDKAgentBackend implements AgentBackend {
         break;
 
       case 'assistant': {
+        // Extract tool_use blocks from assistant messages
+        // NOTE: We do NOT accumulate text content here because it's already
+        // received via stream_event deltas. Only extract tool calls.
         const contentBlocks = message.message?.content;
 
         if (Array.isArray(contentBlocks)) {
           for (const block of contentBlocks) {
             if (block.type === 'tool_use') {
+              // Track tool use
               const toolCall: ToolCallInfo = {
                 name: block.name,
                 input: block.input as Record<string, unknown>,
@@ -307,10 +273,12 @@ export class SDKAgentBackend implements AgentBackend {
       }
 
       case 'stream_event': {
+        // Handle streaming events for partial messages
         const event = message.event;
         if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
           let text = event.delta.text || '';
 
+          // If we need a paragraph break (after tool completion), add it before new text
           if (context.needsParagraphBreak && text.trim()) {
             text = '\n\n' + text;
             context.setNeedsParagraphBreak(false);
@@ -323,6 +291,7 @@ export class SDKAgentBackend implements AgentBackend {
       }
 
       case 'tool_progress': {
+        // Tool is being executed
         const toolCall = toolCalls.get(message.tool_use_id);
         if (toolCall && toolCall.status === 'pending') {
           toolCall.status = 'running';
@@ -334,6 +303,7 @@ export class SDKAgentBackend implements AgentBackend {
       }
 
       case 'user': {
+        // Tool result comes as a user message
         if (message.tool_use_result !== undefined) {
           const toolUseId = message.parent_tool_use_id;
           if (toolUseId) {
@@ -352,6 +322,8 @@ export class SDKAgentBackend implements AgentBackend {
                 callbacks.onToolResult(assistantMsgId, toolCall.name, toolCall.result);
               }
 
+              // Mark that we need a paragraph break before next text
+              // This prevents text from different response segments running together
               if (context.assistantContent.trim()) {
                 context.setNeedsParagraphBreak(true);
               }
@@ -362,6 +334,7 @@ export class SDKAgentBackend implements AgentBackend {
       }
 
       case 'result': {
+        // Conversation complete
         const result: AgentResult = {
           success: message.subtype === 'success',
           totalCost: message.total_cost_usd,
@@ -371,11 +344,12 @@ export class SDKAgentBackend implements AgentBackend {
         if (message.subtype !== 'success' && 'errors' in message) {
           result.errors = message.errors;
         }
-        log.info('SDK conversation completed', {
+        log.info('Agent conversation completed', {
           success: result.success,
           inputTokens: result.inputTokens,
           outputTokens: result.outputTokens,
           totalCost: result.totalCost,
+          errorCount: result.errors?.length ?? 0,
         });
         callbacks.onComplete(result);
         break;
@@ -388,5 +362,13 @@ export class SDKAgentBackend implements AgentBackend {
       this.abortController.abort();
       this.abortController = null;
     }
+  }
+
+  async resumeSession(
+    sessionId: string,
+    userMessage: string,
+    callbacks: AgentCallbacks
+  ): Promise<void> {
+    return this.sendMessage(userMessage, [], callbacks, sessionId);
   }
 }

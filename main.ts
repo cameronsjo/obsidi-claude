@@ -1,14 +1,14 @@
 import { Plugin, WorkspaceLeaf, TFile, Notice } from 'obsidian';
-import { ChatView, CHAT_VIEW_TYPE } from './src/ChatView';
-import { SettingsTab } from './src/SettingsTab';
+import { ChatView, CHAT_VIEW_TYPE } from './src/chatView';
+import { SettingsTab } from './src/settingsTab';
 import { DEFAULT_SETTINGS, type ObsidiClaudeSettings } from './src/types';
-import { RAGService } from './src/RAGService';
-import { ObsidianTools } from './src/ObsidianTools';
-import { StorageService } from './src/StorageService';
-import { MCPServer } from './src/MCPServer';
+import { RAGService } from './src/ragService';
+import { ObsidianTools } from './src/obsidianTools';
+import { StorageService } from './src/storageService';
+import { MCPServer } from './src/mcpServer';
 import { BackendFactory } from './src/backends';
 import { SkillRegistry } from './src/skills';
-import { createLogger } from './src/Logger';
+import { createLogger } from './src/logger';
 
 const log = createLogger('Plugin');
 
@@ -131,6 +131,47 @@ export default class ObsidiClaudePlugin extends Plugin {
         } catch (error) {
           new Notice(`Failed to reload skills: ${error}`);
         }
+      },
+    });
+
+    // Add commands to control MCP server
+    this.addCommand({
+      id: 'toggle-mcp-server',
+      name: 'Toggle MCP Server',
+      callback: async () => {
+        if (this.mcpServer?.isServerRunning()) {
+          await this.stopMCPServer();
+          new Notice('MCP server stopped');
+        } else {
+          await this.startMCPServer();
+          new Notice('MCP server started');
+        }
+      },
+    });
+
+    this.addCommand({
+      id: 'start-mcp-server',
+      name: 'Start MCP Server',
+      callback: async () => {
+        if (this.mcpServer?.isServerRunning()) {
+          new Notice('MCP server is already running');
+          return;
+        }
+        await this.startMCPServer();
+        new Notice('MCP server started');
+      },
+    });
+
+    this.addCommand({
+      id: 'stop-mcp-server',
+      name: 'Stop MCP Server',
+      callback: async () => {
+        if (!this.mcpServer?.isServerRunning()) {
+          new Notice('MCP server is not running');
+          return;
+        }
+        await this.stopMCPServer();
+        new Notice('MCP server stopped');
       },
     });
 

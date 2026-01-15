@@ -1,2 +1,2 @@
-export { SkillLoader } from './SkillLoader';
-export { SkillRegistry } from './SkillRegistry';
+export { SkillLoader } from './skillLoader';
+export { SkillRegistry } from './skillRegistry';

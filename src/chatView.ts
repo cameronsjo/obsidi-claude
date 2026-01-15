@@ -9,7 +9,7 @@ import type ObsidiClaudePlugin from '../main';
 import type { ChatMessage, ToolCallInfo, Conversation } from './types';
 import { generateId } from './types';
 import type { AgentBackend, AgentCallbacks, AgentResult } from './backends';
-import { createLogger } from './Logger';
+import { createLogger } from './logger';
 
 const log = createLogger('ChatView');
 

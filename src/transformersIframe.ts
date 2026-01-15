@@ -11,7 +11,7 @@
  * - Iframe with srcdoc: CAN do dynamic imports from CDN
  */
 
-import { createLogger } from './Logger';
+import { createLogger } from './logger';
 
 const log = createLogger('TransformersIframe');
 
