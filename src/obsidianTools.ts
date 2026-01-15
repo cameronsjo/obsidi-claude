@@ -31,6 +31,18 @@ export class ObsidianTools {
   }
 
   /**
+   * Retrieves a file by path, returning either the TFile or an error object.
+   * Consolidates file existence and type checking logic.
+   */
+  private getFileOrError(filepath: string): TFile | { error: string } {
+    const file = this.app.vault.getAbstractFileByPath(filepath);
+    if (!file || !('extension' in file)) {
+      return { error: `File not found: ${filepath}` };
+    }
+    return file as TFile;
+  }
+
+  /**
    * Ensures parent folders exist for a given file path.
    * Creates any missing folders in the path hierarchy.
    */
@@ -245,13 +257,12 @@ export class ObsidianTools {
       },
       handler: this.wrapHandler(async (params) => {
         const filepath = params.filepath as string;
-        const file = this.app.vault.getAbstractFileByPath(filepath);
-
-        if (!file || !(file instanceof TAbstractFile) || !('extension' in file)) {
-          return { error: `File not found: ${filepath}` };
+        const fileResult = this.getFileOrError(filepath);
+        if ('error' in fileResult) {
+          return fileResult;
         }
 
-        const tfile = file as TFile;
+        const tfile = fileResult;
         const cache = this.app.metadataCache.getFileCache(tfile);
 
         return {
@@ -346,12 +357,12 @@ export class ObsidianTools {
         const filepath = params.filepath as string;
         const includeUnresolved = (params.includeUnresolved as boolean) || false;
 
-        const file = this.app.vault.getAbstractFileByPath(filepath);
-        if (!file || !('extension' in file)) {
-          return { error: `File not found: ${filepath}` };
+        const fileResult = this.getFileOrError(filepath);
+        if ('error' in fileResult) {
+          return fileResult;
         }
 
-        const cache = this.app.metadataCache.getFileCache(file as TFile);
+        const cache = this.app.metadataCache.getFileCache(fileResult);
         const resolvedLinks = this.app.metadataCache.resolvedLinks[filepath] || {};
         const unresolvedLinks = this.app.metadataCache.unresolvedLinks[filepath] || {};
 
@@ -843,13 +854,13 @@ export class ObsidianTools {
         const newLeaf = (params.newLeaf as boolean) || false;
         const line = params.line as number | undefined;
 
-        const file = this.app.vault.getAbstractFileByPath(filepath);
-        if (!file || !('extension' in file)) {
-          return { error: `File not found: ${filepath}` };
+        const fileResult = this.getFileOrError(filepath);
+        if ('error' in fileResult) {
+          return fileResult;
         }
 
         const leaf = this.app.workspace.getLeaf(newLeaf);
-        await leaf.openFile(file as TFile);
+        await leaf.openFile(fileResult);
 
         if (line !== undefined) {
           setTimeout(() => {
@@ -940,12 +951,12 @@ export class ObsidianTools {
         const filepath = params.path as string;
         const maxLength = (params.maxLength as number) || 10000;
 
-        const file = this.app.vault.getAbstractFileByPath(filepath);
-        if (!file || !('extension' in file)) {
-          return { error: `File not found: ${filepath}` };
+        const fileResult = this.getFileOrError(filepath);
+        if ('error' in fileResult) {
+          return fileResult;
         }
 
-        const content = await this.app.vault.cachedRead(file as TFile);
+        const content = await this.app.vault.cachedRead(fileResult);
         return {
           path: filepath,
           content: content.slice(0, maxLength),

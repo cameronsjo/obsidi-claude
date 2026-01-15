@@ -137,6 +137,18 @@ export interface ObsidiClaudeSettings {
   activeNoteContext: boolean;
 }
 
+/**
+ * Maps friendly model names to full Anthropic API model IDs.
+ *
+ * The keys correspond to the model union type in ObsidiClaudeSettings.
+ * The values are the actual model IDs expected by the Anthropic API.
+ */
+export const MODEL_ID_MAP: Record<ObsidiClaudeSettings['model'], string> = {
+  'claude-sonnet-4-5': 'claude-sonnet-4-5-20250514',
+  'claude-opus-4': 'claude-opus-4-20250514',
+  'claude-3-5-sonnet-20241022': 'claude-3-5-sonnet-20241022',
+};
+
 export const DEFAULT_EMBEDDING_SETTINGS: EmbeddingSettings = {
   enabled: false,
   provider: 'ollama',

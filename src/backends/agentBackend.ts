@@ -128,3 +128,27 @@ export function createStreamingAssistantMessage(): ChatMessage {
     toolCalls: [],
   };
 }
+
+/**
+ * Append streaming text to the assistant message, handling paragraph breaks after tool results.
+ */
+export function appendStreamingText(
+  text: string,
+  context: {
+    assistantContent: string;
+    setAssistantContent: (content: string) => void;
+    needsParagraphBreak: boolean;
+    setNeedsParagraphBreak: (value: boolean) => void;
+  },
+  assistantMsgId: string,
+  callbacks: { onStreamingUpdate: (id: string, content: string) => void }
+): void {
+  let processedText = text;
+  if (context.needsParagraphBreak && processedText.trim()) {
+    processedText = '\n\n' + processedText;
+    context.setNeedsParagraphBreak(false);
+  }
+  const newContent = context.assistantContent + processedText;
+  context.setAssistantContent(newContent);
+  callbacks.onStreamingUpdate(assistantMsgId, newContent);
+}

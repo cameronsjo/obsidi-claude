@@ -8,7 +8,7 @@ import type {
   Tool,
 } from '@anthropic-ai/sdk/resources/messages';
 import type { ObsidiClaudeSettings, Conversation, ChatMessage, ToolCallInfo } from '../types';
-import { generateId } from '../types';
+import { generateId, MODEL_ID_MAP } from '../types';
 import {
   type AgentBackend,
   type AgentCallbacks,
@@ -17,6 +17,7 @@ import {
   type BackendOptions,
   createUserMessage,
   createStreamingAssistantMessage,
+  appendStreamingText,
 } from './agentBackend';
 import { createLogger } from '../logger';
 import type { ObsidianTools } from '../obsidianTools';
@@ -207,6 +208,14 @@ export class APIAgentBackend implements AgentBackend {
     // Track if we need a paragraph break before new text (after tool results)
     let needsParagraphBreak = turnCount > 0 && assistantContent.trim().length > 0;
 
+    // Create streaming context for the helper function
+    const streamingContext = {
+      get assistantContent() { return assistantContent; },
+      setAssistantContent: (content: string) => { assistantContent = content; },
+      get needsParagraphBreak() { return needsParagraphBreak; },
+      setNeedsParagraphBreak: (value: boolean) => { needsParagraphBreak = value; },
+    };
+
     // Process streaming events
     for await (const event of stream) {
       if (this.abortController?.signal.aborted) {
@@ -215,16 +224,7 @@ export class APIAgentBackend implements AgentBackend {
 
       if (event.type === 'content_block_delta') {
         if (event.delta.type === 'text_delta') {
-          let text = event.delta.text;
-
-          // Add paragraph break after tool results from previous turn
-          if (needsParagraphBreak && text.trim()) {
-            text = '\n\n' + text;
-            needsParagraphBreak = false;
-          }
-
-          assistantContent += text;
-          callbacks.onStreamingUpdate(assistantMsgId, assistantContent);
+          appendStreamingText(event.delta.text, streamingContext, assistantMsgId, callbacks);
         } else if (event.delta.type === 'input_json_delta') {
           // Tool input is being streamed - we'll handle it at content_block_stop
         }
@@ -429,15 +429,7 @@ export class APIAgentBackend implements AgentBackend {
    */
   private getModelId(override?: string): string {
     const model = override ?? this.settings.model;
-
-    // Map friendly names to full model IDs
-    const modelMap: Record<string, string> = {
-      'claude-sonnet-4-5': 'claude-sonnet-4-5-20250514',
-      'claude-opus-4': 'claude-opus-4-20250514',
-      'claude-3-5-sonnet-20241022': 'claude-3-5-sonnet-20241022',
-    };
-
-    return modelMap[model] || model;
+    return MODEL_ID_MAP[model as keyof typeof MODEL_ID_MAP] ?? model;
   }
 
   abort(): void {

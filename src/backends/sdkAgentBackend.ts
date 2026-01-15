@@ -14,6 +14,7 @@ import {
   type BackendOptions,
   createUserMessage,
   createStreamingAssistantMessage,
+  appendStreamingText,
 } from './agentBackend';
 import { createLogger } from '../logger';
 import { findClaudeCliPath, getEnhancedPath } from '../claudePath';
@@ -298,15 +299,8 @@ export class SDKAgentBackend implements AgentBackend {
       case 'stream_event': {
         const event = message.event;
         if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
-          let text = event.delta.text || '';
-
-          if (context.needsParagraphBreak && text.trim()) {
-            text = '\n\n' + text;
-            context.setNeedsParagraphBreak(false);
-          }
-
-          context.setAssistantContent(context.assistantContent + text);
-          callbacks.onStreamingUpdate(assistantMsgId, context.assistantContent + text);
+          const text = event.delta.text || '';
+          appendStreamingText(text, context, assistantMsgId, callbacks);
         }
         break;
       }

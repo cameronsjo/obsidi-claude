@@ -27,6 +27,12 @@ export interface MCPServerConfig {
   cleanupIntervalMs?: number;
   /** Maximum concurrent sessions (default: 100) */
   maxSessions?: number;
+  /** Callbacks for session persistence (enables hot reload recovery) */
+  sessionPersistence?: {
+    loadStaleSessionIds: () => Set<string>;
+    saveSessionIds: (sessionIds: string[]) => void;
+    clearSessionIds: () => void;
+  };
 }
 
 const DEFAULT_SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
@@ -51,6 +57,7 @@ export class MCPServer {
   private httpApp: Express | null = null;
   private httpServer: HttpServer | null = null;
   private httpSessions: Map<string, SessionTransport> = new Map();
+  private staleSessionIds: Set<string> = new Set();
   private cleanupInterval: ReturnType<typeof setInterval> | null = null;
   private tools: ObsidianTools;
   private config: MCPServerConfig;
@@ -119,6 +126,14 @@ export class MCPServer {
   private async startHttpServer(): Promise<void> {
     log.debug('Starting HTTP transport', { port: this.config.httpPort });
 
+    // Load stale session IDs from before last restart (enables hot reload recovery)
+    if (this.config.sessionPersistence) {
+      this.staleSessionIds = this.config.sessionPersistence.loadStaleSessionIds();
+      if (this.staleSessionIds.size > 0) {
+        log.info('Loaded stale session IDs for recovery', { count: this.staleSessionIds.size });
+      }
+    }
+
     this.httpApp = express();
     this.httpApp.use(express.json());
 
@@ -179,7 +194,7 @@ export class MCPServer {
     const sessionId = req.headers['mcp-session-id'] as string | undefined;
 
     try {
-      // Check for existing session
+      // Check for existing active session
       if (sessionId && this.httpSessions.has(sessionId)) {
         const session = this.httpSessions.get(sessionId)!;
         // Refresh activity time on each request
@@ -188,54 +203,29 @@ export class MCPServer {
         return;
       }
 
+      // Check for stale session (existed before hot reload) - auto-recover
+      if (sessionId && this.staleSessionIds.has(sessionId)) {
+        log.info('Recovering stale session after hot reload', { sessionId });
+        await this.recoverStaleSession(sessionId, req, res);
+        return;
+      }
+
       // New session - only allow if it's an initialize request
       if (!sessionId && req.method === 'POST' && isInitializeRequest(req.body)) {
-        // Check max sessions limit
-        const maxSessions = this.config.maxSessions ?? DEFAULT_MAX_SESSIONS;
-        if (this.httpSessions.size >= maxSessions) {
-          log.warn('Max sessions limit reached', { current: this.httpSessions.size, max: maxSessions });
-          res.status(503).json({
-            jsonrpc: '2.0',
-            error: {
-              code: -32000,
-              message: 'Server is at maximum capacity. Please try again later.',
-            },
-            id: null,
-          });
-          return;
-        }
-
-        const transport = new StreamableHTTPServerTransport({
-          sessionIdGenerator: () => crypto.randomUUID(),
-          onsessioninitialized: (id: string) => {
-            const server = this.createMcpServer();
-            this.httpSessions.set(id, { transport, server, lastActivityTime: Date.now() });
-            log.info('HTTP session initialized', { sessionId: id, activeSessions: this.httpSessions.size });
-          },
-          onsessionclosed: (id: string) => {
-            this.httpSessions.delete(id);
-            log.info('HTTP session closed', { sessionId: id });
-          },
-        });
-
-        transport.onclose = () => {
-          if (transport.sessionId) {
-            this.httpSessions.delete(transport.sessionId);
-          }
-        };
-
-        const server = this.createMcpServer();
-        await server.connect(transport);
-        await transport.handleRequest(req, res, req.body);
+        await this.createNewSession(req, res);
         return;
       }
 
       // Invalid request
+      const message = sessionId
+        ? 'Invalid or expired session. Please reinitialize the MCP connection.'
+        : 'Missing session ID or not an initialize request';
+      log.warn('Invalid MCP request', { sessionId, hasSessionId: !!sessionId, method: req.method });
       res.status(400).json({
         jsonrpc: '2.0',
         error: {
           code: -32000,
-          message: sessionId ? 'Invalid or expired session' : 'Missing session ID or not an initialize request',
+          message,
         },
         id: null,
       });
@@ -250,6 +240,86 @@ export class MCPServer {
         id: null,
       });
     }
+  }
+
+  /**
+   * Create a new MCP session for an initialize request
+   */
+  private async createNewSession(req: Request, res: Response): Promise<void> {
+    // Check max sessions limit
+    const maxSessions = this.config.maxSessions ?? DEFAULT_MAX_SESSIONS;
+    if (this.httpSessions.size >= maxSessions) {
+      log.warn('Max sessions limit reached', { current: this.httpSessions.size, max: maxSessions });
+      res.status(503).json({
+        jsonrpc: '2.0',
+        error: {
+          code: -32000,
+          message: 'Server is at maximum capacity. Please try again later.',
+        },
+        id: null,
+      });
+      return;
+    }
+
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: () => crypto.randomUUID(),
+      onsessioninitialized: (id: string) => {
+        const server = this.createMcpServer();
+        this.httpSessions.set(id, { transport, server, lastActivityTime: Date.now() });
+        log.info('HTTP session initialized', { sessionId: id, activeSessions: this.httpSessions.size });
+      },
+      onsessionclosed: (id: string) => {
+        this.httpSessions.delete(id);
+        log.info('HTTP session closed', { sessionId: id });
+      },
+    });
+
+    transport.onclose = () => {
+      if (transport.sessionId) {
+        this.httpSessions.delete(transport.sessionId);
+      }
+    };
+
+    const server = this.createMcpServer();
+    await server.connect(transport);
+    await transport.handleRequest(req, res, req.body);
+  }
+
+  /**
+   * Recover a stale session by creating a new transport with the same session ID
+   */
+  private async recoverStaleSession(sessionId: string, req: Request, res: Response): Promise<void> {
+    // Remove from stale set since we're recovering it
+    this.staleSessionIds.delete(sessionId);
+
+    // Create new transport that will use the existing session ID
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: () => sessionId, // Reuse the old session ID
+      onsessioninitialized: (id: string) => {
+        const server = this.createMcpServer();
+        this.httpSessions.set(id, { transport, server, lastActivityTime: Date.now() });
+        log.info('Stale session recovered', { sessionId: id, activeSessions: this.httpSessions.size });
+      },
+      onsessionclosed: (id: string) => {
+        this.httpSessions.delete(id);
+        log.info('HTTP session closed', { sessionId: id });
+      },
+    });
+
+    transport.onclose = () => {
+      if (transport.sessionId) {
+        this.httpSessions.delete(transport.sessionId);
+      }
+    };
+
+    const server = this.createMcpServer();
+    await server.connect(transport);
+
+    // Manually register the session since we're not going through initialize
+    this.httpSessions.set(sessionId, { transport, server, lastActivityTime: Date.now() });
+
+    // Handle the original request
+    await transport.handleRequest(req, res, req.body);
   }
 
   /**
@@ -340,6 +410,13 @@ export class MCPServer {
 
       // Stop HTTP server and close all sessions
       if (this.httpServer) {
+        // Save session IDs before clearing (enables hot reload recovery)
+        if (this.config.sessionPersistence && this.httpSessions.size > 0) {
+          const sessionIds = Array.from(this.httpSessions.keys());
+          this.config.sessionPersistence.saveSessionIds(sessionIds);
+          log.info('Saved session IDs for hot reload recovery', { count: sessionIds.length });
+        }
+
         // Close all active sessions
         for (const [sessionId, session] of this.httpSessions) {
           try {

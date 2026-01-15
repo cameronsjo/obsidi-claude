@@ -13,6 +13,12 @@ import { createLogger } from './logger';
 
 const log = createLogger('ChatView');
 
+// UI Configuration Constants
+const SCROLL_THRESHOLD_PX = 100;
+const MAX_TEXTAREA_HEIGHT_PX = 180;
+const CHARS_PER_TOKEN_ESTIMATE = 4;
+const MAX_INPUT_HISTORY_SIZE = 50;
+
 export const CHAT_VIEW_TYPE = 'obsidi-claude-chat';
 
 export class ChatView extends ItemView {
@@ -384,8 +390,8 @@ export class ChatView extends ItemView {
     this.messagesContainer.addEventListener('scroll', () => {
       const { scrollTop, scrollHeight, clientHeight } = this.messagesContainer;
       const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
-      // User is "near bottom" if within 100px of the bottom
-      this.userScrolledUp = distanceFromBottom > 100;
+      // User is "near bottom" if within threshold of the bottom
+      this.userScrolledUp = distanceFromBottom > SCROLL_THRESHOLD_PX;
     });
   }
 
@@ -476,11 +482,9 @@ export class ChatView extends ItemView {
     await this.loadConversationById(id);
 
     if (this.conversation.sessionId) {
-      this.setStatus('Session restored - ready to continue', 'success');
-      setTimeout(() => this.setStatus(''), 3000);
+      this.showTemporaryStatus('Session restored - ready to continue', 'success');
     } else {
-      this.setStatus('No session to resume - starting fresh', 'info');
-      setTimeout(() => this.setStatus(''), 3000);
+      this.showTemporaryStatus('No session to resume - starting fresh', 'info');
     }
 
     // Focus input
@@ -543,7 +547,7 @@ export class ChatView extends ItemView {
     // Auto-resize textarea
     this.inputEl.addEventListener('input', () => {
       this.inputEl.style.height = 'auto';
-      this.inputEl.style.height = Math.min(this.inputEl.scrollHeight, 180) + 'px';
+      this.inputEl.style.height = Math.min(this.inputEl.scrollHeight, MAX_TEXTAREA_HEIGHT_PX) + 'px';
     });
 
     // Button container
@@ -916,6 +920,11 @@ export class ChatView extends ItemView {
     this.statusEl.style.display = message ? 'block' : 'none';
   }
 
+  private showTemporaryStatus(message: string, type: 'info' | 'error' | 'success' = 'info', durationMs = 3000): void {
+    this.setStatus(message, type);
+    setTimeout(() => this.setStatus(''), durationMs);
+  }
+
   private updateBackendBadge(): void {
     if (!this.backendBadge) return;
 
@@ -971,8 +980,8 @@ export class ChatView extends ItemView {
     // System prompt
     totalChars += this.plugin.settings.systemPrompt.length;
 
-    // Rough estimate: ~4 chars per token
-    return Math.ceil(totalChars / 4);
+    // Rough estimate based on average chars per token
+    return Math.ceil(totalChars / CHARS_PER_TOKEN_ESTIMATE);
   }
 
   private updateTokenCounter(): void {
@@ -1030,8 +1039,7 @@ export class ChatView extends ItemView {
         // Insert current note content into the input
         const activeFile = this.plugin.app.workspace.getActiveFile();
         if (!activeFile) {
-          this.setStatus('No active note', 'info');
-          setTimeout(() => this.setStatus(''), 2000);
+          this.showTemporaryStatus('No active note', 'info', 2000);
           return true;
         }
 
@@ -1048,10 +1056,9 @@ export class ChatView extends ItemView {
 
           // Trigger resize
           this.inputEl.style.height = 'auto';
-          this.inputEl.style.height = Math.min(this.inputEl.scrollHeight, 180) + 'px';
+          this.inputEl.style.height = Math.min(this.inputEl.scrollHeight, MAX_TEXTAREA_HEIGHT_PX) + 'px';
           this.inputEl.focus();
-          this.setStatus(`Added "${activeFile.basename}" to input`, 'success');
-          setTimeout(() => this.setStatus(''), 2000);
+          this.showTemporaryStatus(`Added "${activeFile.basename}" to input`, 'success', 2000);
         } catch (error) {
           log.error('Failed to read active note', error);
           this.setStatus('Failed to read note', 'error');
@@ -1076,8 +1083,7 @@ export class ChatView extends ItemView {
 
       default:
         // Unknown command - show help hint
-        this.setStatus(`Unknown command: /${command}. Type /help for available commands.`, 'info');
-        setTimeout(() => this.setStatus(''), 3000);
+        this.showTemporaryStatus(`Unknown command: /${command}. Type /help for available commands.`, 'info');
         return true;
     }
   }
@@ -1145,7 +1151,7 @@ export class ChatView extends ItemView {
 
     // Trigger resize
     this.inputEl.style.height = 'auto';
-    this.inputEl.style.height = Math.min(this.inputEl.scrollHeight, 180) + 'px';
+    this.inputEl.style.height = Math.min(this.inputEl.scrollHeight, MAX_TEXTAREA_HEIGHT_PX) + 'px';
   }
 
   private async sendMessage(): Promise<void> {
@@ -1166,8 +1172,8 @@ export class ChatView extends ItemView {
     // Add to input history (avoid duplicates of last entry)
     if (this.inputHistory.length === 0 || this.inputHistory[this.inputHistory.length - 1] !== content) {
       this.inputHistory.push(content);
-      // Keep history manageable (last 50 messages)
-      if (this.inputHistory.length > 50) {
+      // Keep history manageable
+      if (this.inputHistory.length > MAX_INPUT_HISTORY_SIZE) {
         this.inputHistory.shift();
       }
     }
@@ -1267,10 +1273,7 @@ export class ChatView extends ItemView {
           const costInfo = result.totalCost
             ? ` (Cost: $${result.totalCost.toFixed(4)})`
             : '';
-          this.setStatus(`Complete${costInfo}`, 'success');
-
-          // Clear status after 3 seconds
-          setTimeout(() => this.setStatus(''), 3000);
+          this.showTemporaryStatus(`Complete${costInfo}`, 'success');
         } else {
           this.setStatus(
             `Errors: ${result.errors?.join(', ') || 'Unknown error'}`,
@@ -1354,8 +1357,7 @@ export class ChatView extends ItemView {
 
   private async exportConversation(): Promise<void> {
     if (this.conversation.messages.length === 0) {
-      this.setStatus('No messages to export', 'info');
-      setTimeout(() => this.setStatus(''), 2000);
+      this.showTemporaryStatus('No messages to export', 'info', 2000);
       return;
     }
 
@@ -1448,8 +1450,7 @@ export class ChatView extends ItemView {
         await this.plugin.app.vault.create(filePath, content);
       }
 
-      this.setStatus(`Exported to "${filename}"`, 'success');
-      setTimeout(() => this.setStatus(''), 3000);
+      this.showTemporaryStatus(`Exported to "${filename}"`, 'success');
 
       log.info('Conversation exported', { path: filePath });
     } catch (error) {
@@ -1464,8 +1465,7 @@ export class ChatView extends ItemView {
     this.conversation.sessionId = undefined;
     this.renderAllMessages();
     await this.saveConversation();
-    this.setStatus('Messages cleared', 'info');
-    setTimeout(() => this.setStatus(''), 2000);
+    this.showTemporaryStatus('Messages cleared', 'info', 2000);
   }
 
   private scrollToBottom(force = false): void {

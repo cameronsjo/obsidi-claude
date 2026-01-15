@@ -80,10 +80,9 @@ When enabled, Claude can use:
 
 ```
 Obsidian Plugin
-    └── AgentService (wrapper)
-            └── @anthropic-ai/claude-agent-sdk
-                    └── Claude Code CLI (subprocess)
-                            └── Claude API
+    └── @anthropic-ai/claude-agent-sdk
+            └── Claude Code CLI (subprocess)
+                    └── Claude API
 ```
 
 The plugin uses the official Claude Agent SDK which spawns Claude Code as a subprocess. This provides full access to Claude Code's capabilities including file operations, shell commands, and web access.

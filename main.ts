@@ -346,6 +346,12 @@ export default class ObsidiClaudePlugin extends Plugin {
         version: this.manifest.version,
         transport: this.settings.mcp.transport,
         httpPort: this.settings.mcp.httpPort,
+        // Enable session persistence for hot reload recovery
+        sessionPersistence: {
+          loadStaleSessionIds: () => this.storage.loadStaleSessionIds(),
+          saveSessionIds: (ids) => this.storage.saveSessionIds(ids),
+          clearSessionIds: () => this.storage.clearSessionIds(),
+        },
       });
       await this.mcpServer.start();
       log.info('MCP server started', {
