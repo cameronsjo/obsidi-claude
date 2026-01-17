@@ -24,6 +24,8 @@ export interface BackendOptions {
   maxTurns?: number;
   /** Custom system prompt */
   systemPrompt?: string;
+  /** Content to display in UI (if different from API content, e.g., without context wrappers) */
+  displayContent?: string;
 }
 
 /**

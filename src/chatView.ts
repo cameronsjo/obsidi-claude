@@ -1323,6 +1323,8 @@ export class ChatView extends ItemView {
         {
           resumeSessionId: this.conversation.metadata?.sessionId ?? this.conversation.sessionId,
           systemPrompt: enhancedPrompt,
+          // Show only the user's input in UI, not the injected context
+          displayContent: content !== messageContent ? content : undefined,
         }
       );
     } catch (error) {

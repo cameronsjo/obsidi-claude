@@ -132,8 +132,9 @@ export class APIAgentBackend implements AgentBackend {
     });
     log.debug('Message preview', { preview: messagePreview });
 
-    // Create user message
-    const userMsg = createUserMessage(userMessage);
+    // Create user message for UI (use displayContent if provided, otherwise full message)
+    const displayContent = options?.displayContent ?? userMessage;
+    const userMsg = createUserMessage(displayContent);
     callbacks.onMessage(userMsg);
 
     // Emit a fake session init for compatibility

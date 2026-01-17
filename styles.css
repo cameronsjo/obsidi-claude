@@ -175,8 +175,9 @@
 }
 
 .user-message .message-bubble {
-  background-color: var(--interactive-accent);
-  color: var(--text-on-accent);
+  background-color: var(--background-secondary);
+  color: var(--text-normal);
+  border: 1px solid var(--interactive-accent);
   border-bottom-right-radius: 0.25rem;
 }
 
@@ -218,20 +219,12 @@
   word-break: break-all;
 }
 
-.user-message .message-content pre {
-  background-color: rgba(0, 0, 0, 0.15);
-}
-
 .message-content code {
   font-size: 0.9em;
   background-color: var(--background-primary);
   padding: 0.1em 0.3em;
   border-radius: 3px;
   word-break: break-word;
-}
-
-.user-message .message-content code {
-  background-color: rgba(0, 0, 0, 0.15);
 }
 
 /* Code block copy button */
