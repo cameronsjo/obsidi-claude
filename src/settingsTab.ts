@@ -631,6 +631,7 @@ export class SettingsTab extends PluginSettingTab {
       .addDropdown((dropdown) =>
         dropdown
           .addOption('http', 'HTTP (Recommended)')
+          .addOption('sse', 'SSE (Deprecated)')
           .addOption('stdio', 'Stdio (For CLI integration)')
           .addOption('both', 'Both (HTTP + Stdio)')
           .setValue(mcp.transport)
@@ -649,10 +650,10 @@ export class SettingsTab extends PluginSettingTab {
           })
       );
 
-    if (mcp.transport === 'http' || mcp.transport === 'both') {
+    if (mcp.transport === 'http' || mcp.transport === 'sse' || mcp.transport === 'both') {
       new Setting(containerEl)
         .setName('HTTP Port')
-        .setDesc('Port for HTTP transport (default: 3000)')
+        .setDesc('Port for HTTP/SSE transport (default: 3000)')
         .addText((text) =>
           text
             .setPlaceholder('3000')
@@ -686,6 +687,23 @@ export class SettingsTab extends PluginSettingTab {
   }
 }</pre>
         <em>Note: The MCP server exposes 16 tools for vault interaction including semantic search, file operations, and knowledge graph navigation.</em>
+      `;
+    } else if (mcp.transport === 'sse') {
+      infoEl.innerHTML = `
+        <strong>SSE Transport (Deprecated):</strong><br>
+        SSE endpoint: <code>http://localhost:${mcp.httpPort}/sse</code><br>
+        Messages endpoint: <code>http://localhost:${mcp.httpPort}/messages</code><br>
+        Health check: <code>http://localhost:${mcp.httpPort}/health</code><br><br>
+        <strong>Claude Code Configuration:</strong><br>
+        Add to <code>~/.claude/claude_desktop_config.json</code>:<br>
+        <pre style="background: var(--background-secondary); padding: 8px; border-radius: 4px; overflow-x: auto; font-size: 0.85em;">{
+  "mcpServers": {
+    "${mcp.serverName}": {
+      "url": "http://localhost:${mcp.httpPort}/sse"
+    }
+  }
+}</pre>
+        <em>Note: SSE transport is deprecated. Consider using HTTP transport instead.</em>
       `;
     } else {
       infoEl.innerHTML = `

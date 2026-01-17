@@ -69,7 +69,7 @@ export interface EmbeddingSettings {
 export interface MCPSettings {
   enabled: boolean;
   serverName: string;
-  transport: 'stdio' | 'http' | 'both';
+  transport: 'stdio' | 'http' | 'sse' | 'both';
   httpPort: number;
 }
 

@@ -1,6 +1,7 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import {
   ListToolsRequestSchema,
   CallToolRequestSchema,
@@ -14,7 +15,7 @@ import { createLogger } from './logger';
 
 const log = createLogger('MCPServer');
 
-export type MCPTransportType = 'stdio' | 'http' | 'both';
+export type MCPTransportType = 'stdio' | 'http' | 'sse' | 'both';
 
 export interface MCPServerConfig {
   name: string;
@@ -45,11 +46,19 @@ interface SessionTransport {
   lastActivityTime: number;
 }
 
+interface SSESession {
+  transport: SSEServerTransport;
+  server: Server;
+}
+
 /**
  * MCP Server that exposes Obsidian vault tools to external Claude instances
  *
- * Supports both stdio and HTTP transports. HTTP mode allows multiple clients
- * to connect via REST API on a configurable port.
+ * Supports stdio, HTTP (StreamableHTTP), and SSE transports:
+ * - stdio: Standard input/output for local subprocess communication
+ * - http: REST API with session management (recommended)
+ * - sse: Server-Sent Events (deprecated, but still supported for compatibility)
+ * - both: Runs stdio + http simultaneously
  */
 export class MCPServer {
   private stdioServer: Server | null = null;
@@ -59,6 +68,9 @@ export class MCPServer {
   private httpSessions: Map<string, SessionTransport> = new Map();
   private staleSessionIds: Set<string> = new Set();
   private cleanupInterval: ReturnType<typeof setInterval> | null = null;
+  private sseApp: Express | null = null;
+  private sseServer: HttpServer | null = null;
+  private sseSessions: Map<string, SSESession> = new Map();
   private tools: ObsidianTools;
   private config: MCPServerConfig;
   private isRunning = false;
@@ -90,6 +102,10 @@ export class MCPServer {
 
       if (this.config.transport === 'http' || this.config.transport === 'both') {
         await this.startHttpServer();
+      }
+
+      if (this.config.transport === 'sse') {
+        await this.startSseServer();
       }
 
       this.isRunning = true;
@@ -185,6 +201,96 @@ export class MCPServer {
 
     // Start session cleanup interval
     this.startCleanupInterval();
+  }
+
+  /**
+   * Start the SSE transport server (deprecated but still supported)
+   *
+   * SSE transport uses two endpoints:
+   * - GET /sse: Establishes SSE connection, server pushes messages to client
+   * - POST /messages: Client sends messages to server
+   */
+  private async startSseServer(): Promise<void> {
+    log.debug('Starting SSE transport (deprecated)', { port: this.config.httpPort });
+
+    this.sseApp = express();
+    this.sseApp.use(express.json());
+
+    // Health check endpoint
+    this.sseApp.get('/health', (_req: Request, res: Response) => {
+      res.json({
+        status: 'ok',
+        name: this.config.name,
+        version: this.config.version,
+        transport: 'sse',
+        activeSessions: this.sseSessions.size,
+      });
+    });
+
+    // SSE endpoint - client establishes connection here
+    this.sseApp.get('/sse', async (req: Request, res: Response) => {
+      log.info('SSE connection request received');
+
+      const transport = new SSEServerTransport('/messages', res);
+      const server = this.createMcpServer();
+
+      await server.connect(transport);
+
+      const sessionId = crypto.randomUUID();
+      this.sseSessions.set(sessionId, { transport, server });
+
+      log.info('SSE session established', { sessionId, activeSessions: this.sseSessions.size });
+
+      // Clean up on connection close
+      req.on('close', () => {
+        this.sseSessions.delete(sessionId);
+        log.info('SSE session closed', { sessionId, activeSessions: this.sseSessions.size });
+      });
+    });
+
+    // Messages endpoint - client sends messages here
+    this.sseApp.post('/messages', async (req: Request, res: Response) => {
+      const sessionId = req.query.sessionId as string | undefined;
+
+      if (!sessionId || !this.sseSessions.has(sessionId)) {
+        res.status(400).json({
+          jsonrpc: '2.0',
+          error: {
+            code: -32000,
+            message: 'Invalid or missing session ID. Establish SSE connection first via GET /sse',
+          },
+          id: null,
+        });
+        return;
+      }
+
+      const session = this.sseSessions.get(sessionId)!;
+      await session.transport.handlePostMessage(req, res, req.body);
+    });
+
+    // Start listening
+    await new Promise<void>((resolve, reject) => {
+      try {
+        this.sseServer = this.sseApp!.listen(this.config.httpPort, () => {
+          log.info('SSE transport started', {
+            port: this.config.httpPort,
+            sseUrl: `http://localhost:${this.config.httpPort}/sse`,
+            messagesUrl: `http://localhost:${this.config.httpPort}/messages`,
+          });
+          resolve();
+        });
+
+        this.sseServer.on('error', (error: NodeJS.ErrnoException) => {
+          if (error.code === 'EADDRINUSE') {
+            reject(new Error(`Port ${this.config.httpPort} is already in use`));
+          } else {
+            reject(error);
+          }
+        });
+      } catch (error) {
+        reject(error);
+      }
+    });
   }
 
   /**
@@ -430,6 +536,25 @@ export class MCPServer {
         this.httpApp = null;
       }
 
+      // Stop SSE server and close all sessions
+      if (this.sseServer) {
+        // Close all active SSE sessions
+        for (const [sessionId, session] of this.sseSessions) {
+          try {
+            await session.server.close();
+          } catch {
+            log.debug('Error closing SSE session', { sessionId });
+          }
+        }
+        this.sseSessions.clear();
+
+        await new Promise<void>((resolve) => {
+          this.sseServer!.close(() => resolve());
+        });
+        this.sseServer = null;
+        this.sseApp = null;
+      }
+
       this.isRunning = false;
       log.info('MCP server stopped');
     } catch (error) {
@@ -453,7 +578,7 @@ export class MCPServer {
       running: this.isRunning,
       transport: this.config.transport,
       httpPort: this.config.transport !== 'stdio' ? this.config.httpPort : undefined,
-      activeSessions: this.httpSessions.size,
+      activeSessions: this.httpSessions.size + this.sseSessions.size,
     };
   }
 
