@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.1](https://github.com/cameronsjo/obsidi-claude/compare/1.0.0...1.0.1) (2026-01-29)
+
+
+### Bug Fixes
+
+* optimize token usage and add Style Settings support ([6735190](https://github.com/cameronsjo/obsidi-claude/commit/6735190835536de29520d7003cf3cb716b6babc3))
+* optimize token usage and add Style Settings support ([e205f03](https://github.com/cameronsjo/obsidi-claude/commit/e205f03ec9468ffbfddaa2cc37c1d7c7b60e1a64))
+
 ## 1.0.0 (2026-01-19)
 
 
