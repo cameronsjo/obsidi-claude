@@ -127,8 +127,8 @@ export class SDKAgentBackend implements AgentBackend {
     });
     log.debug('Message preview', { preview: messagePreview });
 
-    // Create user message
-    const userMsg = createUserMessage(userMessage);
+    // Create user message (use displayContent for UI if provided, full message for API)
+    const userMsg = createUserMessage(options?.displayContent ?? userMessage);
     callbacks.onMessage(userMsg);
 
     // Create streaming assistant message placeholder

@@ -2,6 +2,7 @@ import {
   ItemView,
   WorkspaceLeaf,
   MarkdownRenderer,
+  MarkdownView,
   Component,
   setIcon,
 } from 'obsidian';
@@ -65,11 +66,15 @@ export class ChatView extends ItemView {
 
   // Track last sent note to avoid redundant context injection
   private lastSentNotePath: string | null = null;
+  private lastSentNoteContent: string | null = null;
 
   // Message queue for queueing messages while processing
   private messageQueue: { content: string; timestamp: number }[] = [];
   private queueContainer: HTMLElement;
   private queueBadge: HTMLElement;
+
+  // Input wrapper for processing state styling
+  private inputWrapper!: HTMLElement;
 
   constructor(leaf: WorkspaceLeaf, plugin: ObsidiClaudePlugin) {
     super(leaf);
@@ -596,6 +601,7 @@ export class ChatView extends ItemView {
     if (conv) {
       this.conversation = conv;
       this.lastSentNotePath = null; // Reset note tracking when switching conversations
+      this.lastSentNoteContent = null;
       await this.plugin.storage.setCurrentConversationId(id);
       this.renderAllMessages();
       this.updateTitle();
@@ -644,10 +650,10 @@ export class ChatView extends ItemView {
 
   private createInputArea(inputArea: HTMLElement): void {
     // Wrapper for input and buttons
-    const inputWrapper = inputArea.createDiv('chat-input-wrapper');
+    this.inputWrapper = inputArea.createDiv('chat-input-wrapper');
 
     // Textarea
-    this.inputEl = inputWrapper.createEl('textarea', {
+    this.inputEl = this.inputWrapper.createEl('textarea', {
       cls: 'chat-input',
       attr: {
         placeholder: 'Ask Claude anything...',
@@ -676,7 +682,7 @@ export class ChatView extends ItemView {
     });
 
     // Button container
-    const buttonArea = inputWrapper.createDiv('chat-buttons');
+    const buttonArea = this.inputWrapper.createDiv('chat-buttons');
 
     // Left side: hint and token counter
     const leftArea = buttonArea.createDiv('chat-buttons-left');
@@ -1123,9 +1129,14 @@ export class ChatView extends ItemView {
   private setProcessing(processing: boolean): void {
     this.isProcessing = processing;
     if (!this.sendButton || !this.stopButton || !this.inputEl) return;
-    this.sendButton.style.display = processing ? 'none' : 'block';
-    this.stopButton.style.display = processing ? 'block' : 'none';
+    this.sendButton.style.display = processing ? 'none' : 'inline-flex';
+    this.stopButton.style.display = processing ? 'inline-flex' : 'none';
     this.inputEl.disabled = processing;
+
+    // Add/remove processing class for visual feedback
+    if (this.inputWrapper) {
+      this.inputWrapper.toggleClass('is-processing', processing);
+    }
   }
 
   /**
@@ -1452,31 +1463,50 @@ When Claude is busy, messages are automatically queued and processed in order.
       );
 
       // Build message with optional active note context
-      // Only include full note content when:
-      // 1. This is the first message with this note, OR
-      // 2. The active note has changed since the last message
-      // This avoids burning tokens by repeating note content in every message
+      // Priority: selected text > full/delta note content
       let messageContent = content;
       if (this.plugin.settings.activeNoteContext) {
         const activeFile = this.plugin.app.workspace.getActiveFile();
         if (activeFile && activeFile.extension === 'md') {
           const notePath = activeFile.path;
-          const isNewNote = this.lastSentNotePath !== notePath;
 
-          if (isNewNote) {
-            // Include full note content for new/changed notes
+          // Check for selected text first - this takes priority
+          const selection = this.getEditorSelection();
+          if (selection) {
+            // Include selected text with line range for context
+            messageContent = `<selected_text path="${notePath}" lines="${selection.startLine}-${selection.endLine}">\n${selection.text}\n</selected_text>\n\n${content}`;
+            log.debug('Included selected text', { path: notePath, lines: `${selection.startLine}-${selection.endLine}`, length: selection.text.length });
+          } else {
+            // No selection - use full note or delta
+            const isNewNote = this.lastSentNotePath !== notePath;
+
             try {
               const noteContent = await this.plugin.app.vault.read(activeFile);
-              messageContent = `<active_note path="${notePath}">\n${noteContent}\n</active_note>\n\n${content}`;
-              this.lastSentNotePath = notePath;
-              log.debug('Included active note context (new note)', { path: notePath, contentLength: noteContent.length });
+
+              if (isNewNote) {
+                // Include full note content for new/different notes
+                messageContent = `<active_note path="${notePath}">\n${noteContent}\n</active_note>\n\n${content}`;
+                this.lastSentNotePath = notePath;
+                this.lastSentNoteContent = noteContent;
+                log.debug('Included active note context (new note)', { path: notePath, contentLength: noteContent.length });
+              } else if (this.lastSentNoteContent && noteContent !== this.lastSentNoteContent) {
+                // Same note but content changed - send only the delta if it's smaller
+                const delta = this.computeNoteDelta(this.lastSentNoteContent, noteContent);
+                if (delta && delta.length < noteContent.length) {
+                  // Delta is smaller - send just the changes
+                  messageContent = `<active_note_changes path="${notePath}">\n${delta}\n</active_note_changes>\n\n${content}`;
+                  log.debug('Included note delta', { path: notePath, deltaLength: delta.length });
+                } else if (delta) {
+                  // Delta is larger than full content - resend full note
+                  messageContent = `<active_note path="${notePath}">\n${noteContent}\n</active_note>\n\n${content}`;
+                  log.debug('Resent full note (delta too large)', { path: notePath, contentLength: noteContent.length });
+                }
+                this.lastSentNoteContent = noteContent;
+              }
+              // If same note and no changes, just send the user's message
             } catch (err) {
               log.warn('Failed to read active note for context', { path: notePath, error: err });
             }
-          } else {
-            // Just reference the previously sent note to save tokens
-            messageContent = `<active_note_ref path="${notePath}" />\n\n${content}`;
-            log.debug('Referenced existing note context', { path: notePath });
           }
         }
       }
@@ -1488,6 +1518,7 @@ When Claude is busy, messages are automatically queued and processed in order.
         {
           resumeSessionId: this.conversation.metadata?.sessionId ?? this.conversation.sessionId,
           systemPrompt: enhancedPrompt,
+          displayContent: content, // Show only user's actual input, not note context
         }
       );
     } catch (error) {
@@ -1504,10 +1535,117 @@ When Claude is busy, messages are automatically queued and processed in order.
     this.setStatus('Stopped', 'info');
   }
 
+  /**
+   * Get selected text from the active editor, if any.
+   * Returns the selection with line numbers for context.
+   */
+  private getEditorSelection(): { text: string; startLine: number; endLine: number } | null {
+    const view = this.plugin.app.workspace.getActiveViewOfType(MarkdownView);
+    if (!view) return null;
+
+    const editor = view.editor;
+    const selection = editor.getSelection();
+
+    // Only return if there's actual selected text (not just cursor position)
+    if (!selection || selection.trim().length === 0) return null;
+
+    const from = editor.getCursor('from');
+    const to = editor.getCursor('to');
+
+    return {
+      text: selection,
+      startLine: from.line + 1, // 1-indexed for display
+      endLine: to.line + 1,
+    };
+  }
+
+  /**
+   * Compute a diff between old and new note content.
+   * Returns a formatted string showing only the changed lines with context.
+   */
+  private computeNoteDelta(oldContent: string, newContent: string): string | null {
+    const oldLines = oldContent.split('\n');
+    const newLines = newContent.split('\n');
+    const contextLines = 2; // Lines of context around changes
+    const changes: string[] = [];
+
+    // Simple line-by-line comparison to find changed regions
+    const maxLen = Math.max(oldLines.length, newLines.length);
+    let inChange = false;
+    let changeStart = -1;
+
+    for (let i = 0; i < maxLen; i++) {
+      const oldLine = oldLines[i];
+      const newLine = newLines[i];
+      const isDifferent = oldLine !== newLine;
+
+      if (isDifferent && !inChange) {
+        // Start of a change region
+        inChange = true;
+        changeStart = Math.max(0, i - contextLines);
+      } else if (!isDifferent && inChange) {
+        // End of a change region - output it with context
+        const changeEnd = Math.min(newLines.length, i + contextLines);
+        changes.push(this.formatChangeRegion(oldLines, newLines, changeStart, i - 1, changeEnd));
+        inChange = false;
+      }
+    }
+
+    // Handle change at end of file
+    if (inChange) {
+      const changeEnd = newLines.length;
+      changes.push(this.formatChangeRegion(oldLines, newLines, changeStart, maxLen - 1, changeEnd));
+    }
+
+    if (changes.length === 0) {
+      return null;
+    }
+
+    return changes.join('\n---\n');
+  }
+
+  /**
+   * Format a single change region with context lines.
+   * Uses diff-style markers: - for removed, + for added, space for context.
+   */
+  private formatChangeRegion(
+    oldLines: string[],
+    newLines: string[],
+    contextStart: number,
+    changeEnd: number,
+    contextEnd: number
+  ): string {
+    const result: string[] = [];
+    result.push(`[Lines ${contextStart + 1}-${contextEnd}]`);
+
+    for (let i = contextStart; i < contextEnd; i++) {
+      const oldLine = oldLines[i];
+      const newLine = newLines[i];
+
+      if (oldLine === newLine) {
+        // Context line (unchanged)
+        result.push(`  ${newLine ?? ''}`);
+      } else if (oldLine === undefined) {
+        // Added line
+        result.push(`+ ${newLine}`);
+      } else if (newLine === undefined) {
+        // Removed line
+        result.push(`- ${oldLine}`);
+      } else {
+        // Changed line
+        result.push(`- ${oldLine}`);
+        result.push(`+ ${newLine}`);
+      }
+    }
+
+    return result.join('\n');
+  }
+
   private async newConversation(): Promise<void> {
     log.info('Creating new conversation');
     this.conversation = await this.plugin.storage.createConversation();
     this.lastSentNotePath = null; // Reset note tracking for new conversation
+    this.lastSentNoteContent = null;
     this.renderAllMessages();
     this.updateTitle();
     this.setStatus('');
