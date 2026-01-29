@@ -634,6 +634,25 @@ pre:hover .code-copy-btn {
   box-shadow: 0 0 0 2px var(--interactive-accent-hover);
 }
 
+.chat-input-wrapper.is-processing {
+  border-color: var(--interactive-accent);
+  animation: processing-pulse 2s ease-in-out infinite;
+}
+
+@keyframes processing-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 2px rgba(var(--interactive-accent-rgb), 0.2);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(var(--interactive-accent-rgb), 0.4);
+  }
+}
+
+/* Fallback for themes without RGB variable */
+.chat-input-wrapper.is-processing {
+  box-shadow: 0 0 0 2px var(--interactive-accent-hover);
+}
+
 .chat-input {
   width: 100%;
   padding: 0.5rem 0.75rem;
@@ -697,9 +716,17 @@ pre:hover .code-copy-btn {
   cursor: pointer;
   font-weight: 500;
   transition: all 0.15s ease;
-  display: flex;
+  display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 0.375rem;
+}
+
+.chat-send-btn svg,
+.chat-stop-btn svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
 }
 
 .chat-send-btn {
@@ -721,10 +748,21 @@ pre:hover .code-copy-btn {
   background-color: var(--background-modifier-error);
   color: white;
   border: none;
+  animation: stop-btn-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes stop-btn-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
 }
 
 .chat-stop-btn:hover {
   opacity: 0.9;
+  animation: none;
 }
 
 /* Scrollbar styling */
