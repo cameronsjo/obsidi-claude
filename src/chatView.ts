@@ -66,6 +66,11 @@ export class ChatView extends ItemView {
   // Track last sent note to avoid redundant context injection
   private lastSentNotePath: string | null = null;
 
+  // Message queue for queueing messages while processing
+  private messageQueue: { content: string; timestamp: number }[] = [];
+  private queueContainer: HTMLElement;
+  private queueBadge: HTMLElement;
+
   constructor(leaf: WorkspaceLeaf, plugin: ObsidiClaudePlugin) {
     super(leaf);
     this.plugin = plugin;
@@ -110,6 +115,11 @@ export class ChatView extends ItemView {
     this.searchContainer = container.createDiv('chat-search-bar');
     this.searchContainer.style.display = 'none';
     this.createSearchBar(this.searchContainer);
+
+    // Message queue container (hidden by default)
+    this.queueContainer = container.createDiv('chat-queue-container');
+    this.queueContainer.style.display = 'none';
+    this.createQueueUI(this.queueContainer);
 
     // Messages area
     this.messagesContainer = container.createDiv('chat-messages');
@@ -315,6 +325,109 @@ export class ChatView extends ItemView {
       this.searchMatches = [];
       this.currentSearchIndex = -1;
       this.searchInput.value = '';
+    }
+  }
+
+  private createQueueUI(container: HTMLElement): void {
+    const headerDiv = container.createDiv('queue-header');
+
+    const titleDiv = headerDiv.createDiv('queue-title');
+    titleDiv.createSpan({ text: 'Message Queue' });
+    this.queueBadge = titleDiv.createSpan({ cls: 'queue-badge' });
+
+    const actionsDiv = headerDiv.createDiv('queue-actions');
+
+    const clearBtn = actionsDiv.createEl('button', {
+      cls: 'chat-action-btn',
+      attr: { 'aria-label': 'Clear queue' },
+    });
+    setIcon(clearBtn, 'trash-2');
+    clearBtn.onclick = () => this.clearQueue();
+
+    // Queue list container
+    container.createDiv('queue-list');
+  }
+
+  private updateQueueUI(): void {
+    const queueCount = this.messageQueue.length;
+
+    // Show/hide queue container
+    this.queueContainer.style.display = queueCount > 0 ? 'block' : 'none';
+
+    // Update badge
+    if (this.queueBadge) {
+      this.queueBadge.setText(String(queueCount));
+    }
+
+    // Update list
+    const listEl = this.queueContainer.querySelector('.queue-list') as HTMLElement;
+    if (!listEl) return;
+
+    listEl.empty();
+
+    this.messageQueue.forEach((item, index) => {
+      const itemEl = listEl.createDiv('queue-item');
+
+      const contentDiv = itemEl.createDiv('queue-item-content');
+
+      // Show position number
+      const posSpan = contentDiv.createSpan({ text: `${index + 1}. `, cls: 'queue-item-pos' });
+
+      // Show truncated message
+      const preview = item.content.length > 50 ? item.content.slice(0, 50) + '...' : item.content;
+      contentDiv.createSpan({ text: preview });
+
+      // Remove button
+      const removeBtn = itemEl.createEl('button', {
+        cls: 'queue-remove-btn',
+        attr: { 'aria-label': 'Remove from queue' },
+      });
+      setIcon(removeBtn, 'x');
+      removeBtn.onclick = (e) => {
+        e.stopPropagation();
+        this.removeFromQueue(index);
+      };
+    });
+  }
+
+  private addToQueue(content: string): void {
+    this.messageQueue.push({
+      content,
+      timestamp: Date.now(),
+    });
+    this.updateQueueUI();
+    this.showTemporaryStatus(`Message queued (${this.messageQueue.length} in queue)`, 'info', 2000);
+    log.debug('Message added to queue', { queueLength: this.messageQueue.length });
+  }
+
+  private removeFromQueue(index: number): void {
+    if (index >= 0 && index < this.messageQueue.length) {
+      this.messageQueue.splice(index, 1);
+      this.updateQueueUI();
+      log.debug('Message removed from queue', { index, queueLength: this.messageQueue.length });
+    }
+  }
+
+  private clearQueue(): void {
+    this.messageQueue = [];
+    this.updateQueueUI();
+    this.showTemporaryStatus('Queue cleared', 'info', 2000);
+    log.debug('Queue cleared');
+  }
+
+  private async processNextInQueue(): Promise<void> {
+    if (this.messageQueue.length === 0 || this.isProcessing) {
+      return;
+    }
+
+    const nextMessage = this.messageQueue.shift();
+    this.updateQueueUI();
+
+    if (nextMessage) {
+      log.info('Processing next message from queue', { queueRemaining: this.messageQueue.length });
+      // Set the input value and trigger send
+      this.inputEl.value = nextMessage.content;
+      await this.sendMessage();
     }
   }
 
@@ -570,7 +683,7 @@ export class ChatView extends ItemView {
 
     // Keyboard hint
     const hintEl = leftArea.createSpan('chat-input-hint');
-    hintEl.setText('Enter to send · /help for commands');
+    hintEl.setText('Enter to send · Queue when busy · /help');
 
     // Token counter
     this.tokenCounter = leftArea.createSpan('chat-token-counter');
@@ -1080,6 +1193,19 @@ export class ChatView extends ItemView {
         }
         return true;
 
+      case 'queue':
+        if (args === 'clear') {
+          this.clearQueue();
+        } else {
+          const count = this.messageQueue.length;
+          if (count === 0) {
+            this.showTemporaryStatus('Message queue is empty', 'info', 2000);
+          } else {
+            this.showTemporaryStatus(`${count} message${count !== 1 ? 's' : ''} in queue`, 'info', 2000);
+          }
+        }
+        return true;
+
       case 'help':
       case '?':
         this.showSlashCommandHelp();
@@ -1100,13 +1226,17 @@ export class ChatView extends ItemView {
 - \`/export\` - Export chat as markdown note
 - \`/note [question]\` - Insert current note as context
 - \`/search <query>\` - Search messages
+- \`/queue [clear]\` - Show queue status or clear it
 - \`/help\` - Show this help
 
 **Keyboard Shortcuts:**
-- \`Enter\` - Send message
+- \`Enter\` - Send message (or queue if busy)
 - \`Shift+Enter\` - New line
 - \`↑/↓\` - Navigate input history
 - \`Ctrl/Cmd+F\` - Search messages
+
+**Message Queue:**
+When Claude is busy, messages are automatically queued and processed in order.
     `.trim();
 
     // Create a temporary system message to show help
@@ -1160,15 +1290,22 @@ export class ChatView extends ItemView {
 
   private async sendMessage(): Promise<void> {
     const content = this.inputEl.value.trim();
-    if (!content || this.isProcessing) return;
+    if (!content) return;
 
-    // Check for slash commands
+    // Check for slash commands (even when processing)
     if (content.startsWith('/')) {
       const handled = await this.handleSlashCommand(content);
       if (handled) {
         this.inputEl.value = '';
         return;
       }
+    }
+
+    // If already processing, add to queue instead of blocking
+    if (this.isProcessing) {
+      this.addToQueue(content);
+      this.inputEl.value = '';
+      return;
     }
 
     log.info('User sending message', { contentLength: content.length });
@@ -1277,7 +1414,10 @@ export class ChatView extends ItemView {
           const costInfo = result.totalCost
             ? ` (Cost: $${result.totalCost.toFixed(4)})`
             : '';
-          this.showTemporaryStatus(`Complete${costInfo}`, 'success');
+          const queueInfo = this.messageQueue.length > 0
+            ? ` | ${this.messageQueue.length} queued`
+            : '';
+          this.showTemporaryStatus(`Complete${costInfo}${queueInfo}`, 'success');
         } else {
           this.setStatus(
             `Errors: ${result.errors?.join(', ') || 'Unknown error'}`,
@@ -1288,6 +1428,12 @@ export class ChatView extends ItemView {
         // Save conversation
         this.conversation.updatedAt = Date.now();
         await this.saveConversation();
+
+        // Process next message in queue if any
+        if (this.messageQueue.length > 0) {
+          // Small delay before processing next to allow UI to update
+          setTimeout(() => this.processNextInQueue(), 500);
+        }
       },
 
       onError: (error) => {

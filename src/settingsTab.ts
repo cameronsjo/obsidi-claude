@@ -5,7 +5,7 @@ import { createLogger } from './logger';
 
 const log = createLogger('SettingsTab');
 
-type SettingsTabId = 'agent' | 'embedding' | 'mcp' | 'tools';
+type SettingsTabId = 'agent' | 'embedding' | 'mcp' | 'tools' | 'about';
 
 export class SettingsTab extends PluginSettingTab {
   plugin: ObsidiClaudePlugin;
@@ -31,6 +31,7 @@ export class SettingsTab extends PluginSettingTab {
       { id: 'embedding', label: 'Embedding' },
       { id: 'mcp', label: 'MCP Servers' },
       { id: 'tools', label: 'Tools' },
+      { id: 'about', label: 'About' },
     ];
 
     for (const tab of tabs) {
@@ -60,6 +61,9 @@ export class SettingsTab extends PluginSettingTab {
         break;
       case 'tools':
         this.addToolSettings(contentEl);
+        break;
+      case 'about':
+        this.addAboutSettings(contentEl);
         break;
     }
 
@@ -856,6 +860,103 @@ export class SettingsTab extends PluginSettingTab {
             })
         );
     }
+  }
+
+  private addAboutSettings(containerEl: HTMLElement): void {
+    // Get version from manifest
+    const manifest = this.plugin.manifest;
+
+    // Hero section with logo/icon
+    const heroEl = containerEl.createDiv({ cls: 'about-hero' });
+    heroEl.style.cssText = 'text-align: center; padding: 1.5rem 0; border-bottom: 1px solid var(--background-modifier-border); margin-bottom: 1rem;';
+
+    const titleEl = heroEl.createEl('h2', { text: 'Obsidi-Claude' });
+    titleEl.style.cssText = 'margin: 0 0 0.5rem 0; font-size: 1.5rem;';
+
+    const versionEl = heroEl.createDiv({ cls: 'about-version' });
+    versionEl.style.cssText = 'font-size: 1.1rem; color: var(--text-muted); margin-bottom: 0.5rem;';
+    versionEl.setText(`Version ${manifest.version}`);
+
+    const descEl = heroEl.createDiv({ cls: 'about-description' });
+    descEl.style.cssText = 'color: var(--text-muted); max-width: 400px; margin: 0 auto;';
+    descEl.setText(manifest.description);
+
+    // Links section
+    containerEl.createEl('h3', { text: 'Links' });
+
+    new Setting(containerEl)
+      .setName('GitHub Repository')
+      .setDesc('View source code, report issues, and contribute')
+      .addButton((button) =>
+        button.setButtonText('Open').onClick(() => {
+          window.open('https://github.com/cameronsjo/obsidi-claude', '_blank');
+        })
+      );
+
+    new Setting(containerEl)
+      .setName('Documentation')
+      .setDesc('Learn how to use Obsidi-Claude effectively')
+      .addButton((button) =>
+        button.setButtonText('View Docs').onClick(() => {
+          window.open('https://github.com/cameronsjo/obsidi-claude#readme', '_blank');
+        })
+      );
+
+    new Setting(containerEl)
+      .setName('Report Issue')
+      .setDesc('Found a bug? Let us know!')
+      .addButton((button) =>
+        button.setButtonText('Report').onClick(() => {
+          window.open('https://github.com/cameronsjo/obsidi-claude/issues/new', '_blank');
+        })
+      );
+
+    // System info section
+    containerEl.createEl('h3', { text: 'System Information' });
+
+    const infoEl = containerEl.createDiv({ cls: 'about-system-info' });
+    infoEl.style.cssText = 'background: var(--background-secondary); padding: 1rem; border-radius: 6px; font-family: var(--font-monospace); font-size: 0.85rem;';
+
+    const backendInfo = this.plugin.backendFactory?.getBackendInfo();
+    const ragStats = this.plugin.ragService?.getStats();
+
+    const infoLines = [
+      `Plugin Version: ${manifest.version}`,
+      `Min Obsidian: ${manifest.minAppVersion}`,
+      `Current Backend: ${backendInfo?.current.toUpperCase() ?? 'Unknown'}`,
+      `SDK Available: ${backendInfo?.sdkAvailable ? 'Yes' : 'No'}`,
+      `Model: ${this.plugin.settings.model}`,
+      `RAG Enabled: ${this.plugin.settings.embedding.enabled ? 'Yes' : 'No'}`,
+      ragStats ? `Indexed Files: ${ragStats.totalFiles}` : null,
+      ragStats ? `Index Chunks: ${ragStats.totalChunks}` : null,
+      `MCP Server: ${this.plugin.settings.mcp.enabled ? 'Enabled' : 'Disabled'}`,
+      `External MCP Servers: ${this.plugin.settings.externalMcpServers.filter(s => s.enabled).length}`,
+    ].filter(Boolean);
+
+    infoEl.innerHTML = infoLines.join('<br>');
+
+    // Copy system info button
+    new Setting(containerEl)
+      .setName('Copy System Info')
+      .setDesc('Copy system information for bug reports')
+      .addButton((button) =>
+        button.setButtonText('Copy').onClick(() => {
+          const info = infoLines.join('\n');
+          navigator.clipboard.writeText(info);
+          new Notice('System info copied to clipboard');
+        })
+      );
+
+    // Credits
+    containerEl.createEl('h3', { text: 'Credits' });
+
+    const creditsEl = containerEl.createDiv({ cls: 'about-credits' });
+    creditsEl.style.cssText = 'color: var(--text-muted); line-height: 1.6;';
+    creditsEl.innerHTML = `
+      <p>Created by <a href="${manifest.authorUrl}" target="_blank">${manifest.author}</a></p>
+      <p>Powered by <a href="https://www.anthropic.com/claude" target="_blank">Claude</a> and the <a href="https://github.com/anthropics/claude-code" target="_blank">Claude Agent SDK</a></p>
+      <p style="margin-top: 1rem; font-size: 0.9rem;">Special thanks to the Obsidian community for feedback and testing.</p>
+    `;
   }
 
   private addResetSettings(containerEl: HTMLElement): void {
