@@ -2,6 +2,7 @@ import {
   ItemView,
   WorkspaceLeaf,
   MarkdownRenderer,
+  MarkdownView,
   Component,
   setIcon,
 } from 'obsidian';
@@ -1462,43 +1463,50 @@ When Claude is busy, messages are automatically queued and processed in order.
       );
 
       // Build message with optional active note context
-      // Only include note content when needed:
-      // - Full content for new notes
-      // - Delta (changed lines) for same note with changes
-      // - Nothing for same note with no changes
+      // Priority: selected text > full/delta note content
       let messageContent = content;
       if (this.plugin.settings.activeNoteContext) {
         const activeFile = this.plugin.app.workspace.getActiveFile();
         if (activeFile && activeFile.extension === 'md') {
           const notePath = activeFile.path;
-          const isNewNote = this.lastSentNotePath !== notePath;
 
-          try {
-            const noteContent = await this.plugin.app.vault.read(activeFile);
+          // Check for selected text first - this takes priority
+          const selection = this.getEditorSelection();
+          if (selection) {
+            // Include selected text with line range for context
+            messageContent = `<selected_text path="${notePath}" lines="${selection.startLine}-${selection.endLine}">\n${selection.text}\n</selected_text>\n\n${content}`;
+            log.debug('Included selected text', { path: notePath, lines: `${selection.startLine}-${selection.endLine}`, length: selection.text.length });
+          } else {
+            // No selection - use full note or delta
+            const isNewNote = this.lastSentNotePath !== notePath;
 
-            if (isNewNote) {
-              // Include full note content for new/different notes
-              messageContent = `<active_note path="${notePath}">\n${noteContent}\n</active_note>\n\n${content}`;
-              this.lastSentNotePath = notePath;
-              this.lastSentNoteContent = noteContent;
-              log.debug('Included active note context (new note)', { path: notePath, contentLength: noteContent.length });
-            } else if (this.lastSentNoteContent && noteContent !== this.lastSentNoteContent) {
-              // Same note but content changed - send only the delta if it's smaller
-              const delta = this.computeNoteDelta(this.lastSentNoteContent, noteContent);
-              if (delta && delta.length < noteContent.length) {
-                // Delta is smaller - send just the changes
-                messageContent = `<active_note_changes path="${notePath}">\n${delta}\n</active_note_changes>\n\n${content}`;
-                log.debug('Included note delta', { path: notePath, deltaLength: delta.length });
-              } else if (delta) {
-                // Delta is larger than full content - resend full note
+            try {
+              const noteContent = await this.plugin.app.vault.read(activeFile);
+
+              if (isNewNote) {
+                // Include full note content for new/different notes
                 messageContent = `<active_note path="${notePath}">\n${noteContent}\n</active_note>\n\n${content}`;
-                log.debug('Resent full note (delta too large)', { path: notePath, contentLength: noteContent.length });
+                this.lastSentNotePath = notePath;
+                this.lastSentNoteContent = noteContent;
+                log.debug('Included active note context (new note)', { path: notePath, contentLength: noteContent.length });
+              } else if (this.lastSentNoteContent && noteContent !== this.lastSentNoteContent) {
+                // Same note but content changed - send only the delta if it's smaller
+                const delta = this.computeNoteDelta(this.lastSentNoteContent, noteContent);
+                if (delta && delta.length < noteContent.length) {
+                  // Delta is smaller - send just the changes
+                  messageContent = `<active_note_changes path="${notePath}">\n${delta}\n</active_note_changes>\n\n${content}`;
+                  log.debug('Included note delta', { path: notePath, deltaLength: delta.length });
+                } else if (delta) {
+                  // Delta is larger than full content - resend full note
+                  messageContent = `<active_note path="${notePath}">\n${noteContent}\n</active_note>\n\n${content}`;
+                  log.debug('Resent full note (delta too large)', { path: notePath, contentLength: noteContent.length });
+                }
+                this.lastSentNoteContent = noteContent;
               }
-              this.lastSentNoteContent = noteContent;
+              // If same note and no changes, just send the user's message
+            } catch (err) {
+              log.warn('Failed to read active note for context', { path: notePath, error: err });
             }
-            // If same note and no changes, just send the user's message
-          } catch (err) {
-            log.warn('Failed to read active note for context', { path: notePath, error: err });
           }
         }
       }
@@ -1525,6 +1533,30 @@ When Claude is busy, messages are automatically queued and processed in order.
     this.getBackend().abort();
     this.setProcessing(false);
     this.setStatus('Stopped', 'info');
+  }
+
+  /**
+   * Get selected text from the active editor, if any.
+   * Returns the selection with line numbers for context.
+   */
+  private getEditorSelection(): { text: string; startLine: number; endLine: number } | null {
+    const view = this.plugin.app.workspace.getActiveViewOfType(MarkdownView);
+    if (!view) return null;
+
+    const editor = view.editor;
+    const selection = editor.getSelection();
+
+    // Only return if there's actual selected text (not just cursor position)
+    if (!selection || selection.trim().length === 0) return null;
+
+    const from = editor.getCursor('from');
+    const to = editor.getCursor('to');
+
+    return {
+      text: selection,
+      startLine: from.line + 1, // 1-indexed for display
+      endLine: to.line + 1,
+    };
   }
 
   /**
