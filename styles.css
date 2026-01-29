@@ -1,5 +1,66 @@
 /* Obsidi-Claude Chat Styles */
 
+/* @settings
+
+name: Obsidi-Claude
+id: obsidi-claude
+settings:
+  -
+    id: user-message-colors
+    title: User Message Colors
+    type: heading
+    level: 1
+    collapsed: true
+  -
+    id: user-message-background
+    title: User Message Background
+    description: Background color for user message bubbles
+    type: variable-themed-color
+    format: hex
+    default-light: '#7c3aed'
+    default-dark: '#7c3aed'
+  -
+    id: user-message-text
+    title: User Message Text
+    description: Text color for user message bubbles
+    type: variable-themed-color
+    format: hex
+    default-light: '#ffffff'
+    default-dark: '#ffffff'
+  -
+    id: assistant-message-colors
+    title: Assistant Message Colors
+    type: heading
+    level: 1
+    collapsed: true
+  -
+    id: assistant-message-background
+    title: Assistant Message Background
+    description: Background color for assistant message bubbles
+    type: variable-themed-color
+    format: hex
+    default-light: '#f5f5f5'
+    default-dark: '#2b2b2b'
+  -
+    id: assistant-message-text
+    title: Assistant Message Text
+    description: Text color for assistant message bubbles
+    type: variable-themed-color
+    format: hex
+    default-light: '#1a1a1a'
+    default-dark: '#e0e0e0'
+
+*/
+
+/* Custom properties with Style Settings support */
+/* Style Settings plugin injects variables at :root, we reference them with fallbacks */
+body {
+  --obsidi-claude-user-bg: var(--user-message-background, var(--interactive-accent));
+  --obsidi-claude-user-text: var(--user-message-text, var(--text-on-accent));
+  --obsidi-claude-assistant-bg: var(--assistant-message-background, var(--background-secondary));
+  --obsidi-claude-assistant-text: var(--assistant-message-text, var(--text-normal));
+}
+
 .obsidi-claude-container {
   display: flex;
   flex-direction: column;
@@ -175,14 +236,14 @@
 }
 
 .user-message .message-bubble {
-  background-color: var(--interactive-accent);
-  color: var(--text-on-accent);
+  background-color: var(--obsidi-claude-user-bg);
+  color: var(--obsidi-claude-user-text);
   border-bottom-right-radius: 0.25rem;
 }
 
 .assistant-message .message-bubble {
-  background-color: var(--background-secondary);
-  color: var(--text-normal);
+  background-color: var(--obsidi-claude-assistant-bg);
+  color: var(--obsidi-claude-assistant-text);
   border-bottom-left-radius: 0.25rem;
   border: 1px solid var(--background-modifier-border);
 }
