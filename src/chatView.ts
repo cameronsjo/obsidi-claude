@@ -329,17 +329,11 @@ export class ChatView extends ItemView {
   }
 
   private createQueueUI(container: HTMLElement): void {
-    container.style.cssText = 'padding: 0.5rem 1rem; background: var(--background-secondary); border-bottom: 1px solid var(--background-modifier-border);';
-
     const headerDiv = container.createDiv('queue-header');
-    headerDiv.style.cssText = 'display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;';
 
     const titleDiv = headerDiv.createDiv('queue-title');
-    titleDiv.style.cssText = 'display: flex; align-items: center; gap: 0.5rem; font-weight: 500;';
     titleDiv.createSpan({ text: 'Message Queue' });
-
     this.queueBadge = titleDiv.createSpan({ cls: 'queue-badge' });
-    this.queueBadge.style.cssText = 'background: var(--interactive-accent); color: var(--text-on-accent); padding: 0.1rem 0.4rem; border-radius: 10px; font-size: 0.75rem;';
 
     const actionsDiv = headerDiv.createDiv('queue-actions');
 
@@ -351,8 +345,7 @@ export class ChatView extends ItemView {
     clearBtn.onclick = () => this.clearQueue();
 
     // Queue list container
-    const listEl = container.createDiv('queue-list');
-    listEl.style.cssText = 'max-height: 150px; overflow-y: auto;';
+    container.createDiv('queue-list');
   }
 
   private updateQueueUI(): void {
@@ -374,14 +367,11 @@ export class ChatView extends ItemView {
 
     this.messageQueue.forEach((item, index) => {
       const itemEl = listEl.createDiv('queue-item');
-      itemEl.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 0.4rem 0.5rem; background: var(--background-primary); border-radius: 4px; margin-bottom: 0.25rem;';
 
       const contentDiv = itemEl.createDiv('queue-item-content');
-      contentDiv.style.cssText = 'flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.85rem;';
 
       // Show position number
-      const posSpan = contentDiv.createSpan({ text: `${index + 1}. ` });
-      posSpan.style.cssText = 'color: var(--text-muted); font-weight: 500;';
+      const posSpan = contentDiv.createSpan({ text: `${index + 1}. `, cls: 'queue-item-pos' });
 
       // Show truncated message
       const preview = item.content.length > 50 ? item.content.slice(0, 50) + '...' : item.content;
@@ -392,7 +382,6 @@ export class ChatView extends ItemView {
         cls: 'queue-remove-btn',
         attr: { 'aria-label': 'Remove from queue' },
       });
-      removeBtn.style.cssText = 'background: none; border: none; cursor: pointer; padding: 0.2rem; color: var(--text-muted); opacity: 0.7;';
       setIcon(removeBtn, 'x');
       removeBtn.onclick = (e) => {
         e.stopPropagation();
