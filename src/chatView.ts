@@ -63,6 +63,9 @@ export class ChatView extends ItemView {
   private inputHistoryIndex = -1;
   private inputDraft = ''; // Saves current input when navigating history
 
+  // Track last sent note to avoid redundant context injection
+  private lastSentNotePath: string | null = null;
+
   constructor(leaf: WorkspaceLeaf, plugin: ObsidiClaudePlugin) {
     super(leaf);
     this.plugin = plugin;
@@ -479,6 +482,7 @@ export class ChatView extends ItemView {
     const conv = await this.plugin.storage.loadConversation(id);
     if (conv) {
       this.conversation = conv;
+      this.lastSentNotePath = null; // Reset note tracking when switching conversations
       await this.plugin.storage.setCurrentConversationId(id);
       this.renderAllMessages();
       this.updateTitle();
@@ -1302,16 +1306,31 @@ export class ChatView extends ItemView {
       );
 
       // Build message with optional active note context
+      // Only include full note content when:
+      // 1. This is the first message with this note, OR
+      // 2. The active note has changed since the last message
+      // This avoids burning tokens by repeating note content in every message
       let messageContent = content;
       if (this.plugin.settings.activeNoteContext) {
         const activeFile = this.plugin.app.workspace.getActiveFile();
         if (activeFile && activeFile.extension === 'md') {
-          try {
-            const noteContent = await this.plugin.app.vault.read(activeFile);
-            messageContent = `<active_note path="${activeFile.path}">\n${noteContent}\n</active_note>\n\n${content}`;
-            log.debug('Included active note context', { path: activeFile.path, contentLength: noteContent.length });
-          } catch (err) {
-            log.warn('Failed to read active note for context', { path: activeFile.path, error: err });
+          const notePath = activeFile.path;
+          const isNewNote = this.lastSentNotePath !== notePath;
+
+          if (isNewNote) {
+            // Include full note content for new/changed notes
+            try {
+              const noteContent = await this.plugin.app.vault.read(activeFile);
+              messageContent = `<active_note path="${notePath}">\n${noteContent}\n</active_note>\n\n${content}`;
+              this.lastSentNotePath = notePath;
+              log.debug('Included active note context (new note)', { path: notePath, contentLength: noteContent.length });
+            } catch (err) {
+              log.warn('Failed to read active note for context', { path: notePath, error: err });
+            }
+          } else {
+            // Just reference the previously sent note to save tokens
+            messageContent = `<active_note_ref path="${notePath}" />\n\n${content}`;
+            log.debug('Referenced existing note context', { path: notePath });
           }
         }
       }
@@ -1342,6 +1361,7 @@ export class ChatView extends ItemView {
   private async newConversation(): Promise<void> {
     log.info('Creating new conversation');
     this.conversation = await this.plugin.storage.createConversation();
+    this.lastSentNotePath = null; // Reset note tracking for new conversation
     this.renderAllMessages();
     this.updateTitle();
     this.setStatus('');
