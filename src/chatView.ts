@@ -1567,6 +1567,10 @@ When Claude is busy, messages are automatically queued and processed in order.
     return changes.join('\n---\n');
   }
 
+  /**
+   * Format a single change region with context lines.
+   * Uses diff-style markers: - for removed, + for added, space for context.
+   */
   private formatChangeRegion(
     oldLines: string[],
     newLines: string[],
