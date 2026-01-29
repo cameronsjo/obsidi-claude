@@ -1483,11 +1483,16 @@ When Claude is busy, messages are automatically queued and processed in order.
               this.lastSentNoteContent = noteContent;
               log.debug('Included active note context (new note)', { path: notePath, contentLength: noteContent.length });
             } else if (this.lastSentNoteContent && noteContent !== this.lastSentNoteContent) {
-              // Same note but content changed - send only the delta
+              // Same note but content changed - send only the delta if it's smaller
               const delta = this.computeNoteDelta(this.lastSentNoteContent, noteContent);
-              if (delta) {
+              if (delta && delta.length < noteContent.length) {
+                // Delta is smaller - send just the changes
                 messageContent = `<active_note_changes path="${notePath}">\n${delta}\n</active_note_changes>\n\n${content}`;
                 log.debug('Included note delta', { path: notePath, deltaLength: delta.length });
+              } else if (delta) {
+                // Delta is larger than full content - resend full note
+                messageContent = `<active_note path="${notePath}">\n${noteContent}\n</active_note>\n\n${content}`;
+                log.debug('Resent full note (delta too large)', { path: notePath, contentLength: noteContent.length });
               }
               this.lastSentNoteContent = noteContent;
             }
