@@ -381,6 +381,8 @@ export interface ObsidiClaudeSettings {
   savedPrompts: SavedPrompt[];
   /** Extra CLI arguments to pass to Claude Code (SDK only) */
   extraArgs?: Record<string, string | null>;
+  /** Strict MCP config validation - errors instead of warnings for invalid configs (SDK only) */
+  strictMcpConfig: boolean;
 }
 
 /**
@@ -574,6 +576,7 @@ When the user asks about their notes, always search first to ground your respons
     blockedTools: [], // No blocked tools by default
   },
   savedPrompts: [], // No saved prompts by default
+  strictMcpConfig: false, // Don't enforce strict MCP validation by default
 };
 
 export function generateId(): string {

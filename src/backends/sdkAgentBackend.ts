@@ -763,6 +763,8 @@ export class SDKAgentBackend implements AgentBackend {
         extraArgs: this.settings.extraArgs && Object.keys(this.settings.extraArgs).length > 0
           ? this.settings.extraArgs
           : undefined,
+        // Strict MCP config validation - errors instead of warnings
+        strictMcpConfig: this.settings.strictMcpConfig || undefined,
       };
 
       // Build MCP servers config
