@@ -157,11 +157,54 @@ export class ChatView extends ItemView {
   private registerKeyboardShortcuts(container: HTMLElement): void {
     // Use keydown on the container for global shortcuts
     container.addEventListener('keydown', (e) => {
+      const isMod = e.ctrlKey || e.metaKey;
+
       // Ctrl/Cmd+F for search
-      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+      if (isMod && e.key === 'f') {
         e.preventDefault();
         e.stopPropagation();
         this.toggleSearch();
+        return;
+      }
+
+      // Ctrl/Cmd+N for new conversation
+      if (isMod && e.key === 'n') {
+        e.preventDefault();
+        e.stopPropagation();
+        this.newConversation();
+        return;
+      }
+
+      // Ctrl/Cmd+H for history panel
+      if (isMod && e.key === 'h') {
+        e.preventDefault();
+        e.stopPropagation();
+        this.toggleHistory();
+        return;
+      }
+
+      // Ctrl/Cmd+E for export
+      if (isMod && e.key === 'e') {
+        e.preventDefault();
+        e.stopPropagation();
+        this.exportConversation();
+        return;
+      }
+
+      // Ctrl/Cmd+P for pin toggle
+      if (isMod && e.shiftKey && e.key === 'p') {
+        e.preventDefault();
+        e.stopPropagation();
+        this.togglePinConversation(this.conversation.id);
+        return;
+      }
+
+      // Ctrl/Cmd+L to focus input (like terminal)
+      if (isMod && e.key === 'l') {
+        e.preventDefault();
+        e.stopPropagation();
+        this.inputEl.focus();
+        return;
       }
 
       // Escape to close search or history
@@ -170,6 +213,9 @@ export class ChatView extends ItemView {
           this.toggleSearch();
         } else if (this.historyVisible) {
           this.toggleHistory();
+        } else {
+          // Focus input if nothing else to close
+          this.inputEl.focus();
         }
       }
     });
@@ -1612,7 +1658,9 @@ export class ChatView extends ItemView {
 - \`/queue [clear]\` - Message queue status
 
 **Shortcuts:**
-\`Enter\` send · \`Shift+Enter\` newline · \`↑↓\` history · \`Cmd+F\` search
+\`Enter\` send · \`Shift+Enter\` newline · \`↑↓\` history
+\`Cmd+F\` search · \`Cmd+N\` new · \`Cmd+H\` history · \`Cmd+E\` export
+\`Cmd+L\` focus input · \`Cmd+Shift+P\` pin · \`Esc\` close/focus
     `.trim();
 
     // Create a temporary system message to show help
