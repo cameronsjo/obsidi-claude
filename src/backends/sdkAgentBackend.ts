@@ -339,6 +339,8 @@ export class SDKAgentBackend implements AgentBackend {
           skills: agent.skills,
           mcpServers: agent.mcpServers,
           maxTurns: agent.maxTurns,
+          // EXPERIMENTAL: Critical reminder that must not be forgotten
+          criticalSystemReminder_EXPERIMENTAL: agent.criticalSystemReminder,
         };
       }
     }
@@ -752,6 +754,14 @@ export class SDKAgentBackend implements AgentBackend {
         // Custom permission handler for native UI prompts
         canUseTool: this.hookCallbacks.onPermissionRequest
           ? this.buildCanUseTool()
+          : undefined,
+        // Stderr callback for subprocess debugging
+        stderr: (data: string) => {
+          log.debug('Claude CLI stderr', { data: data.trim() });
+        },
+        // Extra CLI arguments for advanced use (--verbose, --debug, etc.)
+        extraArgs: this.settings.extraArgs && Object.keys(this.settings.extraArgs).length > 0
+          ? this.settings.extraArgs
           : undefined,
       };
 

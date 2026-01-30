@@ -241,6 +241,12 @@ export interface CustomAgent {
   maxTurns?: number;
   /** Whether this agent is enabled */
   enabled: boolean;
+  /**
+   * Critical system reminder that must not be forgotten by the agent.
+   * Use for safety constraints, compliance requirements, or hard boundaries.
+   * @experimental This feature is marked as EXPERIMENTAL in the SDK.
+   */
+  criticalSystemReminder?: string;
 }
 
 export interface AgentSettings {
@@ -373,6 +379,8 @@ export interface ObsidiClaudeSettings {
   permissionPromptToolName?: string;
   /** Saved prompt templates */
   savedPrompts: SavedPrompt[];
+  /** Extra CLI arguments to pass to Claude Code (SDK only) */
+  extraArgs?: Record<string, string | null>;
 }
 
 /**
