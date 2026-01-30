@@ -63,6 +63,8 @@ export interface ConversationMetadata {
   backendType: 'sdk' | 'api';
   /** SDK session ID (desktop only, enables resume) */
   sessionId?: string;
+  /** Session ID to fork from on next message (one-time use, then cleared) */
+  forkFromSessionId?: string;
   /** Timestamp of last sync (for Obsidian Sync) */
   lastSyncAt?: number;
 }

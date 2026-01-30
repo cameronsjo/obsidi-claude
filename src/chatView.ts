@@ -2333,11 +2333,23 @@ export class ChatView extends ItemView {
       case 'fork': {
         const newConv = await this.plugin.storage.duplicateConversation(this.conversation.id);
         if (newConv) {
+          // If we have an SDK session, mark that the next message should fork it
+          const sessionId = this.conversation.metadata?.sessionId;
+          if (sessionId && this.getBackend().type === 'sdk') {
+            // Store the session to fork from in the new conversation's metadata
+            if (!newConv.metadata) {
+              newConv.metadata = { backendType: 'sdk' };
+            }
+            newConv.metadata.forkFromSessionId = sessionId;
+            await this.plugin.storage.saveConversation(newConv);
+            this.showTemporaryStatus('Conversation forked - SDK session will branch on next message', 'success', 3000);
+          } else {
+            this.showTemporaryStatus('Conversation duplicated - now editing copy', 'success', 2000);
+          }
           this.conversation = newConv;
           await this.plugin.storage.setCurrentConversationId(newConv.id);
           this.renderAllMessages();
           this.updateTitle();
-          this.showTemporaryStatus('Conversation duplicated - now editing copy', 'success', 2000);
         }
         return true;
       }
@@ -2401,6 +2413,11 @@ export class ChatView extends ItemView {
       case 'save-note':
       case 'generate-note': {
         await this.generateNoteFromConversation(args);
+        return true;
+      }
+
+      case 'skills': {
+        this.showSkillsList();
         return true;
       }
 
@@ -2584,6 +2601,9 @@ export class ChatView extends ItemView {
   - Formats: full (default), summary, q-and-a
   - Example: \`/savenote q-and-a research/meeting.md\`
 
+**Skills:**
+- \`/skills\` - List available skills and their triggers
+
 **Shortcuts:**
 \`Enter\` send · \`Shift+Enter\` newline · \`↑↓\` history
 \`Cmd+F\` search · \`Cmd+N\` new · \`Cmd+H\` history · \`Cmd+E\` export
@@ -2599,6 +2619,67 @@ export class ChatView extends ItemView {
     };
 
     this.renderMessage(helpMsg);
+    this.scrollToBottom(true);
+  }
+
+  /**
+   * Show the list of available skills.
+   */
+  private showSkillsList(): void {
+    const skills = this.plugin.skillRegistry.getSkills();
+
+    if (!this.plugin.settings.skills.enabled) {
+      this.showTemporaryStatus('Skills are disabled. Enable them in settings.', 'info', 3000);
+      return;
+    }
+
+    if (skills.length === 0) {
+      this.showTemporaryStatus(
+        `No skills found. Add SKILL.md files to ${this.plugin.settings.skills.folderPath}`,
+        'info',
+        3000
+      );
+      return;
+    }
+
+    // Build skills display
+    const lines: string[] = ['**Available Skills:**\n'];
+
+    // Group skills by always-active vs triggered
+    const alwaysActive = skills.filter(s => s.alwaysActive);
+    const triggered = skills.filter(s => !s.alwaysActive);
+
+    if (alwaysActive.length > 0) {
+      lines.push('**Always Active:**');
+      for (const skill of alwaysActive) {
+        lines.push(`- **${skill.name}**: ${skill.description}`);
+      }
+      lines.push('');
+    }
+
+    if (triggered.length > 0) {
+      lines.push('**Triggered by Keywords:**');
+      for (const skill of triggered) {
+        const triggers = skill.triggers.slice(0, 3).join(', ');
+        const moreCount = skill.triggers.length > 3 ? ` +${skill.triggers.length - 3} more` : '';
+        lines.push(`- **${skill.name}**: ${skill.description}`);
+        if (triggers) {
+          lines.push(`  - *Triggers:* ${triggers}${moreCount}`);
+        }
+      }
+    }
+
+    lines.push('');
+    lines.push(`*Skills folder: \`${this.plugin.settings.skills.folderPath}\`*`);
+
+    const skillsMsg: ChatMessage = {
+      id: generateId(),
+      role: 'assistant',
+      content: lines.join('\n'),
+      timestamp: Date.now(),
+    };
+
+    this.renderMessage(skillsMsg);
     this.scrollToBottom(true);
   }
 
@@ -3119,18 +3200,29 @@ export class ChatView extends ItemView {
         : undefined;
       this.clearPendingImages();
 
+      // Check if we should fork from another session
+      const forkFromSessionId = this.conversation.metadata?.forkFromSessionId;
+      const resumeSessionId = forkFromSessionId || this.conversation.metadata?.sessionId || this.conversation.sessionId;
+
       await backend.sendMessage(
         messageContent,
         this.conversation,
         callbacks,
         {
-          resumeSessionId: this.conversation.metadata?.sessionId ?? this.conversation.sessionId,
+          resumeSessionId,
+          forkSession: !!forkFromSessionId,
           systemPrompt: enhancedPrompt,
           // Show only the user's input in UI, not the injected context
           displayContent: content !== messageContent ? content : undefined,
           images,
         }
       );
+
+      // Clear the fork flag after use (one-time)
+      if (forkFromSessionId && this.conversation.metadata) {
+        delete this.conversation.metadata.forkFromSessionId;
+        await this.plugin.storage.saveConversation(this.conversation);
+      }
     } catch (error) {
       callbacks.onError(
         error instanceof Error ? error : new Error(String(error))

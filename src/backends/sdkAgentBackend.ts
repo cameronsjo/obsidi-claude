@@ -370,6 +370,11 @@ export class SDKAgentBackend implements AgentBackend {
 
       if (resumeSessionId) {
         queryOptions.resume = resumeSessionId;
+        // Fork session if requested (creates new session with copied history)
+        if (options?.forkSession) {
+          queryOptions.forkSession = true;
+          log.info('Forking session', { sourceSessionId: resumeSessionId });
+        }
       } else if (this.settings.continueSession) {
         // Auto-continue most recent session in this working directory
         queryOptions.continue = true;

@@ -30,6 +30,8 @@ export interface AvailableModel {
 export interface BackendOptions {
   /** Resume from a previous session ID (SDK backend only) */
   resumeSessionId?: string;
+  /** Fork the session when resuming (creates new session with copied history) */
+  forkSession?: boolean;
   /** Override the default model */
   model?: string;
   /** Maximum conversation turns */
