@@ -1961,3 +1961,191 @@ pre:hover .code-copy-btn {
   width: 14px;
   height: 14px;
 }
+
+/* ===== MOBILE OPTIMIZATIONS ===== */
+
+/* Detect mobile via Obsidian's body class */
+.is-mobile .obsidi-claude-container {
+  /* Full-width on mobile */
+  padding: 0;
+}
+
+.is-mobile .chat-header {
+  padding: 8px 12px;
+  min-height: 44px; /* iOS minimum tap target */
+}
+
+.is-mobile .chat-action-btn {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 10px;
+}
+
+.is-mobile .chat-messages {
+  padding: 8px;
+}
+
+.is-mobile .chat-message {
+  max-width: 95%;
+  padding: 10px 14px;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.is-mobile .chat-input-area {
+  padding: 8px;
+  gap: 8px;
+}
+
+.is-mobile .chat-input {
+  font-size: 16px; /* Prevents iOS zoom on focus */
+  min-height: 44px;
+  padding: 10px 12px;
+}
+
+.is-mobile .chat-send-btn,
+.is-mobile .chat-stop-btn,
+.is-mobile .chat-voice-btn {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 10px;
+}
+
+/* Hide tab bar on mobile by default (too cramped) */
+.is-mobile .chat-tab-bar {
+  display: none !important;
+}
+
+/* Larger history items on mobile */
+.is-mobile .history-item {
+  padding: 12px;
+  min-height: 52px;
+}
+
+.is-mobile .history-item-actions button {
+  min-width: 36px;
+  min-height: 36px;
+  padding: 8px;
+}
+
+/* Full-width history panel on mobile */
+.is-mobile .chat-history-panel {
+  width: 100%;
+  border-right: none;
+}
+
+/* Message actions - larger touch targets */
+.is-mobile .message-actions {
+  gap: 4px;
+}
+
+.is-mobile .message-action-btn {
+  min-width: 36px;
+  min-height: 36px;
+  padding: 8px;
+}
+
+/* Tool calls - more compact on mobile */
+.is-mobile .tool-call {
+  padding: 8px;
+  font-size: 13px;
+}
+
+/* Token counter - smaller on mobile */
+.is-mobile .token-counter {
+  font-size: 11px;
+  padding: 2px 6px;
+}
+
+/* Context badge - smaller on mobile */
+.is-mobile .context-badge,
+.is-mobile .backend-badge,
+.is-mobile .ephemeral-badge {
+  font-size: 10px;
+  padding: 2px 4px;
+}
+
+/* Search bar - full width on mobile */
+.is-mobile .chat-search-bar {
+  flex-direction: column;
+  gap: 8px;
+}
+
+.is-mobile .search-input {
+  font-size: 16px;
+  min-height: 40px;
+}
+
+/* Queue container - more compact */
+.is-mobile .chat-queue-container {
+  max-height: 100px;
+}
+
+/* Floating action button for new conversation on mobile */
+.is-mobile .chat-fab {
+  display: flex;
+  position: absolute;
+  bottom: 80px;
+  right: 16px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 100;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.is-mobile .chat-fab:active {
+  transform: scale(0.95);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.is-mobile .chat-fab svg {
+  width: 24px;
+  height: 24px;
+}
+
+/* Desktop: hide FAB */
+.chat-fab {
+  display: none;
+}
+
+/* Pull-to-refresh indicator */
+.is-mobile .pull-refresh-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 0;
+  overflow: hidden;
+  transition: height 0.2s ease;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.is-mobile .pull-refresh-indicator.active {
+  height: 40px;
+}
+
+/* Swipe hint on empty state */
+.is-mobile .swipe-hint {
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+  padding: 16px;
+  opacity: 0.7;
+}
+
+/* Keyboard-aware input area */
+.is-mobile.keyboard-open .chat-input-area {
+  padding-bottom: env(safe-area-inset-bottom, 8px);
+}
+
+/* Safe area padding for notched devices */
+.is-mobile .obsidi-claude-container {
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}

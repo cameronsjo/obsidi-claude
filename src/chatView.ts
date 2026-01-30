@@ -173,6 +173,12 @@ export class ChatView extends ItemView {
     const inputArea = container.createDiv('chat-input-area');
     this.createInputArea(inputArea);
 
+    // Mobile: Add floating action button for new conversation
+    this.createMobileFAB(container);
+
+    // Mobile: Setup touch gestures
+    this.setupMobileTouchHandling(container);
+
     // Register keyboard shortcuts
     this.registerKeyboardShortcuts(container);
 
@@ -4699,6 +4705,86 @@ ${content}
     if (!this.userScrolledUp || force) {
       this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
     }
+  }
+
+  // ===== MOBILE SUPPORT =====
+
+  /**
+   * Check if running on mobile device.
+   */
+  private isMobile(): boolean {
+    return document.body.classList.contains('is-mobile');
+  }
+
+  /**
+   * Create floating action button for mobile.
+   */
+  private createMobileFAB(container: HTMLElement): void {
+    const fab = container.createDiv('chat-fab');
+    setIcon(fab, 'plus');
+    fab.setAttribute('aria-label', 'New conversation');
+    fab.onclick = () => this._newConversation();
+  }
+
+  /**
+   * Set up touch gesture handling for mobile.
+   */
+  private setupMobileTouchHandling(container: HTMLElement): void {
+    if (!this.isMobile()) return;
+
+    let touchStartX = 0;
+    let touchStartY = 0;
+    const swipeThreshold = 50;
+
+    // Track touch start
+    container.addEventListener('touchstart', (e) => {
+      const touch = e.touches[0];
+      touchStartX = touch.clientX;
+      touchStartY = touch.clientY;
+    }, { passive: true });
+
+    // Handle swipe gestures
+    container.addEventListener('touchend', (e) => {
+      const touch = e.changedTouches[0];
+      const deltaX = touch.clientX - touchStartX;
+      const deltaY = touch.clientY - touchStartY;
+
+      // Horizontal swipe detection
+      if (Math.abs(deltaX) > swipeThreshold && Math.abs(deltaX) > Math.abs(deltaY)) {
+        if (deltaX > 0) {
+          // Swipe right: show history
+          if (!this.historyVisible) {
+            this._toggleHistory();
+          }
+        } else {
+          // Swipe left: hide history if open
+          if (this.historyVisible) {
+            this._toggleHistory();
+          }
+        }
+      }
+    }, { passive: true });
+
+    // Long press on messages for actions
+    this.messagesContainer.addEventListener('contextmenu', (e) => {
+      // Prevent default context menu on mobile
+      if (this.isMobile()) {
+        e.preventDefault();
+      }
+    });
+
+    // Add swipe hint to empty state
+    this.addMobileSwipeHint();
+  }
+
+  /**
+   * Add swipe gesture hint for mobile users.
+   */
+  private addMobileSwipeHint(): void {
+    if (!this.isMobile() || this.conversation.messages.length > 0) return;
+
+    const hint = this.messagesContainer.createDiv('swipe-hint');
+    hint.setText('Swipe right for history • Tap + for new chat');
   }
 
   // ===== TAB MANAGEMENT =====
