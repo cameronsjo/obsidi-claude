@@ -82,11 +82,11 @@ jobs:
           # Delete existing beta release to get fresh timestamps (BRAT checks publishedAt)
           if gh release view "$BETA_TAG" &>/dev/null; then
             echo "Deleting old beta release..."
-            gh release delete "$BETA_TAG" --yes
+            gh release delete "$BETA_TAG" --yes --cleanup-tag
           fi
 
-          # Delete the tag if it exists (release delete doesn't remove the tag)
-          git push origin :refs/tags/$BETA_TAG 2>/dev/null || true
+          # Also delete local tag if it exists (checkout may have fetched it)
+          git tag -d "$BETA_TAG" 2>/dev/null || true
 
           echo "Creating fresh beta release..."
           gh release create "$BETA_TAG" \
