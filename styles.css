@@ -812,6 +812,64 @@ pre:hover .code-copy-btn {
   color: var(--text-muted);
 }
 
+/* Slash command autocomplete */
+.command-autocomplete {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  margin-bottom: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 100;
+}
+
+.command-autocomplete-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.command-autocomplete-item:last-child {
+  border-bottom: none;
+}
+
+.command-autocomplete-item:hover,
+.command-autocomplete-item.is-selected {
+  background: var(--background-modifier-hover);
+}
+
+.command-autocomplete-item.is-selected {
+  background: var(--interactive-accent);
+  color: white;
+}
+
+.command-autocomplete-name {
+  font-weight: 500;
+  font-family: var(--font-monospace);
+  font-size: 0.9rem;
+}
+
+.command-autocomplete-item.is-selected .command-autocomplete-name {
+  color: white;
+}
+
+.command-autocomplete-desc {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.command-autocomplete-item.is-selected .command-autocomplete-desc {
+  color: rgba(255, 255, 255, 0.8);
+}
+
 .chat-buttons {
   display: flex;
   gap: 0.5rem;

@@ -8,7 +8,7 @@ import {
   Notice,
 } from 'obsidian';
 import { PermissionModal } from './chatViewModals';
-import { executeCommand, type ChatViewCommandContext } from './chatViewCommands';
+import { executeCommand, getCommandList, type ChatViewCommandContext } from './chatViewCommands';
 import type ObsidiClaudePlugin from '../main';
 import type { ChatMessage, ToolCallInfo, Conversation, MessageUsage, ChatTab } from './types';
 import { generateId, calculateCost, calculateConversationUsage } from './types';
@@ -108,6 +108,11 @@ export class ChatView extends ItemView {
 
   // Scroll to bottom button
   private scrollToBottomBtn: HTMLElement | null = null;
+
+  // Command autocomplete
+  private autocompleteEl: HTMLElement | null = null;
+  private autocompleteIndex = -1;
+  private autocompleteCommands: Array<{ name: string; description: string }> = [];
 
   constructor(leaf: WorkspaceLeaf, plugin: ObsidiClaudePlugin) {
     super(leaf);
@@ -1411,6 +1416,29 @@ export class ChatView extends ItemView {
     });
 
     this.inputEl.addEventListener('keydown', (e) => {
+      // Handle autocomplete navigation
+      if (this.autocompleteEl && this.autocompleteCommands.length > 0) {
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          this.autocompleteIndex = Math.min(this.autocompleteIndex + 1, this.autocompleteCommands.length - 1);
+          this.updateAutocompleteSelection();
+          return;
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          this.autocompleteIndex = Math.max(this.autocompleteIndex - 1, 0);
+          this.updateAutocompleteSelection();
+          return;
+        } else if (e.key === 'Enter' || e.key === 'Tab') {
+          e.preventDefault();
+          this.selectAutocompleteCommand();
+          return;
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          this.hideAutocomplete();
+          return;
+        }
+      }
+
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         this.sendMessage();
@@ -1422,6 +1450,8 @@ export class ChatView extends ItemView {
         // Navigate to next message when cursor is at end
         e.preventDefault();
         this.navigateInputHistory(1);
+      } else if (e.key === 'Escape') {
+        this.hideAutocomplete();
       }
     });
 
@@ -1434,6 +1464,9 @@ export class ChatView extends ItemView {
         this.inputEl.style.height = 'auto';
         this.inputEl.style.height = Math.min(this.inputEl.scrollHeight, MAX_TEXTAREA_HEIGHT_PX) + 'px';
       });
+
+      // Show slash command autocomplete
+      this.updateAutocomplete();
     });
 
     // Handle image paste
@@ -4759,6 +4792,108 @@ ${content}
     if (!this.userScrolledUp || force) {
       this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
     }
+  }
+
+  // ===== COMMAND AUTOCOMPLETE =====
+
+  private updateAutocomplete(): void {
+    const value = this.inputEl.value;
+
+    // Only show autocomplete for slash commands at the start
+    if (!value.startsWith('/') || value.includes(' ')) {
+      this.hideAutocomplete();
+      return;
+    }
+
+    const query = value.slice(1).toLowerCase();
+    const allCommands = getCommandList();
+
+    // Filter commands that match the query
+    this.autocompleteCommands = allCommands.filter(cmd => {
+      const cmdName = cmd.name.split(' ')[0].slice(1); // Remove / and get base command
+      return cmdName.startsWith(query);
+    });
+
+    if (this.autocompleteCommands.length === 0) {
+      this.hideAutocomplete();
+      return;
+    }
+
+    this.showAutocomplete();
+  }
+
+  private showAutocomplete(): void {
+    if (!this.autocompleteEl) {
+      this.autocompleteEl = this.inputWrapper.createDiv('command-autocomplete');
+    }
+
+    this.autocompleteEl.empty();
+    this.autocompleteIndex = 0;
+
+    for (let i = 0; i < this.autocompleteCommands.length; i++) {
+      const cmd = this.autocompleteCommands[i];
+      const item = this.autocompleteEl.createDiv('command-autocomplete-item');
+      if (i === 0) item.addClass('is-selected');
+
+      const nameEl = item.createDiv('command-autocomplete-name');
+      nameEl.setText(cmd.name);
+
+      const descEl = item.createDiv('command-autocomplete-desc');
+      descEl.setText(cmd.description);
+
+      item.addEventListener('click', () => {
+        this.autocompleteIndex = i;
+        this.selectAutocompleteCommand();
+      });
+
+      item.addEventListener('mouseenter', () => {
+        this.autocompleteIndex = i;
+        this.updateAutocompleteSelection();
+      });
+    }
+  }
+
+  private hideAutocomplete(): void {
+    if (this.autocompleteEl) {
+      this.autocompleteEl.remove();
+      this.autocompleteEl = null;
+    }
+    this.autocompleteCommands = [];
+    this.autocompleteIndex = -1;
+  }
+
+  private updateAutocompleteSelection(): void {
+    if (!this.autocompleteEl) return;
+
+    const items = this.autocompleteEl.querySelectorAll('.command-autocomplete-item');
+    items.forEach((item, i) => {
+      item.toggleClass('is-selected', i === this.autocompleteIndex);
+    });
+
+    // Scroll selected item into view
+    const selected = items[this.autocompleteIndex] as HTMLElement;
+    if (selected) {
+      selected.scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  private selectAutocompleteCommand(): void {
+    if (this.autocompleteIndex < 0 || this.autocompleteIndex >= this.autocompleteCommands.length) {
+      this.hideAutocomplete();
+      return;
+    }
+
+    const cmd = this.autocompleteCommands[this.autocompleteIndex];
+    // Extract just the command name (e.g., "/export" from "/export [clipboard|json]")
+    const cmdName = cmd.name.split(' ')[0];
+
+    this.inputEl.value = cmdName + ' ';
+    this.inputEl.focus();
+    this.hideAutocomplete();
+
+    // Trigger resize
+    this.inputEl.style.height = 'auto';
+    this.inputEl.style.height = Math.min(this.inputEl.scrollHeight, MAX_TEXTAREA_HEIGHT_PX) + 'px';
   }
 
   // ===== MOBILE SUPPORT =====
