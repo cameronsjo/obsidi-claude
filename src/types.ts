@@ -383,6 +383,28 @@ export interface ObsidiClaudeSettings {
   extraArgs?: Record<string, string | null>;
   /** Strict MCP config validation - errors instead of warnings for invalid configs (SDK only) */
   strictMcpConfig: boolean;
+  /** Custom spawn configuration for Docker/SSH execution (SDK only) */
+  spawnConfig?: SpawnConfig;
+}
+
+/**
+ * Custom spawn configuration for running Claude in containers or remote environments.
+ */
+export interface SpawnConfig {
+  /** Spawn mode: 'local' (default), 'docker', or 'ssh' */
+  mode: 'local' | 'docker' | 'ssh';
+  /** Docker image name (for docker mode) */
+  dockerImage?: string;
+  /** Docker container options */
+  dockerOptions?: string[];
+  /** SSH host (for ssh mode) */
+  sshHost?: string;
+  /** SSH user (for ssh mode) */
+  sshUser?: string;
+  /** SSH key path (for ssh mode) */
+  sshKeyPath?: string;
+  /** Additional environment variables */
+  env?: Record<string, string>;
 }
 
 /**

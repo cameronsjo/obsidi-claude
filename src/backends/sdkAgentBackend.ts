@@ -25,8 +25,10 @@ import {
   type CanUseTool,
   type PermissionResult,
   type PermissionUpdate,
+  type SpawnOptions,
+  type SpawnedProcess,
 } from '@anthropic-ai/claude-agent-sdk';
-import type { ObsidiClaudeSettings, Conversation, ToolCallInfo } from '../types';
+import type { ObsidiClaudeSettings, Conversation, ToolCallInfo, SpawnConfig } from '../types';
 import { BUILTIN_AGENTS } from '../types';
 import {
   type AgentBackend,
@@ -568,6 +570,97 @@ export class SDKAgentBackend implements AgentBackend {
     };
   }
 
+  /**
+   * Builds the spawnClaudeCodeProcess function for custom execution environments.
+   * Supports Docker containers and SSH remote execution.
+   */
+  private buildSpawnFunction(config: SpawnConfig): ((options: SpawnOptions) => SpawnedProcess) | undefined {
+    if (config.mode === 'local') {
+      return undefined; // Use default spawning
+    }
+
+    return (options: SpawnOptions): SpawnedProcess => {
+      const { spawn } = require('child_process');
+      let proc: ReturnType<typeof spawn>;
+
+      if (config.mode === 'docker') {
+        // Docker execution
+        const dockerArgs = [
+          'run',
+          '--rm',
+          '-i', // Interactive for stdin
+          ...(config.dockerOptions || []),
+          // Mount working directory
+          '-v', `${options.cwd}:${options.cwd}`,
+          '-w', options.cwd,
+          // Pass through environment
+          ...Object.entries({ ...options.env, ...config.env }).map(
+            ([k, v]) => ['-e', `${k}=${v}`]
+          ).flat(),
+          config.dockerImage || 'anthropic/claude-code:latest',
+          options.command,
+          ...(options.args || []),
+        ];
+
+        log.info('Spawning Claude in Docker', {
+          image: config.dockerImage,
+          cwd: options.cwd,
+        });
+
+        proc = spawn('docker', dockerArgs, {
+          cwd: options.cwd,
+          env: options.env,
+          stdio: ['pipe', 'pipe', 'pipe'],
+        });
+      } else if (config.mode === 'ssh') {
+        // SSH remote execution
+        const sshArgs = [
+          ...(config.sshKeyPath ? ['-i', config.sshKeyPath] : []),
+          `${config.sshUser || 'claude'}@${config.sshHost}`,
+          // Remote command with environment
+          `cd ${options.cwd} && ${Object.entries({ ...options.env, ...config.env })
+            .map(([k, v]) => `${k}='${v}'`)
+            .join(' ')} ${options.command} ${(options.args || []).join(' ')}`,
+        ];
+
+        log.info('Spawning Claude via SSH', {
+          host: config.sshHost,
+          user: config.sshUser,
+          cwd: options.cwd,
+        });
+
+        proc = spawn('ssh', sshArgs, {
+          cwd: options.cwd,
+          env: options.env,
+          stdio: ['pipe', 'pipe', 'pipe'],
+        });
+      } else {
+        throw new Error(`Unknown spawn mode: ${config.mode}`);
+      }
+
+      // Handle abort signal
+      if (options.signal) {
+        options.signal.addEventListener('abort', () => {
+          proc.kill('SIGTERM');
+        });
+      }
+
+      return {
+        stdout: proc.stdout,
+        stderr: proc.stderr,
+        stdin: proc.stdin,
+        pid: proc.pid ?? 0,
+        on: (event: string, callback: (...args: unknown[]) => void) => {
+          proc.on(event, callback);
+        },
+        kill: (signal?: NodeJS.Signals | number) => {
+          proc.kill(signal);
+          return true;
+        },
+      };
+    };
+  }
+
   isAvailable(): boolean {
     // Check if Claude CLI is available
     if (!cachedCliPath) {
@@ -765,6 +858,10 @@ export class SDKAgentBackend implements AgentBackend {
           : undefined,
         // Strict MCP config validation - errors instead of warnings
         strictMcpConfig: this.settings.strictMcpConfig || undefined,
+        // Custom spawn function for Docker/SSH execution
+        spawnClaudeCodeProcess: this.settings.spawnConfig && this.settings.spawnConfig.mode !== 'local'
+          ? this.buildSpawnFunction(this.settings.spawnConfig)
+          : undefined,
       };
 
       // Build MCP servers config
