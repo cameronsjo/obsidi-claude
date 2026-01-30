@@ -104,6 +104,7 @@ export class ObsidianTools {
       this.getFindBrokenLinksTool(),
       this.getSuggestLinksTool(),
       this.getRenameTool(),
+      this.getDataviewQueryTool(),
     ];
 
     return tools;
@@ -1961,6 +1962,172 @@ export class ObsidianTools {
         };
       }),
     };
+  }
+
+  /**
+   * Run a Dataview query (requires Dataview plugin)
+   */
+  private getDataviewQueryTool(): ToolDefinition {
+    return {
+      name: 'run_dataview_query',
+      description:
+        'Execute a Dataview Query Language (DQL) query against the vault. Requires the Dataview plugin to be installed and enabled. Use for advanced queries like finding notes by metadata, creating tables, or filtering by properties. Examples: TABLE file.mtime FROM "Projects" WHERE status = "active" SORT file.mtime DESC',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description: 'The DQL query to execute. Can be TABLE, LIST, TASK, or CALENDAR query.',
+          },
+          format: {
+            type: 'string',
+            enum: ['table', 'list', 'json'],
+            description: 'Output format: table (markdown table), list (markdown list), or json (raw data). Default: json',
+          },
+        },
+        required: ['query'],
+      },
+      handler: this.wrapHandler(async (params) => {
+        const query = params.query as string;
+        const format = (params.format as string) || 'json';
+
+        // Check if Dataview plugin is available
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const dataviewPlugin = (this.app as any).plugins?.plugins?.dataview;
+        if (!dataviewPlugin) {
+          return {
+            error: 'Dataview plugin is not installed or enabled. Install it from Community Plugins to use this tool.',
+          };
+        }
+
+        const dataviewApi = dataviewPlugin.api;
+        if (!dataviewApi) {
+          return {
+            error: 'Dataview API is not available. Make sure Dataview is properly initialized.',
+          };
+        }
+
+        try {
+          // Execute the query using Dataview's query API
+          // The API provides queryMarkdown for formatted output or query for raw results
+          const result = await dataviewApi.query(query);
+
+          if (!result.successful) {
+            return {
+              error: `Query failed: ${result.error || 'Unknown error'}`,
+              query,
+            };
+          }
+
+          const data = result.value;
+
+          // Format based on type
+          if (format === 'json') {
+            // Return raw structured data
+            if (data.type === 'table') {
+              return {
+                type: 'table',
+                headers: data.headers,
+                rows: data.values.map((row: unknown[]) =>
+                  row.map((cell) => this.formatDataviewValue(cell))
+                ),
+                count: data.values.length,
+              };
+            } else if (data.type === 'list') {
+              return {
+                type: 'list',
+                items: data.values.map((item: unknown) => this.formatDataviewValue(item)),
+                count: data.values.length,
+              };
+            } else if (data.type === 'task') {
+              return {
+                type: 'task',
+                tasks: data.values.map((task: { text: string; completed: boolean; path: string }) => ({
+                  text: task.text,
+                  completed: task.completed,
+                  path: task.path,
+                })),
+                count: data.values.length,
+              };
+            }
+            return { type: data.type, data };
+          } else if (format === 'table') {
+            // Format as markdown table
+            if (data.type === 'table' && data.headers && data.values) {
+              const headers = data.headers.join(' | ');
+              const separator = data.headers.map(() => '---').join(' | ');
+              const rows = data.values
+                .map((row: unknown[]) =>
+                  row.map((cell) => this.formatDataviewValue(cell)).join(' | ')
+                )
+                .join('\n');
+              return {
+                markdown: `| ${headers} |\n| ${separator} |\n| ${rows.split('\n').join(' |\n| ')} |`,
+                count: data.values.length,
+              };
+            }
+            return { error: 'Query result is not a table', type: data.type };
+          } else if (format === 'list') {
+            // Format as markdown list
+            if (data.type === 'list' && data.values) {
+              const items = data.values
+                .map((item: unknown) => `- ${this.formatDataviewValue(item)}`)
+                .join('\n');
+              return {
+                markdown: items,
+                count: data.values.length,
+              };
+            } else if (data.type === 'task' && data.values) {
+              const tasks = data.values
+                .map(
+                  (task: { text: string; completed: boolean }) =>
+                    `- [${task.completed ? 'x' : ' '}] ${task.text}`
+                )
+                .join('\n');
+              return {
+                markdown: tasks,
+                count: data.values.length,
+              };
+            }
+            return { error: 'Query result is not a list or task', type: data.type };
+          }
+
+          return { data };
+        } catch (error) {
+          return {
+            error: `Dataview query error: ${error instanceof Error ? error.message : String(error)}`,
+            query,
+          };
+        }
+      }),
+    };
+  }
+
+  /**
+   * Format a Dataview value for display
+   */
+  private formatDataviewValue(value: unknown): string {
+    if (value === null || value === undefined) {
+      return '';
+    }
+    // Handle Dataview Link objects
+    if (typeof value === 'object' && value !== null) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const obj = value as any;
+      if (obj.path !== undefined && obj.display !== undefined) {
+        // It's a Link
+        return `[[${obj.path}${obj.display ? '|' + obj.display : ''}]]`;
+      }
+      if (obj.ts !== undefined) {
+        // It's a DateTime
+        return new Date(obj.ts).toISOString();
+      }
+      if (Array.isArray(value)) {
+        return value.map((v) => this.formatDataviewValue(v)).join(', ');
+      }
+      return JSON.stringify(value);
+    }
+    return String(value);
   }
 
   /**
