@@ -3942,6 +3942,21 @@ ${content}
     const backend = this.getBackend();
     backend.updateSettings(this.plugin.settings);
 
+    // Check if model changed - if so, clear session to start fresh
+    const currentModel = this.plugin.settings.model;
+    const sessionModel = this.conversation.metadata?.model;
+    if (sessionModel && sessionModel !== currentModel) {
+      log.info('Model changed, starting fresh session', { from: sessionModel, to: currentModel });
+      delete this.conversation.metadata?.sessionId;
+      delete this.conversation.sessionId;
+      this.showTemporaryStatus(`Switched to ${currentModel}`, 'info', 2000);
+    }
+    // Track the model used for this conversation
+    if (!this.conversation.metadata) {
+      this.conversation.metadata = { backendType: backend.type };
+    }
+    this.conversation.metadata.model = currentModel;
+
     // Track current assistant message for updates
     let currentAssistantMsgId: string | null = null;
     const currentToolCalls: ToolCallInfo[] = [];
@@ -4071,8 +4086,19 @@ ${content}
 
       onError: (error) => {
         this.setProcessing(false);
-        this.setStatus(`Error: ${error.message}`, 'error');
         log.error('Agent error during message processing', error);
+
+        // Check for session/model mismatch errors
+        const errorMsg = error.message.toLowerCase();
+        if (errorMsg.includes('exited with code') || errorMsg.includes('session')) {
+          // Clear session and offer to retry
+          delete this.conversation.metadata?.sessionId;
+          delete this.conversation.sessionId;
+          this.setStatus('Session error - try sending your message again', 'error');
+          new Notice('Session ended unexpectedly. Your message was not sent - please try again.', 5000);
+        } else {
+          this.setStatus(`Error: ${error.message}`, 'error');
+        }
       },
 
       onSdkUuid: (messageId, uuid) => {
