@@ -114,21 +114,20 @@ export class SettingsTab extends PluginSettingTab {
           })
       );
 
-    // Model selection
+    // Model selection - dynamically loaded from SDK when available
     new Setting(containerEl)
       .setName('Model')
       .setDesc('Claude model to use for conversations')
-      .addDropdown((dropdown) =>
+      .addDropdown((dropdown) => {
+        // Populate with available models
+        this.populateModelDropdown(dropdown);
         dropdown
-          .addOption('claude-sonnet-4-5', 'Claude Sonnet 4.5 (Recommended)')
-          .addOption('claude-opus-4', 'Claude Opus 4')
-          .addOption('claude-3-5-sonnet-20241022', 'Claude 3.5 Sonnet')
           .setValue(this.plugin.settings.model)
           .onChange(async (value) => {
             this.plugin.settings.model = value as typeof this.plugin.settings.model;
             await this.plugin.saveSettings();
-          })
-      );
+          });
+      });
 
     // Working directory
     new Setting(containerEl)
@@ -539,18 +538,16 @@ export class SettingsTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName('Fallback Model')
       .setDesc('Model to use if primary model is rate-limited or unavailable')
-      .addDropdown((dropdown) =>
+      .addDropdown((dropdown) => {
+        dropdown.addOption('', '(None)');
+        this.populateModelDropdown(dropdown);
         dropdown
-          .addOption('', '(None)')
-          .addOption('claude-sonnet-4-5', 'Claude Sonnet 4.5')
-          .addOption('claude-opus-4', 'Claude Opus 4')
-          .addOption('claude-3-5-sonnet-20241022', 'Claude 3.5 Sonnet')
           .setValue(this.plugin.settings.fallbackModel ?? '')
           .onChange(async (value) => {
             this.plugin.settings.fallbackModel = value as typeof this.plugin.settings.fallbackModel || undefined;
             await this.plugin.saveSettings();
-          })
-      );
+          });
+      });
 
     // Ephemeral/privacy mode
     new Setting(containerEl)
@@ -1342,6 +1339,30 @@ export class SettingsTab extends PluginSettingTab {
           new Notice('Settings reset to defaults');
         })
       );
+  }
+
+  /**
+   * Populate a dropdown with available models.
+   * Uses dynamic models from SDK if available, otherwise falls back to static list.
+   */
+  private populateModelDropdown(dropdown: import('obsidian').DropdownComponent): void {
+    // Try to get dynamic models from SDK backend
+    const backend = this.plugin.backendFactory?.getBackend();
+    const dynamicModels = backend?.getAvailableModels?.();
+
+    if (dynamicModels && dynamicModels.length > 0) {
+      // Use dynamic models from SDK
+      for (const model of dynamicModels) {
+        dropdown.addOption(model.value, model.label);
+      }
+    } else {
+      // Fallback to static list
+      dropdown.addOption('claude-sonnet-4-5', 'Claude Sonnet 4.5 (Recommended)');
+      dropdown.addOption('claude-opus-4-5', 'Claude Opus 4.5');
+      dropdown.addOption('claude-opus-4', 'Claude Opus 4');
+      dropdown.addOption('claude-haiku-3-5', 'Claude Haiku 3.5');
+      dropdown.addOption('claude-3-5-sonnet-20241022', 'Claude 3.5 Sonnet (Legacy)');
+    }
   }
 }
 

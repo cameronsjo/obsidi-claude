@@ -319,7 +319,7 @@ Analyze existing patterns before making changes. Preserve the user's organizatio
 };
 
 export interface ObsidiClaudeSettings {
-  model: 'claude-sonnet-4-5' | 'claude-opus-4' | 'claude-3-5-sonnet-20241022';
+  model: 'claude-opus-4-5' | 'claude-sonnet-4-5' | 'claude-opus-4' | 'claude-haiku-3-5' | 'claude-3-5-sonnet-20241022';
   systemPrompt: string;
   maxTurns: number;
   workingDirectory: string;
@@ -365,7 +365,7 @@ export interface ObsidiClaudeSettings {
   /** Agent name to use for main conversation thread (must be defined in agents) */
   mainAgent?: string;
   /** Fallback model to use if primary model fails or is rate-limited (SDK only) */
-  fallbackModel?: 'claude-sonnet-4-5' | 'claude-opus-4' | 'claude-3-5-sonnet-20241022';
+  fallbackModel?: 'claude-opus-4-5' | 'claude-sonnet-4-5' | 'claude-opus-4' | 'claude-haiku-3-5' | 'claude-3-5-sonnet-20241022';
   /** Ephemeral/privacy mode - sessions are not saved to disk (SDK only) */
   ephemeralMode: boolean;
   /** Enable sandbox mode for Bash commands (SDK only) */
@@ -507,8 +507,10 @@ export interface SavedPrompt {
  * The values are the actual model IDs expected by the Anthropic API.
  */
 export const MODEL_ID_MAP: Record<ObsidiClaudeSettings['model'], string> = {
+  'claude-opus-4-5': 'claude-opus-4-5-20251101',
   'claude-sonnet-4-5': 'claude-sonnet-4-5-20250514',
   'claude-opus-4': 'claude-opus-4-20250514',
+  'claude-haiku-3-5': 'claude-3-5-haiku-20241022',
   'claude-3-5-sonnet-20241022': 'claude-3-5-sonnet-20241022',
 };
 
@@ -693,8 +695,10 @@ export interface ChatTab {
  * Pricing per 1M tokens in USD (as of 2025)
  */
 export const MODEL_PRICING: Record<string, { input: number; output: number }> = {
+  'claude-opus-4-5': { input: 15.0, output: 75.0 },
   'claude-sonnet-4-5': { input: 3.0, output: 15.0 },
   'claude-opus-4': { input: 15.0, output: 75.0 },
+  'claude-haiku-3-5': { input: 0.80, output: 4.0 },
   'claude-3-5-sonnet-20241022': { input: 3.0, output: 15.0 },
   // Fallback for unknown models
   'default': { input: 3.0, output: 15.0 },
