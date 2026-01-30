@@ -422,14 +422,12 @@ pre:hover .code-copy-btn {
   }
 }
 
-/* Message action buttons */
+/* Message action buttons - below message, always visible */
 .message-actions {
-  position: absolute;
-  top: 0.25rem;
-  right: 0.25rem;
   display: flex;
   gap: 0.25rem;
-  opacity: 0;
+  margin-top: 0.5rem;
+  opacity: 0.6;
   transition: opacity 0.15s ease;
 }
 
@@ -437,17 +435,18 @@ pre:hover .code-copy-btn {
   opacity: 1;
 }
 
-.chat-message {
-  position: relative;
+/* Add spacing after assistant messages */
+.assistant-message {
+  margin-bottom: 0.5rem;
 }
 
 .message-action-btn {
-  background: var(--background-secondary);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
-  padding: 0.25rem;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  padding: 0.15rem;
   cursor: pointer;
-  color: var(--text-muted);
+  color: var(--text-faint);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -455,12 +454,12 @@ pre:hover .code-copy-btn {
 
 .message-action-btn:hover {
   background: var(--background-modifier-hover);
-  color: var(--text-normal);
+  color: var(--text-muted);
 }
 
 .message-action-btn svg {
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
 }
 
 /* Tool calls section (appears ABOVE content) */
