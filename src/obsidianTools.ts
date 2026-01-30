@@ -100,6 +100,9 @@ export class ObsidianTools {
       this.getCreateCanvasTool(),
       this.getDeleteTool(),
       this.getGraphNeighborsTool(),
+      this.getFindOrphansTool(),
+      this.getFindBrokenLinksTool(),
+      this.getSuggestLinksTool(),
       this.getRenameTool(),
     ];
 
@@ -1657,6 +1660,255 @@ export class ObsidianTools {
 
         explore(filepath, 1);
         return { centerNote: filepath, depth: maxDepth, neighborCount: neighbors.length, neighbors };
+      }),
+    };
+  }
+
+  /**
+   * Find orphan notes (notes with no incoming or outgoing links)
+   */
+  private getFindOrphansTool(): ToolDefinition {
+    return {
+      name: 'find_orphan_notes',
+      description:
+        'Find notes that have no incoming or outgoing links. Orphan notes are isolated in the knowledge graph and may need connections.',
+      parameters: {
+        type: 'object',
+        properties: {
+          folder: {
+            type: 'string',
+            description: 'Optional folder to search in. If not provided, searches entire vault.',
+          },
+          includeOutgoingOnly: {
+            type: 'boolean',
+            description: 'If true, includes notes that only have outgoing links but no incoming links.',
+          },
+        },
+      },
+      handler: this.wrapHandler(async (params) => {
+        const folder = params.folder as string | undefined;
+        const includeOutgoingOnly = params.includeOutgoingOnly as boolean || false;
+
+        const resolvedLinks = this.app.metadataCache.resolvedLinks;
+        const files = this.app.vault.getMarkdownFiles();
+
+        // Build reverse lookup for incoming links
+        const incomingLinks = new Map<string, string[]>();
+        for (const [sourcePath, targets] of Object.entries(resolvedLinks)) {
+          for (const targetPath of Object.keys(targets)) {
+            if (!incomingLinks.has(targetPath)) {
+              incomingLinks.set(targetPath, []);
+            }
+            incomingLinks.get(targetPath)!.push(sourcePath);
+          }
+        }
+
+        const orphans: Array<{
+          path: string;
+          title: string;
+          hasOutgoing: boolean;
+          hasIncoming: boolean;
+          modified: number;
+        }> = [];
+
+        for (const file of files) {
+          // Filter by folder if specified
+          if (folder && !file.path.startsWith(folder)) continue;
+
+          const outgoing = resolvedLinks[file.path];
+          const hasOutgoing = outgoing && Object.keys(outgoing).length > 0;
+          const hasIncoming = incomingLinks.has(file.path);
+
+          // True orphan: no links in either direction
+          const isTrueOrphan = !hasOutgoing && !hasIncoming;
+          // Outgoing-only orphan: has outgoing but no incoming (sink node)
+          const isOutgoingOnlyOrphan = hasOutgoing && !hasIncoming;
+
+          if (isTrueOrphan || (includeOutgoingOnly && isOutgoingOnlyOrphan)) {
+            const cache = this.app.metadataCache.getFileCache(file);
+            orphans.push({
+              path: file.path,
+              title: (cache?.frontmatter?.title as string) || file.basename,
+              hasOutgoing,
+              hasIncoming,
+              modified: file.stat.mtime,
+            });
+          }
+        }
+
+        // Sort by modification date (most recent first)
+        orphans.sort((a, b) => b.modified - a.modified);
+
+        return {
+          count: orphans.length,
+          folder: folder || '(entire vault)',
+          includeOutgoingOnly,
+          orphans: orphans.slice(0, 100), // Limit results
+        };
+      }),
+    };
+  }
+
+  /**
+   * Find broken links (links to non-existent notes)
+   */
+  private getFindBrokenLinksTool(): ToolDefinition {
+    return {
+      name: 'find_broken_links',
+      description:
+        'Find all broken/unresolved links in the vault. These are links to notes that don\'t exist yet.',
+      parameters: {
+        type: 'object',
+        properties: {
+          folder: {
+            type: 'string',
+            description: 'Optional folder to search in. If not provided, searches entire vault.',
+          },
+        },
+      },
+      handler: this.wrapHandler(async (params) => {
+        const folder = params.folder as string | undefined;
+
+        const unresolvedLinks = this.app.metadataCache.unresolvedLinks;
+        const brokenLinks: Array<{
+          sourcePath: string;
+          sourceTitle: string;
+          brokenLink: string;
+          count: number;
+        }> = [];
+
+        for (const [sourcePath, targets] of Object.entries(unresolvedLinks)) {
+          // Filter by folder if specified
+          if (folder && !sourcePath.startsWith(folder)) continue;
+
+          const sourceFile = this.app.vault.getAbstractFileByPath(sourcePath);
+          if (!sourceFile || !('extension' in sourceFile)) continue;
+
+          const cache = this.app.metadataCache.getFileCache(sourceFile as TFile);
+          const sourceTitle = (cache?.frontmatter?.title as string) || (sourceFile as TFile).basename;
+
+          for (const [targetLink, count] of Object.entries(targets)) {
+            brokenLinks.push({
+              sourcePath,
+              sourceTitle,
+              brokenLink: targetLink,
+              count,
+            });
+          }
+        }
+
+        // Group by broken link to see which ones are most referenced
+        const linkCounts = new Map<string, number>();
+        for (const bl of brokenLinks) {
+          linkCounts.set(bl.brokenLink, (linkCounts.get(bl.brokenLink) || 0) + bl.count);
+        }
+
+        const topMissing = Array.from(linkCounts.entries())
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 20)
+          .map(([link, count]) => ({ link, totalReferences: count }));
+
+        return {
+          totalBrokenLinks: brokenLinks.length,
+          folder: folder || '(entire vault)',
+          topMissingNotes: topMissing,
+          brokenLinks: brokenLinks.slice(0, 100), // Limit results
+        };
+      }),
+    };
+  }
+
+  /**
+   * Suggest links for a note based on semantic similarity
+   */
+  private getSuggestLinksTool(): ToolDefinition {
+    return {
+      name: 'suggest_links',
+      description:
+        'Suggest notes that could be linked to/from the given note based on semantic similarity. Helps discover hidden connections in your knowledge base.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: {
+            type: 'string',
+            description: 'Path to the note to find suggestions for',
+          },
+          limit: {
+            type: 'number',
+            description: 'Maximum number of suggestions (default: 10)',
+          },
+          excludeExisting: {
+            type: 'boolean',
+            description: 'Exclude notes that are already linked (default: true)',
+          },
+        },
+        required: ['path'],
+      },
+      handler: this.wrapHandler(async (params) => {
+        const filepath = params.path as string;
+        const limit = (params.limit as number) || 10;
+        const excludeExisting = params.excludeExisting !== false;
+
+        const file = this.getFileOrError(filepath);
+        if ('error' in file) return file;
+
+        // Get existing links to exclude
+        const existingLinks = new Set<string>();
+        if (excludeExisting) {
+          const resolved = this.app.metadataCache.resolvedLinks[filepath] || {};
+          for (const link of Object.keys(resolved)) {
+            existingLinks.add(link);
+          }
+          // Also check incoming links
+          const allLinks = this.app.metadataCache.resolvedLinks;
+          for (const [sourcePath, targets] of Object.entries(allLinks)) {
+            if (targets[filepath]) {
+              existingLinks.add(sourcePath);
+            }
+          }
+        }
+
+        // Use RAG service for semantic search if available
+        if (!this.ragService) {
+          return { error: 'RAG service not available. Enable embeddings in settings.' };
+        }
+
+        const content = await this.app.vault.cachedRead(file);
+        const results = await this.ragService.search(content.slice(0, 2000), limit + existingLinks.size);
+
+        const suggestions: Array<{
+          path: string;
+          title: string;
+          similarity: number;
+          reason: string;
+        }> = [];
+
+        for (const result of results) {
+          const resultPath = result.file;
+          // Skip the source file itself
+          if (resultPath === filepath) continue;
+          // Skip existing links if requested
+          if (excludeExisting && existingLinks.has(resultPath)) continue;
+
+          const resultFile = this.app.vault.getAbstractFileByPath(resultPath);
+          if (!resultFile || !('extension' in resultFile)) continue;
+
+          const cache = this.app.metadataCache.getFileCache(resultFile as TFile);
+          suggestions.push({
+            path: resultPath,
+            title: (cache?.frontmatter?.title as string) || (resultFile as TFile).basename,
+            similarity: result.score,
+            reason: result.text.slice(0, 200) + '...',
+          });
+
+          if (suggestions.length >= limit) break;
+        }
+
+        return {
+          sourceNote: filepath,
+          excludedExistingLinks: excludeExisting,
+          suggestions,
+        };
       }),
     };
   }
