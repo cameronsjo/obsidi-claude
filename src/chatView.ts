@@ -1043,6 +1043,31 @@ export class ChatView extends ItemView {
     await this.saveConversation();
   }
 
+  private async addTagToConversation(tag: string): Promise<void> {
+    const tags = this.conversation.tags || [];
+    if (!tags.includes(tag)) {
+      tags.push(tag);
+      this.conversation.tags = tags;
+      await this.plugin.storage.updateTags(this.conversation.id, tags);
+      this.showTemporaryStatus(`Tag "${tag}" added`, 'success', 1500);
+    } else {
+      this.showTemporaryStatus(`Tag "${tag}" already exists`, 'info', 1500);
+    }
+  }
+
+  private async removeTagFromConversation(tag: string): Promise<void> {
+    const tags = this.conversation.tags || [];
+    const index = tags.indexOf(tag);
+    if (index >= 0) {
+      tags.splice(index, 1);
+      this.conversation.tags = tags;
+      await this.plugin.storage.updateTags(this.conversation.id, tags);
+      this.showTemporaryStatus(`Tag "${tag}" removed`, 'success', 1500);
+    } else {
+      this.showTemporaryStatus(`Tag "${tag}" not found`, 'info', 1500);
+    }
+  }
+
   private renderToolCall(container: HTMLElement, tool: ToolCallInfo): void {
     const toolDiv = container.createDiv('tool-call');
     toolDiv.addClass(`tool-status-${tool.status}`);
@@ -1385,6 +1410,168 @@ export class ChatView extends ItemView {
         }
         return true;
 
+      case 'tag':
+      case 'tags': {
+        if (!args) {
+          // Show current tags
+          const tags = this.conversation.tags || [];
+          if (tags.length === 0) {
+            this.showTemporaryStatus('No tags on this conversation. Use /tag add <tag> to add one.', 'info', 3000);
+          } else {
+            this.showTemporaryStatus(`Tags: ${tags.join(', ')}`, 'info', 3000);
+          }
+        } else if (args.startsWith('add ')) {
+          const newTag = args.slice(4).trim();
+          if (newTag) {
+            await this.addTagToConversation(newTag);
+          }
+        } else if (args.startsWith('remove ') || args.startsWith('rm ')) {
+          const tagToRemove = args.replace(/^(remove|rm)\s+/, '').trim();
+          if (tagToRemove) {
+            await this.removeTagFromConversation(tagToRemove);
+          }
+        } else if (args === 'list') {
+          // Show all unique tags across conversations
+          const allTags = await this.plugin.storage.getAllTags();
+          if (allTags.length === 0) {
+            this.showTemporaryStatus('No tags in any conversation yet.', 'info', 2000);
+          } else {
+            this.showTemporaryStatus(`All tags: ${allTags.join(', ')}`, 'info', 4000);
+          }
+        } else {
+          // Treat as adding a tag
+          await this.addTagToConversation(args.trim());
+        }
+        return true;
+      }
+
+      case 'pin':
+        await this.plugin.storage.togglePin(this.conversation.id);
+        this.conversation.pinned = !this.conversation.pinned;
+        this.showTemporaryStatus(
+          this.conversation.pinned ? 'Conversation pinned' : 'Conversation unpinned',
+          'success',
+          1500
+        );
+        return true;
+
+      case 'rename': {
+        if (args) {
+          await this.plugin.storage.renameConversation(this.conversation.id, args);
+          this.conversation.title = args;
+          this.updateTitle();
+          this.showTemporaryStatus('Conversation renamed', 'success', 1500);
+        } else {
+          this.promptRenameConversation(this.conversation.id, this.conversation.title);
+        }
+        return true;
+      }
+
+      case 'model': {
+        const models = ['claude-sonnet-4-5', 'claude-opus-4', 'claude-3-5-sonnet-20241022'];
+        if (!args) {
+          this.showTemporaryStatus(`Current model: ${this.plugin.settings.model}`, 'info', 2000);
+        } else {
+          const modelArg = args.toLowerCase();
+          // Allow partial matches
+          const match = models.find(m =>
+            m.includes(modelArg) || modelArg.includes('sonnet') && m.includes('sonnet') ||
+            modelArg.includes('opus') && m.includes('opus')
+          );
+          if (match) {
+            this.plugin.settings.model = match as typeof this.plugin.settings.model;
+            await this.plugin.saveSettings();
+            this.showTemporaryStatus(`Model switched to ${match}`, 'success', 2000);
+          } else {
+            this.showTemporaryStatus(`Unknown model. Available: sonnet-4-5, opus-4, 3-5-sonnet`, 'error', 3000);
+          }
+        }
+        return true;
+      }
+
+      case 'stats': {
+        const msgCount = this.conversation.messages.length;
+        const userMsgs = this.conversation.messages.filter(m => m.role === 'user').length;
+        const assistantMsgs = this.conversation.messages.filter(m => m.role === 'assistant').length;
+        const tokens = this.estimateTokens();
+        const upVotes = this.conversation.messages.filter(m => m.reaction === 'up').length;
+        const downVotes = this.conversation.messages.filter(m => m.reaction === 'down').length;
+        const created = new Date(this.conversation.createdAt).toLocaleDateString();
+
+        const statsText = `
+**Conversation Stats:**
+- Messages: ${msgCount} (${userMsgs} user, ${assistantMsgs} assistant)
+- Est. tokens: ~${tokens.toLocaleString()}
+- Created: ${created}
+- Pinned: ${this.conversation.pinned ? 'Yes' : 'No'}
+- Tags: ${(this.conversation.tags || []).join(', ') || 'None'}
+- Reactions: ${upVotes} 👍 / ${downVotes} 👎
+        `.trim();
+
+        const statsMsg: ChatMessage = {
+          id: generateId(),
+          role: 'assistant',
+          content: statsText,
+          timestamp: Date.now(),
+        };
+        this.renderMessage(statsMsg);
+        this.scrollToBottom(true);
+        return true;
+      }
+
+      case 'copy': {
+        // Copy entire conversation to clipboard as markdown
+        const lines: string[] = [];
+        lines.push(`# ${this.conversation.title}`);
+        lines.push('');
+
+        for (const msg of this.conversation.messages) {
+          const role = msg.role === 'user' ? 'You' : 'Claude';
+          lines.push(`**${role}:**`);
+          lines.push(msg.content);
+          lines.push('');
+        }
+
+        await navigator.clipboard.writeText(lines.join('\n'));
+        this.showTemporaryStatus('Conversation copied to clipboard', 'success', 2000);
+        return true;
+      }
+
+      case 'tools': {
+        if (!args) {
+          const tools = this.plugin.settings.allowedTools;
+          this.showTemporaryStatus(`Allowed tools: ${tools.join(', ')}`, 'info', 3000);
+        } else if (args === 'show' || args === 'on') {
+          this.plugin.settings.showToolCalls = true;
+          await this.plugin.saveSettings();
+          this.showTemporaryStatus('Tool calls visible', 'success', 1500);
+        } else if (args === 'hide' || args === 'off') {
+          this.plugin.settings.showToolCalls = false;
+          await this.plugin.saveSettings();
+          this.showTemporaryStatus('Tool calls hidden', 'success', 1500);
+        }
+        return true;
+      }
+
+      case 'context': {
+        // Toggle active note context
+        if (args === 'on') {
+          this.plugin.settings.activeNoteContext = true;
+          await this.plugin.saveSettings();
+          this.updateContextBadge();
+          this.showTemporaryStatus('Active note context enabled', 'success', 1500);
+        } else if (args === 'off') {
+          this.plugin.settings.activeNoteContext = false;
+          await this.plugin.saveSettings();
+          this.updateContextBadge();
+          this.showTemporaryStatus('Active note context disabled', 'success', 1500);
+        } else {
+          const status = this.plugin.settings.activeNoteContext ? 'enabled' : 'disabled';
+          this.showTemporaryStatus(`Active note context: ${status}`, 'info', 2000);
+        }
+        return true;
+      }
+
       case 'help':
       case '?':
         this.showSlashCommandHelp();
@@ -1399,23 +1586,33 @@ export class ChatView extends ItemView {
 
   private showSlashCommandHelp(): void {
     const helpText = `
-**Available Commands:**
-- \`/clear\` - Clear all messages
+**Conversation:**
 - \`/new\` - Start new conversation
-- \`/export\` - Export chat as markdown note
-- \`/note [question]\` - Insert current note as context
+- \`/clear\` - Clear all messages
+- \`/copy\` - Copy conversation to clipboard
+- \`/export\` - Export as markdown note
+- \`/stats\` - Show conversation statistics
+- \`/rename [title]\` - Rename conversation
+- \`/pin\` - Toggle pin status
+
+**Tags:**
+- \`/tag\` - Show current tags
+- \`/tag <name>\` - Add a tag
+- \`/tag remove <name>\` - Remove a tag
+- \`/tag list\` - All tags across conversations
+
+**Settings:**
+- \`/model [name]\` - Show/switch model (sonnet, opus)
+- \`/tools [show|hide]\` - Toggle tool call visibility
+- \`/context [on|off]\` - Toggle active note context
+
+**Context:**
+- \`/note [question]\` - Insert current note
 - \`/search <query>\` - Search messages
-- \`/queue [clear]\` - Show queue status or clear it
-- \`/help\` - Show this help
+- \`/queue [clear]\` - Message queue status
 
-**Keyboard Shortcuts:**
-- \`Enter\` - Send message (or queue if busy)
-- \`Shift+Enter\` - New line
-- \`↑/↓\` - Navigate input history
-- \`Ctrl/Cmd+F\` - Search messages
-
-**Message Queue:**
-When Claude is busy, messages are automatically queued and processed in order.
+**Shortcuts:**
+\`Enter\` send · \`Shift+Enter\` newline · \`↑↓\` history · \`Cmd+F\` search
     `.trim();
 
     // Create a temporary system message to show help
