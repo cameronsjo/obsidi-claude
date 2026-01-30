@@ -72,50 +72,37 @@ jobs:
             fs.writeFileSync('manifest.json', JSON.stringify(manifest, null, 2) + '\n');
           "
 
-      - name: Create or update beta release
+      - name: Create beta release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           BETA_TAG="beta"
           BETA_VERSION="${{ steps.version.outputs.beta_version }}"
 
-          # Check if beta release exists
+          # Delete existing beta release to get fresh timestamps (BRAT checks publishedAt)
           if gh release view "$BETA_TAG" &>/dev/null; then
-            echo "Updating existing beta release..."
-            gh release edit "$BETA_TAG" \
-              --title "Beta: $BETA_VERSION" \
-              --notes "Latest beta build from main branch.
-
-          **Version:** \`$BETA_VERSION\`
-          **Commit:** \`${{ github.sha }}\`
-          **Updated:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')
-
-          ---
-
-          ⚠️ **This is a pre-release build.** It may contain bugs or incomplete features.
-
-          To install: Download the files below and place them in your \`.obsidian/plugins/obsidi-claude/\` folder."
-          else
-            echo "Creating new beta release..."
-            gh release create "$BETA_TAG" \
-              --title "Beta: $BETA_VERSION" \
-              --notes "Latest beta build from main branch.
-
-          **Version:** \`$BETA_VERSION\`
-          **Commit:** \`${{ github.sha }}\`
-          **Updated:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')
-
-          ---
-
-          ⚠️ **This is a pre-release build.** It may contain bugs or incomplete features.
-
-          To install: Download the files below and place them in your \`.obsidian/plugins/obsidi-claude/\` folder." \
-              --prerelease
+            echo "Deleting old beta release..."
+            gh release delete "$BETA_TAG" --yes
           fi
 
-          # Upload assets (overwrite existing)
-          gh release upload "$BETA_TAG" \
+          # Delete the tag if it exists (release delete doesn't remove the tag)
+          git push origin :refs/tags/$BETA_TAG 2>/dev/null || true
+
+          echo "Creating fresh beta release..."
+          gh release create "$BETA_TAG" \
+            --title "Beta: $BETA_VERSION" \
+            --notes "Latest beta build from main branch.
+
+          **Version:** \`$BETA_VERSION\`
+          **Commit:** \`${{ github.sha }}\`
+          **Built:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')
+
+          ---
+
+          ⚠️ **This is a pre-release build.** It may contain bugs or incomplete features.
+
+          To install via BRAT: Add \`cameronsjo/obsidi-claude\` and enable beta versions." \
+            --prerelease \
             main.js \
             manifest.json \
-            styles.css \
-            --clobber
+            styles.css
