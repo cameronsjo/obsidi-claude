@@ -269,6 +269,70 @@ export default class ObsidiClaudePlugin extends Plugin {
       },
     });
 
+    // Chat view commands
+    this.addCommand({
+      id: 'focus-chat-input',
+      name: 'Focus chat input',
+      callback: () => {
+        const chatView = this.getChatView();
+        chatView?.focusInput();
+      },
+    });
+
+    this.addCommand({
+      id: 'new-conversation',
+      name: 'New conversation',
+      callback: () => {
+        const chatView = this.getChatView();
+        chatView?.newConversation();
+      },
+    });
+
+    this.addCommand({
+      id: 'clear-conversation',
+      name: 'Clear conversation messages',
+      callback: () => {
+        const chatView = this.getChatView();
+        chatView?.clearMessages();
+      },
+    });
+
+    this.addCommand({
+      id: 'abort-response',
+      name: 'Abort/stop current response',
+      callback: () => {
+        const chatView = this.getChatView();
+        chatView?.stopResponse();
+      },
+    });
+
+    this.addCommand({
+      id: 'copy-last-response',
+      name: 'Copy last assistant response',
+      callback: () => {
+        const chatView = this.getChatView();
+        chatView?.copyLastResponse();
+      },
+    });
+
+    this.addCommand({
+      id: 'toggle-conversation-history',
+      name: 'Toggle conversation history panel',
+      callback: () => {
+        const chatView = this.getChatView();
+        chatView?.toggleHistory();
+      },
+    });
+
+    this.addCommand({
+      id: 'toggle-chat-search',
+      name: 'Search in conversation',
+      callback: () => {
+        const chatView = this.getChatView();
+        chatView?.toggleSearch();
+      },
+    });
+
     // Register editor context menu
     this.registerEvent(
       this.app.workspace.on('editor-menu', (menu: Menu, editor: Editor, view: MarkdownView) => {
@@ -465,6 +529,17 @@ export default class ObsidiClaudePlugin extends Plugin {
       });
       workspace.revealLeaf(leaf);
     }
+  }
+
+  /**
+   * Get the chat view if it exists.
+   */
+  getChatView(): ChatView | null {
+    const leaves = this.app.workspace.getLeavesOfType(CHAT_VIEW_TYPE);
+    if (leaves.length > 0) {
+      return leaves[0].view as ChatView;
+    }
+    return null;
   }
 
   async saveSettings(): Promise<void> {

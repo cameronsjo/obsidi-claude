@@ -238,7 +238,7 @@ export class ChatView extends ItemView {
       if (isMod && e.key === 'f') {
         e.preventDefault();
         e.stopPropagation();
-        this.toggleSearch();
+        this._toggleSearch();
         return;
       }
 
@@ -246,7 +246,7 @@ export class ChatView extends ItemView {
       if (isMod && e.key === 'n') {
         e.preventDefault();
         e.stopPropagation();
-        this.newConversation();
+        this._newConversation();
         return;
       }
 
@@ -254,7 +254,7 @@ export class ChatView extends ItemView {
       if (isMod && e.key === 'h') {
         e.preventDefault();
         e.stopPropagation();
-        this.toggleHistory();
+        this._toggleHistory();
         return;
       }
 
@@ -285,9 +285,9 @@ export class ChatView extends ItemView {
       // Escape to close search or history
       if (e.key === 'Escape') {
         if (this.searchVisible) {
-          this.toggleSearch();
+          this._toggleSearch();
         } else if (this.historyVisible) {
-          this.toggleHistory();
+          this._toggleHistory();
         } else {
           // Focus input if nothing else to close
           this.inputEl.focus();
@@ -306,12 +306,12 @@ export class ChatView extends ItemView {
       attr: { 'aria-label': 'Conversation history' },
     });
     setIcon(historyBtn, 'history');
-    historyBtn.onclick = () => this.toggleHistory();
+    historyBtn.onclick = () => this._toggleHistory();
 
     // Title (clickable to show history)
     this.chatTitleEl = header.createDiv('chat-title');
     this.chatTitleEl.setText('Claude Chat');
-    this.chatTitleEl.onclick = () => this.toggleHistory();
+    this.chatTitleEl.onclick = () => this._toggleHistory();
 
     // Backend indicator badge
     this.backendBadge = header.createDiv('backend-badge');
@@ -340,7 +340,7 @@ export class ChatView extends ItemView {
       attr: { 'aria-label': 'Search messages' },
     });
     setIcon(searchBtn, 'search');
-    searchBtn.onclick = () => this.toggleSearch();
+    searchBtn.onclick = () => this._toggleSearch();
 
     // New conversation button
     const newBtn = actionsEl.createEl('button', {
@@ -348,7 +348,7 @@ export class ChatView extends ItemView {
       attr: { 'aria-label': 'New conversation' },
     });
     setIcon(newBtn, 'plus');
-    newBtn.onclick = () => this.newConversation();
+    newBtn.onclick = () => this._newConversation();
 
     // Export button
     const exportBtn = actionsEl.createEl('button', {
@@ -364,7 +364,7 @@ export class ChatView extends ItemView {
       attr: { 'aria-label': 'Clear messages' },
     });
     setIcon(clearBtn, 'trash-2');
-    clearBtn.onclick = () => this.clearMessages();
+    clearBtn.onclick = () => this._clearMessages();
   }
 
   private createHistoryPanel(panel: HTMLElement): void {
@@ -386,7 +386,7 @@ export class ChatView extends ItemView {
       attr: { 'aria-label': 'Close history' },
     });
     setIcon(closeBtn, 'x');
-    closeBtn.onclick = () => this.toggleHistory();
+    closeBtn.onclick = () => this._toggleHistory();
 
     // Bulk actions bar (hidden by default)
     this.bulkActionsBar = panel.createDiv('history-bulk-actions');
@@ -548,7 +548,7 @@ export class ChatView extends ItemView {
     await this.refreshHistoryList();
   }
 
-  private async toggleHistory(): Promise<void> {
+  private async _toggleHistory(): Promise<void> {
     this.historyVisible = !this.historyVisible;
     this.historyPanel.style.display = this.historyVisible ? 'block' : 'none';
 
@@ -581,7 +581,7 @@ export class ChatView extends ItemView {
           this.navigateSearch(1);
         }
       } else if (e.key === 'Escape') {
-        this.toggleSearch();
+        this._toggleSearch();
       }
     });
 
@@ -612,10 +612,10 @@ export class ChatView extends ItemView {
       attr: { 'aria-label': 'Close search' },
     });
     setIcon(closeBtn, 'x');
-    closeBtn.onclick = () => this.toggleSearch();
+    closeBtn.onclick = () => this._toggleSearch();
   }
 
-  private toggleSearch(): void {
+  private _toggleSearch(): void {
     this.searchVisible = !this.searchVisible;
     this.searchContainer.style.display = this.searchVisible ? 'flex' : 'none';
 
@@ -1310,7 +1310,7 @@ export class ChatView extends ItemView {
       await this.plugin.storage.setCurrentConversationId(id);
       this.renderAllMessages();
       this.updateTitle();
-      this.toggleHistory();
+      this._toggleHistory();
     }
   }
 
@@ -1350,7 +1350,7 @@ export class ChatView extends ItemView {
       if (remaining.length > 0) {
         await this.loadConversationById(remaining[0].id);
       } else {
-        await this.newConversation();
+        await this._newConversation();
       }
     }
 
@@ -2303,11 +2303,11 @@ export class ChatView extends ItemView {
 
     switch (command) {
       case 'clear':
-        await this.clearMessages();
+        await this._clearMessages();
         return true;
 
       case 'new':
-        await this.newConversation();
+        await this._newConversation();
         return true;
 
       case 'export':
@@ -2351,7 +2351,7 @@ export class ChatView extends ItemView {
           this.performSearch(args);
         }
         if (!this.searchVisible) {
-          this.toggleSearch();
+          this._toggleSearch();
         }
         return true;
 
@@ -4301,7 +4301,7 @@ ${content}
     return result.join('\n');
   }
 
-  private async newConversation(): Promise<void> {
+  private async _newConversation(): Promise<void> {
     log.info('Creating new conversation');
     this.conversation = await this.plugin.storage.createConversation();
     this.lastSentNotePath = null; // Reset note tracking for new conversation
@@ -4423,13 +4423,63 @@ ${content}
     }
   }
 
-  private async clearMessages(): Promise<void> {
+  private async _clearMessages(): Promise<void> {
     log.info('Clearing messages', { conversationId: this.conversation.id });
     this.conversation.messages = [];
     this.conversation.sessionId = undefined;
     this.renderAllMessages();
     await this.saveConversation();
     this.showTemporaryStatus('Messages cleared', 'info', 2000);
+  }
+
+  // ============================================================
+  // Public API methods for commands and external access
+  // ============================================================
+
+  /** Focus the chat input */
+  focusInput(): void {
+    this.inputEl?.focus();
+  }
+
+  /** Start a new conversation */
+  async newConversation(): Promise<void> {
+    await this._newConversation();
+  }
+
+  /** Clear all messages in current conversation */
+  async clearMessages(): Promise<void> {
+    await this._clearMessages();
+  }
+
+  /** Stop/abort the current response */
+  stopResponse(): void {
+    if (this.isProcessing) {
+      this.handleStopClick();
+    }
+  }
+
+  /** Copy the last assistant response to clipboard */
+  async copyLastResponse(): Promise<void> {
+    const lastAssistantMsg = [...this.conversation.messages]
+      .reverse()
+      .find(m => m.role === 'assistant');
+
+    if (lastAssistantMsg) {
+      await navigator.clipboard.writeText(lastAssistantMsg.content);
+      new Notice('Copied to clipboard');
+    } else {
+      new Notice('No assistant response to copy');
+    }
+  }
+
+  /** Toggle conversation history panel */
+  async toggleHistory(): Promise<void> {
+    await this._toggleHistory();
+  }
+
+  /** Toggle in-conversation search */
+  toggleSearch(): void {
+    this._toggleSearch();
   }
 
   private scrollToBottom(force = false): void {
