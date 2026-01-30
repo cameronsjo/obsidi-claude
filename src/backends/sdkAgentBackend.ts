@@ -131,6 +131,69 @@ export class SDKAgentBackend implements AgentBackend {
   }
 
   /**
+   * Get MCP server status information.
+   */
+  async getMcpServerStatus(): Promise<Array<{
+    name: string;
+    status: 'connected' | 'failed' | 'needs-auth' | 'pending' | 'disabled';
+    error?: string;
+    toolCount?: number;
+  }> | null> {
+    if (!this.activeQuery) {
+      log.warn('Cannot get MCP status: no active query');
+      return null;
+    }
+    try {
+      const statuses = await this.activeQuery.mcpServerStatus();
+      return statuses.map(s => ({
+        name: s.name,
+        status: s.status,
+        error: s.error,
+        toolCount: s.tools?.length,
+      }));
+    } catch (error) {
+      log.error('Failed to get MCP server status', error);
+      return null;
+    }
+  }
+
+  /**
+   * Reconnect a failed MCP server.
+   */
+  async reconnectMcpServer(name: string): Promise<boolean> {
+    if (!this.activeQuery) {
+      log.warn('Cannot reconnect MCP server: no active query');
+      return false;
+    }
+    try {
+      await this.activeQuery.reconnectMcpServer(name);
+      log.info('MCP server reconnected', { name });
+      return true;
+    } catch (error) {
+      log.error('Failed to reconnect MCP server', error);
+      return false;
+    }
+  }
+
+  /**
+   * Toggle MCP server enabled state.
+   */
+  async toggleMcpServer(name: string, enabled: boolean): Promise<boolean> {
+    if (!this.activeQuery) {
+      log.warn('Cannot toggle MCP server: no active query');
+      return false;
+    }
+    try {
+      await this.activeQuery.toggleMcpServer(name, enabled);
+      log.info('MCP server toggled', { name, enabled });
+      return true;
+    } catch (error) {
+      log.error('Failed to toggle MCP server', error);
+      return false;
+    }
+  }
+
+  /**
    * Dynamically switch the model during a conversation.
    */
   async setModel(model: string): Promise<void> {

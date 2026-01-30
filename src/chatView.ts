@@ -2493,6 +2493,11 @@ export class ChatView extends ItemView {
         return true;
       }
 
+      case 'mcp': {
+        await this.handleMcpCommand(args);
+        return true;
+      }
+
       default:
         // Unknown command - show help hint
         this.showTemporaryStatus(`Unknown command: /${command}. Type /help for available commands.`, 'info');
@@ -2680,6 +2685,11 @@ export class ChatView extends ItemView {
 - \`/mode\` - Show current permission mode
 - \`/mode <mode>\` - Switch mode (default, acceptEdits, plan, etc.)
 
+**MCP Servers (SDK only):**
+- \`/mcp\` - Show MCP server status
+- \`/mcp reconnect <name>\` - Reconnect failed server
+- \`/mcp toggle <name>\` - Enable/disable server
+
 **Shortcuts:**
 \`Enter\` send · \`Shift+Enter\` newline · \`↑↓\` history
 \`Cmd+F\` search · \`Cmd+N\` new · \`Cmd+H\` history · \`Cmd+E\` export
@@ -2695,6 +2705,93 @@ export class ChatView extends ItemView {
     };
 
     this.renderMessage(helpMsg);
+    this.scrollToBottom(true);
+  }
+
+  /**
+   * Handle /mcp command to show MCP server status and control servers.
+   */
+  private async handleMcpCommand(args: string): Promise<void> {
+    const backend = this.getBackend();
+    if (backend.type !== 'sdk') {
+      this.showTemporaryStatus('MCP status requires SDK backend', 'info', 3000);
+      return;
+    }
+
+    const sdkBackend = backend as {
+      getMcpServerStatus?: () => Promise<Array<{
+        name: string;
+        status: string;
+        error?: string;
+        toolCount?: number;
+      }> | null>;
+      reconnectMcpServer?: (name: string) => Promise<boolean>;
+      toggleMcpServer?: (name: string, enabled: boolean) => Promise<boolean>;
+    };
+
+    if (!sdkBackend.getMcpServerStatus) {
+      this.showTemporaryStatus('MCP status not available', 'error', 3000);
+      return;
+    }
+
+    // Parse command: /mcp, /mcp reconnect <name>, /mcp toggle <name>
+    const parts = args.trim().split(/\s+/);
+    const action = parts[0]?.toLowerCase();
+    const serverName = parts[1];
+
+    if (action === 'reconnect' && serverName && sdkBackend.reconnectMcpServer) {
+      const success = await sdkBackend.reconnectMcpServer(serverName);
+      this.showTemporaryStatus(
+        success ? `Reconnected ${serverName}` : `Failed to reconnect ${serverName}`,
+        success ? 'success' : 'error',
+        2000
+      );
+      return;
+    }
+
+    if ((action === 'toggle' || action === 'enable' || action === 'disable') && serverName && sdkBackend.toggleMcpServer) {
+      const enabled = action !== 'disable';
+      const success = await sdkBackend.toggleMcpServer(serverName, enabled);
+      this.showTemporaryStatus(
+        success ? `${serverName} ${enabled ? 'enabled' : 'disabled'}` : `Failed to toggle ${serverName}`,
+        success ? 'success' : 'error',
+        2000
+      );
+      return;
+    }
+
+    // Default: show status
+    const statuses = await sdkBackend.getMcpServerStatus();
+    if (!statuses || statuses.length === 0) {
+      this.showTemporaryStatus('No MCP servers configured or no active session', 'info', 3000);
+      return;
+    }
+
+    const statusIcons: Record<string, string> = {
+      connected: '🟢',
+      failed: '🔴',
+      'needs-auth': '🟡',
+      pending: '⏳',
+      disabled: '⚫',
+    };
+
+    const lines = ['**MCP Server Status:**\n'];
+    for (const server of statuses) {
+      const icon = statusIcons[server.status] || '❓';
+      const tools = server.toolCount ? ` (${server.toolCount} tools)` : '';
+      const error = server.error ? `\n  - Error: ${server.error}` : '';
+      lines.push(`${icon} **${server.name}**: ${server.status}${tools}${error}`);
+    }
+    lines.push('');
+    lines.push('*Commands: `/mcp reconnect <name>`, `/mcp toggle <name>`*');
+
+    const mcpMsg: ChatMessage = {
+      id: generateId(),
+      role: 'assistant',
+      content: lines.join('\n'),
+      timestamp: Date.now(),
+    };
+    this.renderMessage(mcpMsg);
     this.scrollToBottom(true);
   }
 
