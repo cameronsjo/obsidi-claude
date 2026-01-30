@@ -162,7 +162,7 @@ describe('ObsidianTools', () => {
   describe('getToolDefinitions', () => {
     it('should return 22 tool definitions', () => {
       const definitions = tools.getToolDefinitions();
-      expect(definitions).toHaveLength(22);
+      expect(definitions).toHaveLength(24);
     });
 
     it('should return tools with required properties', () => {
@@ -186,7 +186,7 @@ describe('ObsidianTools', () => {
   describe('getToolSchemas', () => {
     it('should return schemas in MCP format', () => {
       const schemas = tools.getToolSchemas();
-      expect(schemas).toHaveLength(22);
+      expect(schemas).toHaveLength(24);
       for (const schema of schemas) {
         expect(schema).toHaveProperty('name');
         expect(schema).toHaveProperty('description');
@@ -805,6 +805,6 @@ describe('ObsidianTools without RAG', () => {
     const tools = new ObsidianTools(mockApp);
     const definitions = tools.getToolDefinitions();
 
-    expect(definitions).toHaveLength(22);
+    expect(definitions).toHaveLength(24);
   });
 });

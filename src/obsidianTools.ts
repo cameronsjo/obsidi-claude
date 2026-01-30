@@ -83,6 +83,8 @@ export class ObsidianTools {
       this.getBacklinksTool(),
       this.getOutgoingLinksTool(),
       this.getTagsTool(),
+      this.getSearchByTagTool(),
+      this.getSuggestTagsTool(),
       this.getRecentFilesTool(),
       this.getSearchByPropertyTool(),
       this.getCreateNoteTool(),
@@ -421,6 +423,149 @@ export class ObsidianTools {
 
         tags.sort((a, b) => b.count - a.count);
         return { totalTags: tags.length, tags: tags.slice(0, 100) };
+      }),
+    };
+  }
+
+  /**
+   * Search notes by tag
+   */
+  private getSearchByTagTool(): ToolDefinition {
+    return {
+      name: 'search_by_tag',
+      description:
+        'Find all notes that have a specific tag. Searches both frontmatter tags and inline tags.',
+      parameters: {
+        type: 'object',
+        properties: {
+          tag: {
+            type: 'string',
+            description: 'The tag to search for (with or without # prefix)',
+          },
+          limit: {
+            type: 'number',
+            description: 'Maximum number of results (default: 50)',
+          },
+        },
+        required: ['tag'],
+      },
+      handler: this.wrapHandler(async (params) => {
+        const inputTag = params.tag as string;
+        const limit = (params.limit as number) || 50;
+        const normalizedTag = inputTag.startsWith('#') ? inputTag : '#' + inputTag;
+
+        const files = this.app.vault.getMarkdownFiles();
+        const matches: Array<{
+          path: string;
+          title: string;
+          allTags: string[];
+        }> = [];
+
+        for (const file of files) {
+          if (matches.length >= limit) break;
+          const cache = this.app.metadataCache.getFileCache(file);
+          if (!cache) continue;
+
+          // Check inline tags (cache.tags)
+          const inlineTags = cache.tags?.map((t) => t.tag.toLowerCase()) || [];
+          // Check frontmatter tags
+          const frontmatterTags = (cache.frontmatter?.tags as string[] | undefined)?.map(
+            (t) => (t.startsWith('#') ? t : '#' + t).toLowerCase()
+          ) || [];
+          const allTags = [...new Set([...inlineTags, ...frontmatterTags])];
+
+          if (allTags.includes(normalizedTag.toLowerCase())) {
+            matches.push({
+              path: file.path,
+              title: (cache.frontmatter?.title as string) || file.basename,
+              allTags: [...new Set([...(cache.tags?.map((t) => t.tag) || []), ...(cache.frontmatter?.tags as string[] || [])])],
+            });
+          }
+        }
+
+        return { tag: normalizedTag, matchCount: matches.length, matches };
+      }),
+    };
+  }
+
+  /**
+   * Suggest tags for a note
+   */
+  private getSuggestTagsTool(): ToolDefinition {
+    return {
+      name: 'suggest_tags',
+      description:
+        'Analyze a note\'s content and suggest relevant tags based on existing vault tags and content similarity.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: {
+            type: 'string',
+            description: 'Path to the note to analyze',
+          },
+          maxSuggestions: {
+            type: 'number',
+            description: 'Maximum number of tag suggestions (default: 10)',
+          },
+        },
+        required: ['path'],
+      },
+      handler: this.wrapHandler(async (params) => {
+        const path = params.path as string;
+        const maxSuggestions = (params.maxSuggestions as number) || 10;
+
+        const file = this.app.vault.getAbstractFileByPath(path);
+        if (!file || !(file instanceof TFile)) {
+          throw new Error(`File not found: ${path}`);
+        }
+
+        const content = await this.app.vault.read(file);
+        const cache = this.app.metadataCache.getFileCache(file);
+        const existingTags = new Set(cache?.tags?.map((t) => t.tag.toLowerCase()) || []);
+
+        // Get all vault tags
+        const allTags = (this.app.metadataCache as unknown as { getTags(): Record<string, number> }).getTags();
+
+        // Score tags based on content matches
+        const suggestions: Array<{ tag: string; score: number; reason: string }> = [];
+        const contentLower = content.toLowerCase();
+
+        for (const [tag, count] of Object.entries(allTags)) {
+          if (existingTags.has(tag.toLowerCase())) continue;
+
+          // Extract tag name without #
+          const tagName = tag.slice(1).toLowerCase();
+          const parts = tagName.split('/');
+
+          // Check if any part of the tag (including nested parts) appears in content
+          let score = 0;
+          let reason = '';
+
+          for (const part of parts) {
+            if (part.length > 2 && contentLower.includes(part)) {
+              score += 2;
+              reason = `"${part}" mentioned in content`;
+            }
+          }
+
+          // Boost popular tags slightly
+          if (count > 5) {
+            score += 1;
+            if (!reason) reason = `commonly used (${count} notes)`;
+          }
+
+          if (score > 0) {
+            suggestions.push({ tag, score, reason });
+          }
+        }
+
+        // Sort by score and return top suggestions
+        suggestions.sort((a, b) => b.score - a.score);
+        return {
+          path,
+          existingTags: Array.from(existingTags),
+          suggestions: suggestions.slice(0, maxSuggestions),
+        };
       }),
     };
   }
