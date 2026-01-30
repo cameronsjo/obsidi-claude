@@ -8,6 +8,7 @@ import {
   Notice,
 } from 'obsidian';
 import { PermissionModal } from './chatViewModals';
+import { executeCommand, type ChatViewCommandContext } from './chatViewCommands';
 import type ObsidiClaudePlugin from '../main';
 import type { ChatMessage, ToolCallInfo, Conversation, MessageUsage, ChatTab } from './types';
 import { generateId, calculateCost, calculateConversationUsage } from './types';
@@ -2306,117 +2307,70 @@ export class ChatView extends ItemView {
   }
 
   /**
+   * Create a command context for the slash command system.
+   */
+  private createCommandContext(): ChatViewCommandContext {
+    return {
+      plugin: this.plugin,
+      conversation: this.conversation,
+      inputEl: this.inputEl,
+      searchInput: this.searchInput,
+      messagesContainer: this.messagesContainer,
+
+      getMessageQueue: () => this.messageQueue,
+      isSearchVisible: () => this.searchVisible,
+
+      showTemporaryStatus: (msg, type, duration) => this.showTemporaryStatus(msg, type, duration),
+      setStatus: (msg, type) => this.setStatus(msg, type),
+      renderAllMessages: () => this.renderAllMessages(),
+      scrollToBottom: (force) => this.scrollToBottom(force),
+
+      clearMessages: () => this._clearMessages(),
+      newConversation: () => this._newConversation(),
+      toggleSearch: () => this._toggleSearch(),
+      clearQueue: () => this.clearQueue(),
+      performSearch: (query) => this.performSearch(query),
+      addTagToConversation: (tag) => this.addTagToConversation(tag),
+      removeTagFromConversation: (tag) => this.removeTagFromConversation(tag),
+      saveConversation: () => this.saveConversation(),
+      exportConversation: () => this.exportConversation(),
+      exportToClipboard: () => this.exportToClipboard(),
+      exportToJson: () => this.exportToJson(),
+
+      resizeInput: () => {
+        this.inputEl.style.height = 'auto';
+        this.inputEl.style.height = Math.min(this.inputEl.scrollHeight, MAX_TEXTAREA_HEIGHT_PX) + 'px';
+      },
+      focusInput: () => this.inputEl.focus(),
+    };
+  }
+
+  /**
    * Handle slash commands like /clear, /new, /note, /help
    * Returns true if the command was handled, false if it should be sent as a message
    */
   private async handleSlashCommand(input: string): Promise<boolean> {
+    // Try the modular command system first
+    const ctx = this.createCommandContext();
+    const handled = await executeCommand(input, ctx);
+    if (handled) {
+      return true;
+    }
+
+    // Fall back to inline handlers for complex commands not yet extracted
     const parts = input.slice(1).split(/\s+/);
     const command = parts[0].toLowerCase();
     const args = parts.slice(1).join(' ');
 
-    log.debug('Processing slash command', { command, args });
+    log.debug('Processing slash command (fallback)', { command, args });
 
     switch (command) {
-      case 'clear':
-        await this._clearMessages();
+      // Commands handled by modular system: clear, new, export, note, search,
+      // queue, help, tag, tags, model, skills
+
+      case 'history':
+        await this._toggleHistory();
         return true;
-
-      case 'new':
-        await this._newConversation();
-        return true;
-
-      case 'export':
-        await this.handleExportCommand(args);
-        return true;
-
-      case 'note': {
-        // Insert current note content into the input
-        const activeFile = this.plugin.app.workspace.getActiveFile();
-        if (!activeFile) {
-          this.showTemporaryStatus('No active note', 'info', 2000);
-          return true;
-        }
-
-        try {
-          const noteContent = await this.plugin.app.vault.read(activeFile);
-          const contextMessage = `[Context from "${activeFile.basename}"]\n\n${noteContent}`;
-
-          // If there are additional args, append them as a question
-          if (args) {
-            this.inputEl.value = `${contextMessage}\n\n---\n\n${args}`;
-          } else {
-            this.inputEl.value = contextMessage;
-          }
-
-          // Trigger resize
-          this.inputEl.style.height = 'auto';
-          this.inputEl.style.height = Math.min(this.inputEl.scrollHeight, MAX_TEXTAREA_HEIGHT_PX) + 'px';
-          this.inputEl.focus();
-          this.showTemporaryStatus(`Added "${activeFile.basename}" to input`, 'success', 2000);
-        } catch (error) {
-          log.error('Failed to read active note', error);
-          this.setStatus('Failed to read note', 'error');
-        }
-        return true;
-      }
-
-      case 'search':
-        if (args) {
-          this.searchInput.value = args;
-          this.performSearch(args);
-        }
-        if (!this.searchVisible) {
-          this._toggleSearch();
-        }
-        return true;
-
-      case 'queue':
-        if (args === 'clear') {
-          this.clearQueue();
-        } else {
-          const count = this.messageQueue.length;
-          if (count === 0) {
-            this.showTemporaryStatus('Message queue is empty', 'info', 2000);
-          } else {
-            this.showTemporaryStatus(`${count} message${count !== 1 ? 's' : ''} in queue`, 'info', 2000);
-          }
-        }
-        return true;
-
-      case 'tag':
-      case 'tags': {
-        if (!args) {
-          // Show current tags
-          const tags = this.conversation.tags || [];
-          if (tags.length === 0) {
-            this.showTemporaryStatus('No tags on this conversation. Use /tag add <tag> to add one.', 'info', 3000);
-          } else {
-            this.showTemporaryStatus(`Tags: ${tags.join(', ')}`, 'info', 3000);
-          }
-        } else if (args.startsWith('add ')) {
-          const newTag = args.slice(4).trim();
-          if (newTag) {
-            await this.addTagToConversation(newTag);
-          }
-        } else if (args.startsWith('remove ') || args.startsWith('rm ')) {
-          const tagToRemove = args.replace(/^(remove|rm)\s+/, '').trim();
-          if (tagToRemove) {
-            await this.removeTagFromConversation(tagToRemove);
-          }
-        } else if (args === 'list') {
-          // Show all unique tags across conversations
-          const allTags = await this.plugin.storage.getAllTags();
-          if (allTags.length === 0) {
-            this.showTemporaryStatus('No tags in any conversation yet.', 'info', 2000);
-          } else {
-            this.showTemporaryStatus(`All tags: ${allTags.join(', ')}`, 'info', 4000);
-          }
-        } else {
-          // Treat as adding a tag
-          await this.addTagToConversation(args.trim());
-        }
-        return true;
-      }
 
       case 'pin':
         await this.plugin.storage.togglePin(this.conversation.id);
@@ -2436,28 +2390,6 @@ export class ChatView extends ItemView {
           this.showTemporaryStatus('Conversation renamed', 'success', 1500);
         } else {
           this.promptRenameConversation(this.conversation.id, this.conversation.title);
-        }
-        return true;
-      }
-
-      case 'model': {
-        const models = ['claude-sonnet-4-5', 'claude-opus-4', 'claude-3-5-sonnet-20241022'];
-        if (!args) {
-          this.showTemporaryStatus(`Current model: ${this.plugin.settings.model}`, 'info', 2000);
-        } else {
-          const modelArg = args.toLowerCase();
-          // Allow partial matches
-          const match = models.find(m =>
-            m.includes(modelArg) || modelArg.includes('sonnet') && m.includes('sonnet') ||
-            modelArg.includes('opus') && m.includes('opus')
-          );
-          if (match) {
-            this.plugin.settings.model = match as typeof this.plugin.settings.model;
-            await this.plugin.saveSettings();
-            this.showTemporaryStatus(`Model switched to ${match}`, 'success', 2000);
-          } else {
-            this.showTemporaryStatus(`Unknown model. Available: sonnet-4-5, opus-4, 3-5-sonnet`, 'error', 3000);
-          }
         }
         return true;
       }
