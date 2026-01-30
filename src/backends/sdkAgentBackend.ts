@@ -338,6 +338,8 @@ export class SDKAgentBackend implements AgentBackend {
         settingSources: this.settings.loadVaultClaudeMd ? ['project'] : undefined,
         // Use specific agent for main conversation thread
         agent: this.settings.mainAgent || undefined,
+        // Fallback model for automatic failover on rate limits/errors
+        fallbackModel: this.settings.fallbackModel || undefined,
       };
 
       // Build MCP servers config

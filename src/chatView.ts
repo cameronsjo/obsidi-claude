@@ -45,6 +45,7 @@ export class ChatView extends ItemView {
   private chatTitleEl: HTMLElement;
   private backendBadge: HTMLElement;
   private contextBadge: HTMLElement;
+  private accountBadge: HTMLElement;
   private tokenCounter: HTMLElement;
   private searchInput: HTMLInputElement;
   private searchContainer: HTMLElement;
@@ -256,6 +257,10 @@ export class ChatView extends ItemView {
     // Backend indicator badge
     this.backendBadge = header.createDiv('backend-badge');
     this.updateBackendBadge();
+
+    // Account info badge (SDK only)
+    this.accountBadge = header.createDiv('account-badge');
+    this.accountBadge.style.display = 'none';
 
     // Active note context badge
     this.contextBadge = header.createDiv('context-badge');
@@ -1957,6 +1962,45 @@ export class ChatView extends ItemView {
     );
   }
 
+  private updateAccountBadge(): void {
+    if (!this.accountBadge) return;
+
+    const backend = this.getBackend();
+    if (backend.type !== 'sdk' || !('getAccountInfo' in backend)) {
+      this.accountBadge.style.display = 'none';
+      return;
+    }
+
+    // Type assertion for SDK-specific method
+    const sdkBackend = backend as { getAccountInfo(): { email?: string; organization?: string; subscriptionType?: string } | null };
+    const accountInfo = sdkBackend.getAccountInfo();
+
+    if (!accountInfo) {
+      this.accountBadge.style.display = 'none';
+      return;
+    }
+
+    // Display subscription type or "Pro" indicator
+    const displayText = accountInfo.subscriptionType || 'Pro';
+    this.accountBadge.empty();
+    this.accountBadge.setText(displayText);
+    this.accountBadge.className = 'account-badge';
+    this.accountBadge.style.display = 'inline-flex';
+
+    // Build tooltip with available info
+    const tooltipParts: string[] = [];
+    if (accountInfo.email) {
+      tooltipParts.push(`Account: ${accountInfo.email}`);
+    }
+    if (accountInfo.organization) {
+      tooltipParts.push(`Org: ${accountInfo.organization}`);
+    }
+    if (accountInfo.subscriptionType) {
+      tooltipParts.push(`Plan: ${accountInfo.subscriptionType}`);
+    }
+    this.accountBadge.setAttribute('aria-label', tooltipParts.join(' | ') || 'Authenticated');
+  }
+
   private updateContextBadge(): void {
     if (!this.contextBadge) return;
 
@@ -2933,6 +2977,9 @@ export class ChatView extends ItemView {
 
       onComplete: async (result) => {
         this.setProcessing(false);
+
+        // Update account badge (may have loaded account info during query)
+        this.updateAccountBadge();
 
         // Capture usage data on the assistant message
         if (currentAssistantMsgId && (result.inputTokens || result.outputTokens)) {

@@ -310,6 +310,8 @@ export interface ObsidiClaudeSettings {
   loadVaultClaudeMd: boolean;
   /** Agent name to use for main conversation thread (must be defined in agents) */
   mainAgent?: string;
+  /** Fallback model to use if primary model fails or is rate-limited (SDK only) */
+  fallbackModel?: 'claude-sonnet-4-5' | 'claude-opus-4' | 'claude-3-5-sonnet-20241022';
 }
 
 /**

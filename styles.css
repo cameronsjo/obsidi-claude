@@ -123,6 +123,20 @@ body {
   color: var(--text-muted);
 }
 
+/* Account info badge */
+.account-badge {
+  display: none;
+  align-items: center;
+  font-size: 0.6rem;
+  font-weight: 500;
+  padding: 0.1rem 0.4rem;
+  border-radius: 9999px;
+  background-color: rgba(var(--interactive-accent-rgb), 0.15);
+  color: var(--interactive-accent);
+  cursor: default;
+  flex-shrink: 0;
+}
+
 /* Active note context badge */
 .context-badge {
   display: none;

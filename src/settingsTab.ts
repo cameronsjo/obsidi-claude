@@ -521,6 +521,23 @@ export class SettingsTab extends PluginSettingTab {
             });
         });
     }
+
+    // Fallback model
+    new Setting(containerEl)
+      .setName('Fallback Model')
+      .setDesc('Model to use if primary model is rate-limited or unavailable')
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption('', '(None)')
+          .addOption('claude-sonnet-4-5', 'Claude Sonnet 4.5')
+          .addOption('claude-opus-4', 'Claude Opus 4')
+          .addOption('claude-3-5-sonnet-20241022', 'Claude 3.5 Sonnet')
+          .setValue(this.plugin.settings.fallbackModel ?? '')
+          .onChange(async (value) => {
+            this.plugin.settings.fallbackModel = value as typeof this.plugin.settings.fallbackModel || undefined;
+            await this.plugin.saveSettings();
+          })
+      );
   }
 
   private addEmbeddingSettings(containerEl: HTMLElement): void {
