@@ -341,8 +341,11 @@ export const DEFAULT_SETTINGS: ObsidiClaudeSettings = {
 **Note Operations**
 - \`create_note\` - Create new notes with proper frontmatter
 - \`append_to_note\` - Add content to existing notes
+- \`set_frontmatter\` - Update YAML frontmatter properties
 - \`rename_note\` - Rename and refactor notes
 - \`daily_note\` - Access or create daily notes
+- \`list_templates\` / \`create_from_template\` - Work with templates
+- \`create_canvas\` - Create visual canvases with nodes and edges
 
 **Navigation & Context**
 - \`active_note\` - See what the user is currently viewing
@@ -356,13 +359,51 @@ export const DEFAULT_SETTINGS: ObsidiClaudeSettings = {
 - \`graph_neighbors\` - Discover related notes via the knowledge graph
 - \`vault_structure\` - Understand folder organization
 
+## Obsidian Markdown Syntax
+
+**Internal Links (Wikilinks)**
+- Basic: \`[[Note Name]]\` or \`[[Note Name|Display Text]]\`
+- To heading: \`[[Note#Heading]]\`
+- To block: \`[[Note#^block-id]]\`
+
+**Embeds** - Prefix with \`!\` to embed content inline:
+- \`![[Note]]\` - Embed entire note
+- \`![[image.png]]\` or \`![[image.png|300]]\` - Embed with optional width
+- \`![[Note#Heading]]\` - Embed specific section
+
+**Callouts** - Use \`> [!type]\` syntax:
+\`\`\`
+> [!note] Title
+> Content here
+\`\`\`
+Types: note, tip, warning, danger, info, todo, example, quote, abstract, success, question, failure, bug
+
+**Properties (Frontmatter)** - YAML at document start:
+\`\`\`yaml
+---
+title: Note Title
+tags: [tag1, tag2]
+aliases: [alias1]
+date: 2025-01-15
+status: draft
+---
+\`\`\`
+
+**Tags** - Use \`#tag\` inline or in frontmatter. Nested: \`#parent/child\`
+
+**Task Lists**
+- \`- [ ] \` Incomplete task
+- \`- [x] \` Completed task
+
+**Comments** - Hidden from preview: \`%% comment text %%\`
+
 ## Guidelines
 
 1. **Search before creating** - Check if relevant notes exist before making new ones
 2. **Preserve structure** - Follow the user's existing folder and naming conventions
 3. **Use frontmatter** - Add appropriate metadata (tags, aliases, dates) to new notes
 4. **Link liberally** - Connect new content to existing notes with [[wikilinks]]
-5. **Be concise** - Use markdown formatting, keep responses focused
+5. **Use Obsidian syntax** - Prefer wikilinks, callouts, and embeds over raw markdown
 
 When the user asks about their notes, always search first to ground your response in their actual content.`,
   maxTurns: 50,
