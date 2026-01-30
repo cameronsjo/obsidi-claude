@@ -2050,6 +2050,28 @@ export class ChatView extends ItemView {
         return true;
       }
 
+      case 'budget': {
+        await this.handleBudgetCommand(args);
+        return true;
+      }
+
+      case 'cost': {
+        // Quick cost summary for current conversation
+        const usage = this.conversation.usage;
+        if (!usage || usage.totalCost === 0) {
+          this.showTemporaryStatus('No usage data yet for this conversation', 'info', 2000);
+        } else {
+          const inputK = Math.round(usage.totalInputTokens / 1000);
+          const outputK = Math.round(usage.totalOutputTokens / 1000);
+          this.showTemporaryStatus(
+            `Cost: $${usage.totalCost.toFixed(4)} (${inputK}K in / ${outputK}K out)`,
+            'info',
+            4000
+          );
+        }
+        return true;
+      }
+
       default:
         // Unknown command - show help hint
         this.showTemporaryStatus(`Unknown command: /${command}. Type /help for available commands.`, 'info');
@@ -2137,6 +2159,58 @@ export class ChatView extends ItemView {
     }
   }
 
+  /**
+   * Handle /budget command for spending limits.
+   */
+  private async handleBudgetCommand(args: string): Promise<void> {
+    const currentUsage = this.conversation.usage;
+    const currentCost = currentUsage?.totalCost ?? 0;
+    const currentLimit = this.plugin.settings.maxBudgetUsd;
+
+    if (!args || args === 'show') {
+      // Show current budget status
+      const limitStr = currentLimit ? `$${currentLimit.toFixed(2)}` : 'No limit';
+      const spentStr = `$${currentCost.toFixed(4)}`;
+      const remaining = currentLimit ? Math.max(0, currentLimit - currentCost) : null;
+      const remainingStr = remaining !== null ? `$${remaining.toFixed(4)}` : '∞';
+      const pct = currentLimit ? Math.round((currentCost / currentLimit) * 100) : 0;
+
+      let status = `Budget: ${spentStr} spent`;
+      if (currentLimit) {
+        status += ` / ${limitStr} (${pct}% used, ${remainingStr} remaining)`;
+        if (pct >= 80) {
+          status += ' ⚠️';
+        }
+      } else {
+        status += ' (no limit set)';
+      }
+      this.showTemporaryStatus(status, 'info', 5000);
+
+    } else if (args.startsWith('set ')) {
+      // Set budget limit
+      const valueStr = args.slice(4).trim().replace('$', '');
+      const value = parseFloat(valueStr);
+
+      if (isNaN(value) || value <= 0) {
+        this.showTemporaryStatus('Invalid budget. Use: /budget set 5.00', 'error', 3000);
+        return;
+      }
+
+      this.plugin.settings.maxBudgetUsd = value;
+      await this.plugin.saveSettings();
+      this.showTemporaryStatus(`Budget limit set to $${value.toFixed(2)}`, 'success', 3000);
+
+    } else if (args === 'clear' || args === 'remove') {
+      // Remove budget limit
+      this.plugin.settings.maxBudgetUsd = undefined;
+      await this.plugin.saveSettings();
+      this.showTemporaryStatus('Budget limit removed', 'success', 3000);
+
+    } else {
+      this.showTemporaryStatus('Usage: /budget, /budget set <amount>, /budget clear', 'info', 3000);
+    }
+  }
+
   private showSlashCommandHelp(): void {
     const helpText = `
 **Conversation:**
@@ -2147,6 +2221,10 @@ export class ChatView extends ItemView {
 - \`/duplicate\` - Fork conversation (create editable copy)
 - \`/undo\` - Rewind file changes to last checkpoint (SDK only)
 - \`/undo --dry-run\` - Preview what /undo would restore
+- \`/budget\` - Show current spend and limit
+- \`/budget set <amount>\` - Set spending limit (e.g., /budget set 5.00)
+- \`/budget clear\` - Remove spending limit
+- \`/cost\` - Quick cost summary for this conversation
 - \`/stats\` - Show conversation statistics
 - \`/usage\` - Show usage dashboard (costs across conversations)
 - \`/rename [title]\` - Rename conversation

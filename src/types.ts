@@ -287,6 +287,8 @@ export interface ObsidiClaudeSettings {
   disallowedTools: string[];
   /** Load project CLAUDE.md from vault (requires .claude/CLAUDE.md in working directory) */
   loadVaultClaudeMd: boolean;
+  /** Agent name to use for main conversation thread (must be defined in agents) */
+  mainAgent?: string;
 }
 
 /**
@@ -397,6 +399,7 @@ When the user asks about their notes, always search first to ground your respons
   continueSession: false, // Don't auto-continue by default
   disallowedTools: [], // No tools blocked by default
   loadVaultClaudeMd: false, // Don't load vault CLAUDE.md by default
+  mainAgent: undefined, // No main agent by default (use normal conversation)
 };
 
 export function generateId(): string {

@@ -336,6 +336,8 @@ export class SDKAgentBackend implements AgentBackend {
         disallowedTools: this.settings.disallowedTools.length > 0 ? this.settings.disallowedTools : undefined,
         // Load vault's .claude/CLAUDE.md if enabled
         settingSources: this.settings.loadVaultClaudeMd ? ['project'] : undefined,
+        // Use specific agent for main conversation thread
+        agent: this.settings.mainAgent || undefined,
       };
 
       // Build MCP servers config
