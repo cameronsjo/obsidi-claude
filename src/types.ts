@@ -316,6 +316,10 @@ export interface ObsidiClaudeSettings {
   fallbackModel?: 'claude-sonnet-4-5' | 'claude-opus-4' | 'claude-3-5-sonnet-20241022';
   /** Ephemeral/privacy mode - sessions are not saved to disk (SDK only) */
   ephemeralMode: boolean;
+  /** Enable sandbox mode for Bash commands (SDK only) */
+  sandboxEnabled: boolean;
+  /** Auto-allow Bash commands when sandbox is enabled (SDK only) */
+  autoAllowBashIfSandboxed: boolean;
 }
 
 /**
@@ -469,6 +473,8 @@ When the user asks about their notes, always search first to ground your respons
   loadVaultClaudeMd: false, // Don't load vault CLAUDE.md by default
   mainAgent: undefined, // No main agent by default (use normal conversation)
   ephemeralMode: false, // Persist sessions by default
+  sandboxEnabled: false, // Sandbox disabled by default
+  autoAllowBashIfSandboxed: true, // Auto-allow bash when sandboxed
 };
 
 export function generateId(): string {

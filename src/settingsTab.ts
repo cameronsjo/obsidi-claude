@@ -549,6 +549,27 @@ export class SettingsTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         })
       );
+
+    // Sandbox settings
+    new Setting(containerEl)
+      .setName('Sandbox Mode')
+      .setDesc('Run Bash commands in a sandboxed environment for extra security')
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.sandboxEnabled).onChange(async (value) => {
+          this.plugin.settings.sandboxEnabled = value;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName('Auto-allow Bash in Sandbox')
+      .setDesc('Automatically allow Bash commands when sandbox mode is enabled')
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.autoAllowBashIfSandboxed).onChange(async (value) => {
+          this.plugin.settings.autoAllowBashIfSandboxed = value;
+          await this.plugin.saveSettings();
+        })
+      );
   }
 
   private addEmbeddingSettings(containerEl: HTMLElement): void {

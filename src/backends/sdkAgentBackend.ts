@@ -342,6 +342,13 @@ export class SDKAgentBackend implements AgentBackend {
         fallbackModel: this.settings.fallbackModel || undefined,
         // Ephemeral mode - don't persist sessions
         persistSession: !this.settings.ephemeralMode,
+        // Sandbox settings for secure command execution
+        sandbox: this.settings.sandboxEnabled
+          ? {
+              enabled: true,
+              autoAllowBashIfSandboxed: this.settings.autoAllowBashIfSandboxed,
+            }
+          : undefined,
       };
 
       // Build MCP servers config
