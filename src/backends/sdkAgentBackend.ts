@@ -32,6 +32,7 @@ import {
   unstable_v2_resumeSession,
   type SDKSession,
   type SDKSessionOptions,
+  type SdkPluginConfig,
 } from '@anthropic-ai/claude-agent-sdk';
 import type { ObsidiClaudeSettings, Conversation, ToolCallInfo, SpawnConfig } from '../types';
 import { BUILTIN_AGENTS } from '../types';
@@ -578,6 +579,63 @@ export class SDKAgentBackend implements AgentBackend {
   }
 
   /**
+   * Build plugins configuration for SDK query.
+   * Combines configured plugins with auto-discovered vault plugins.
+   */
+  private buildPlugins(): SdkPluginConfig[] | undefined {
+    const pluginSettings = this.settings.pluginSettings;
+    if (!pluginSettings?.enabled) {
+      return undefined;
+    }
+
+    const plugins: SdkPluginConfig[] = [];
+
+    // Add configured plugins that are enabled
+    for (const plugin of pluginSettings.plugins || []) {
+      if (plugin.enabled) {
+        plugins.push({
+          type: 'local',
+          path: plugin.path,
+        });
+        log.debug('Added plugin', { name: plugin.name, path: plugin.path });
+      }
+    }
+
+    // Auto-discover vault plugins if enabled
+    if (pluginSettings.autoDiscoverVaultPlugins && this.settings.workingDirectory) {
+      const vaultPluginDir = `${this.settings.workingDirectory}/.claude-plugins`;
+      try {
+        const fs = require('fs');
+        if (fs.existsSync(vaultPluginDir)) {
+          const entries = fs.readdirSync(vaultPluginDir, { withFileTypes: true });
+          for (const entry of entries) {
+            if (entry.isDirectory()) {
+              const pluginPath = `${vaultPluginDir}/${entry.name}`;
+              // Check if it looks like a plugin (has package.json or main.js)
+              if (fs.existsSync(`${pluginPath}/package.json`) || fs.existsSync(`${pluginPath}/main.js`)) {
+                plugins.push({
+                  type: 'local',
+                  path: pluginPath,
+                });
+                log.debug('Auto-discovered vault plugin', { name: entry.name, path: pluginPath });
+              }
+            }
+          }
+        }
+      } catch (error) {
+        log.warn('Failed to auto-discover vault plugins', error);
+      }
+    }
+
+    if (plugins.length > 0) {
+      log.info('Plugins configured', { count: plugins.length, paths: plugins.map(p => p.path) });
+      return plugins;
+    }
+
+    return undefined;
+  }
+
+  /**
    * Get or create a V2 session for multi-turn conversations.
    * @experimental V2 API is marked as @alpha and may change.
    */
@@ -839,6 +897,9 @@ export class SDKAgentBackend implements AgentBackend {
       // Build hooks configuration
       const hooks = this.buildHooks();
 
+      // Build plugins configuration
+      const plugins = this.buildPlugins();
+
       // Build additional directories (include vault path)
       const additionalDirectories = [...(this.settings.additionalDirectories || [])];
 
@@ -912,6 +973,8 @@ export class SDKAgentBackend implements AgentBackend {
         spawnClaudeCodeProcess: this.settings.spawnConfig && this.settings.spawnConfig.mode !== 'local'
           ? this.buildSpawnFunction(this.settings.spawnConfig)
           : undefined,
+        // Load external plugins
+        plugins,
       };
 
       // Build MCP servers config

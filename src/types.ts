@@ -390,7 +390,38 @@ export interface ObsidiClaudeSettings {
    * @experimental V2 API is marked as @alpha and may change.
    */
   useV2SessionApi: boolean;
+  /** Plugin loading configuration (SDK only) */
+  pluginSettings: PluginSettings;
 }
+
+/**
+ * SDK plugin configuration for loading external plugins.
+ */
+export interface PluginConfig {
+  /** Plugin type - currently only 'local' is supported */
+  type: 'local';
+  /** Path to the plugin directory */
+  path: string;
+  /** Human-readable name for display */
+  name: string;
+  /** Whether this plugin is enabled */
+  enabled: boolean;
+}
+
+export interface PluginSettings {
+  /** Enable plugin loading */
+  enabled: boolean;
+  /** Auto-discover plugins from vault's .claude-plugins directory */
+  autoDiscoverVaultPlugins: boolean;
+  /** Configured plugins */
+  plugins: PluginConfig[];
+}
+
+export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
+  enabled: false,
+  autoDiscoverVaultPlugins: true,
+  plugins: [],
+};
 
 /**
  * Custom spawn configuration for running Claude in containers or remote environments.
@@ -605,6 +636,7 @@ When the user asks about their notes, always search first to ground your respons
   savedPrompts: [], // No saved prompts by default
   strictMcpConfig: false, // Don't enforce strict MCP validation by default
   useV2SessionApi: false, // Use stable query() API by default
+  pluginSettings: DEFAULT_PLUGIN_SETTINGS,
 };
 
 export function generateId(): string {
