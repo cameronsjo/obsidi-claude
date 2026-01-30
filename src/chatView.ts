@@ -743,6 +743,17 @@ export class ChatView extends ItemView {
         this.continueConversation(conv.id);
       };
 
+      // Duplicate button
+      const duplicateBtn = actions.createEl('button', {
+        cls: 'history-action-btn',
+        attr: { 'aria-label': 'Duplicate conversation' },
+      });
+      setIcon(duplicateBtn, 'copy-plus');
+      duplicateBtn.onclick = (e) => {
+        e.stopPropagation();
+        this.duplicateConversation(conv.id);
+      };
+
       // Delete button
       const deleteBtn = actions.createEl('button', {
         cls: 'history-action-btn history-delete-btn',
@@ -1020,6 +1031,16 @@ export class ChatView extends ItemView {
 
     // Focus input
     this.inputEl.focus();
+  }
+
+  private async duplicateConversation(id: string): Promise<void> {
+    const newConv = await this.plugin.storage.duplicateConversation(id);
+    if (newConv) {
+      this.showTemporaryStatus('Conversation duplicated', 'success', 1500);
+      await this.refreshHistoryList();
+    } else {
+      this.showTemporaryStatus('Failed to duplicate conversation', 'error', 2000);
+    }
   }
 
   private async deleteConversation(id: string): Promise<void> {
@@ -1848,6 +1869,19 @@ export class ChatView extends ItemView {
         return true;
       }
 
+      case 'duplicate':
+      case 'fork': {
+        const newConv = await this.plugin.storage.duplicateConversation(this.conversation.id);
+        if (newConv) {
+          this.conversation = newConv;
+          await this.plugin.storage.setCurrentConversationId(newConv.id);
+          this.renderAllMessages();
+          this.updateTitle();
+          this.showTemporaryStatus('Conversation duplicated - now editing copy', 'success', 2000);
+        }
+        return true;
+      }
+
       case 'help':
       case '?':
         this.showSlashCommandHelp();
@@ -1867,6 +1901,7 @@ export class ChatView extends ItemView {
 - \`/clear\` - Clear all messages
 - \`/copy\` - Copy conversation to clipboard
 - \`/export\` - Export as markdown note
+- \`/duplicate\` - Fork conversation (create editable copy)
 - \`/stats\` - Show conversation statistics
 - \`/rename [title]\` - Rename conversation
 - \`/pin\` - Toggle pin status

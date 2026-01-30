@@ -357,6 +357,35 @@ export class StorageService {
   }
 
   /**
+   * Duplicate a conversation (for branching/forking)
+   */
+  async duplicateConversation(id: string): Promise<Conversation | null> {
+    const original = await this.loadConversation(id);
+    if (!original) {
+      log.warn('Cannot duplicate: conversation not found', { id });
+      return null;
+    }
+
+    const duplicate: Conversation = {
+      id: generateId(),
+      title: `${original.title} (copy)`,
+      messages: original.messages.map(m => ({ ...m, id: generateId() })),
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      tags: original.tags ? [...original.tags] : undefined,
+      pinned: false, // Don't copy pin status
+      metadata: {
+        backendType: original.metadata?.backendType ?? 'api',
+        // Don't copy session ID - new conversation
+      },
+    };
+
+    await this.saveConversation(duplicate);
+    log.info('Duplicated conversation', { originalId: id, newId: duplicate.id });
+    return duplicate;
+  }
+
+  /**
    * Generate a title from the first message
    */
   generateTitle(firstMessage: string): string {
