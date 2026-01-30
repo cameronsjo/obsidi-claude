@@ -3,6 +3,16 @@
  */
 export type MessageReaction = 'up' | 'down' | null;
 
+/**
+ * Token usage for a single message
+ */
+export interface MessageUsage {
+  inputTokens: number;
+  outputTokens: number;
+  /** Estimated cost in USD (based on model pricing) */
+  cost?: number;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
@@ -14,6 +24,8 @@ export interface ChatMessage {
   reaction?: MessageReaction;
   /** Whether this message is bookmarked/starred */
   bookmarked?: boolean;
+  /** Token usage for this message (assistant messages only) */
+  usage?: MessageUsage;
 }
 
 export interface ToolCallInfo {
@@ -35,6 +47,16 @@ export interface ConversationMetadata {
   lastSyncAt?: number;
 }
 
+/**
+ * Aggregated usage statistics for a conversation
+ */
+export interface ConversationUsage {
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCost: number;
+  messageCount: number;
+}
+
 export interface Conversation {
   id: string;
   title: string;
@@ -48,6 +70,8 @@ export interface Conversation {
   tags?: string[];
   /** Pinned conversations appear at top of history */
   pinned?: boolean;
+  /** Aggregated usage statistics */
+  usage?: ConversationUsage;
 }
 
 export type EmbeddingProviderType =
@@ -251,4 +275,50 @@ When the user asks about their notes, always search first to ground your respons
 
 export function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+}
+
+/**
+ * Pricing per 1M tokens in USD (as of 2025)
+ */
+export const MODEL_PRICING: Record<string, { input: number; output: number }> = {
+  'claude-sonnet-4-5': { input: 3.0, output: 15.0 },
+  'claude-opus-4': { input: 15.0, output: 75.0 },
+  'claude-3-5-sonnet-20241022': { input: 3.0, output: 15.0 },
+  // Fallback for unknown models
+  'default': { input: 3.0, output: 15.0 },
+};
+
+/**
+ * Calculate cost in USD for token usage
+ */
+export function calculateCost(
+  inputTokens: number,
+  outputTokens: number,
+  model: string
+): number {
+  const pricing = MODEL_PRICING[model] ?? MODEL_PRICING['default'];
+  const inputCost = (inputTokens / 1_000_000) * pricing.input;
+  const outputCost = (outputTokens / 1_000_000) * pricing.output;
+  return inputCost + outputCost;
+}
+
+/**
+ * Calculate total usage for a conversation
+ */
+export function calculateConversationUsage(messages: ChatMessage[]): ConversationUsage {
+  let totalInputTokens = 0;
+  let totalOutputTokens = 0;
+  let totalCost = 0;
+  let messageCount = 0;
+
+  for (const msg of messages) {
+    if (msg.usage) {
+      totalInputTokens += msg.usage.inputTokens;
+      totalOutputTokens += msg.usage.outputTokens;
+      totalCost += msg.usage.cost ?? 0;
+      messageCount++;
+    }
+  }
+
+  return { totalInputTokens, totalOutputTokens, totalCost, messageCount };
 }

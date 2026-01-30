@@ -7,8 +7,8 @@ import {
   setIcon,
 } from 'obsidian';
 import type ObsidiClaudePlugin from '../main';
-import type { ChatMessage, ToolCallInfo, Conversation } from './types';
-import { generateId } from './types';
+import type { ChatMessage, ToolCallInfo, Conversation, MessageUsage } from './types';
+import { generateId, calculateCost, calculateConversationUsage } from './types';
 import type { AgentBackend, AgentCallbacks, AgentResult } from './backends';
 import { createLogger } from './logger';
 
@@ -1574,6 +1574,74 @@ export class ChatView extends ItemView {
     setTimeout(() => this.setStatus(''), durationMs);
   }
 
+  /**
+   * Show usage dashboard with aggregated stats across all conversations
+   */
+  private async showUsageDashboard(): Promise<void> {
+    const conversations = await this.plugin.storage.listConversations();
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
+    let totalCost = 0;
+    let conversationsWithUsage = 0;
+
+    // Calculate totals from all conversations
+    const conversationStats: Array<{
+      title: string;
+      inputTokens: number;
+      outputTokens: number;
+      cost: number;
+    }> = [];
+
+    for (const meta of conversations.slice(0, 20)) { // Limit to recent 20
+      const conv = await this.plugin.storage.loadConversation(meta.id);
+      if (conv) {
+        const usage = conv.usage ?? calculateConversationUsage(conv.messages);
+        if (usage.totalCost > 0) {
+          conversationsWithUsage++;
+          totalInputTokens += usage.totalInputTokens;
+          totalOutputTokens += usage.totalOutputTokens;
+          totalCost += usage.totalCost;
+          conversationStats.push({
+            title: conv.title.slice(0, 30),
+            inputTokens: usage.totalInputTokens,
+            outputTokens: usage.totalOutputTokens,
+            cost: usage.totalCost,
+          });
+        }
+      }
+    }
+
+    // Build dashboard message
+    const lines: string[] = ['# Usage Dashboard'];
+    lines.push('');
+    lines.push('## Summary');
+    lines.push(`- Total input tokens: ${totalInputTokens.toLocaleString()}`);
+    lines.push(`- Total output tokens: ${totalOutputTokens.toLocaleString()}`);
+    lines.push(`- **Total cost: $${totalCost.toFixed(4)}**`);
+    lines.push(`- Conversations tracked: ${conversationsWithUsage}`);
+    lines.push('');
+
+    if (conversationStats.length > 0) {
+      lines.push('## Top Conversations by Cost');
+      lines.push('');
+      const sorted = conversationStats.sort((a, b) => b.cost - a.cost).slice(0, 5);
+      for (const stat of sorted) {
+        lines.push(`- **${stat.title}**: $${stat.cost.toFixed(4)} (${stat.inputTokens.toLocaleString()} in / ${stat.outputTokens.toLocaleString()} out)`);
+      }
+    } else {
+      lines.push('*No usage data tracked yet. Usage data is captured from API responses.*');
+    }
+
+    const dashboardMsg: ChatMessage = {
+      id: generateId(),
+      role: 'assistant',
+      content: lines.join('\n'),
+      timestamp: Date.now(),
+    };
+    this.renderMessage(dashboardMsg);
+    this.scrollToBottom(true);
+  }
+
   private updateBackendBadge(): void {
     if (!this.backendBadge) return;
 
@@ -1831,10 +1899,17 @@ export class ChatView extends ItemView {
         const downVotes = this.conversation.messages.filter(m => m.reaction === 'down').length;
         const created = new Date(this.conversation.createdAt).toLocaleDateString();
 
+        // Include usage if available
+        const usage = this.conversation.usage ?? calculateConversationUsage(this.conversation.messages);
+        const usageLines = usage.totalCost > 0 ? `
+- Input tokens: ${usage.totalInputTokens.toLocaleString()}
+- Output tokens: ${usage.totalOutputTokens.toLocaleString()}
+- Total cost: $${usage.totalCost.toFixed(4)}` : '';
+
         const statsText = `
 **Conversation Stats:**
 - Messages: ${msgCount} (${userMsgs} user, ${assistantMsgs} assistant)
-- Est. tokens: ~${tokens.toLocaleString()}
+- Est. tokens: ~${tokens.toLocaleString()}${usageLines}
 - Created: ${created}
 - Pinned: ${this.conversation.pinned ? 'Yes' : 'No'}
 - Tags: ${(this.conversation.tags || []).join(', ') || 'None'}
@@ -1849,6 +1924,12 @@ export class ChatView extends ItemView {
         };
         this.renderMessage(statsMsg);
         this.scrollToBottom(true);
+        return true;
+      }
+
+      case 'usage': {
+        // Show detailed usage across all conversations
+        await this.showUsageDashboard();
         return true;
       }
 
@@ -1962,6 +2043,7 @@ export class ChatView extends ItemView {
 - \`/export\` - Export as markdown note
 - \`/duplicate\` - Fork conversation (create editable copy)
 - \`/stats\` - Show conversation statistics
+- \`/usage\` - Show usage dashboard (costs across conversations)
 - \`/rename [title]\` - Rename conversation
 - \`/pin\` - Toggle pin status
 
@@ -2158,6 +2240,24 @@ export class ChatView extends ItemView {
 
       onComplete: async (result) => {
         this.setProcessing(false);
+
+        // Capture usage data on the assistant message
+        if (currentAssistantMsgId && (result.inputTokens || result.outputTokens)) {
+          const msg = this.conversation.messages.find((m) => m.id === currentAssistantMsgId);
+          if (msg) {
+            const inputTokens = result.inputTokens ?? 0;
+            const outputTokens = result.outputTokens ?? 0;
+            const cost = result.totalCost ?? calculateCost(
+              inputTokens,
+              outputTokens,
+              this.plugin.settings.model
+            );
+            msg.usage = { inputTokens, outputTokens, cost };
+          }
+
+          // Update conversation-level usage stats
+          this.conversation.usage = calculateConversationUsage(this.conversation.messages);
+        }
 
         if (result.success) {
           const costInfo = result.totalCost
