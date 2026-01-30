@@ -12,6 +12,8 @@ export interface ChatMessage {
   isStreaming?: boolean;
   /** User feedback reaction */
   reaction?: MessageReaction;
+  /** Whether this message is bookmarked/starred */
+  bookmarked?: boolean;
 }
 
 export interface ToolCallInfo {

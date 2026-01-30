@@ -1228,6 +1228,28 @@ pre:hover .code-copy-btn {
   fill: currentColor;
 }
 
+/* Message bookmarks */
+.bookmark-btn {
+  transition: transform 0.1s ease, color 0.1s ease;
+}
+
+.bookmark-btn:hover {
+  transform: scale(1.1);
+}
+
+.bookmark-btn.bookmark-active {
+  color: var(--text-warning, #f59e0b) !important;
+}
+
+.message-bookmarked {
+  border-left: 3px solid var(--text-warning, #f59e0b);
+  padding-left: 0.5rem;
+}
+
+.message-bookmarked .message-bubble {
+  background-color: rgba(245, 158, 11, 0.05);
+}
+
 /* Settings styles */
 .obsidi-claude-settings {
   max-width: 800px;

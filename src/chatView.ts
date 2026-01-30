@@ -1211,6 +1211,9 @@ export class ChatView extends ItemView {
     if (!this.messagesContainer) return null;
     const msgDiv = this.messagesContainer.createDiv('chat-message');
     msgDiv.addClass(msg.role === 'user' ? 'user-message' : 'assistant-message');
+    if (msg.bookmarked) {
+      msgDiv.addClass('message-bookmarked');
+    }
     msgDiv.dataset.messageId = msg.id;
 
     // Message header (role + time) - outside the bubble
@@ -1257,6 +1260,17 @@ export class ChatView extends ItemView {
   }
 
   private createMessageActions(container: HTMLElement, msg: ChatMessage): void {
+    // Bookmark button
+    const bookmarkBtn = container.createEl('button', {
+      cls: `message-action-btn bookmark-btn ${msg.bookmarked ? 'bookmark-active' : ''}`,
+      attr: { 'aria-label': msg.bookmarked ? 'Remove bookmark' : 'Bookmark message' }
+    });
+    setIcon(bookmarkBtn, msg.bookmarked ? 'bookmark-check' : 'bookmark');
+    bookmarkBtn.onclick = (e) => {
+      e.stopPropagation();
+      this.toggleBookmark(msg.id);
+    };
+
     // Copy button
     const copyBtn = container.createEl('button', {
       cls: 'message-action-btn',
@@ -1317,6 +1331,28 @@ export class ChatView extends ItemView {
         }
       };
     }
+  }
+
+  private async toggleBookmark(messageId: string): Promise<void> {
+    const msg = this.conversation.messages.find(m => m.id === messageId);
+    if (!msg) return;
+
+    msg.bookmarked = !msg.bookmarked;
+
+    // Re-render the message to update button states
+    const msgEl = this.messageElements.get(messageId);
+    if (msgEl) {
+      // Update bookmark class on message wrapper
+      msgEl.toggleClass('message-bookmarked', msg.bookmarked);
+
+      const actionsDiv = msgEl.querySelector('.message-actions') as HTMLElement;
+      if (actionsDiv) {
+        actionsDiv.empty();
+        this.createMessageActions(actionsDiv, msg);
+      }
+    }
+
+    await this.saveConversation();
   }
 
   private async toggleReaction(messageId: string, reaction: 'up' | 'down'): Promise<void> {
@@ -1882,6 +1918,29 @@ export class ChatView extends ItemView {
         return true;
       }
 
+      case 'bookmarks': {
+        const bookmarked = this.conversation.messages.filter(m => m.bookmarked);
+        if (bookmarked.length === 0) {
+          this.showTemporaryStatus('No bookmarked messages. Click ★ on a message to bookmark it.', 'info', 3000);
+        } else {
+          const summaryLines = bookmarked.map((m, i) => {
+            const preview = m.content.slice(0, 60).replace(/\n/g, ' ');
+            const role = m.role === 'user' ? 'You' : 'Claude';
+            return `${i + 1}. **${role}**: ${preview}${m.content.length > 60 ? '...' : ''}`;
+          });
+
+          const bookmarkMsg: ChatMessage = {
+            id: generateId(),
+            role: 'assistant',
+            content: `**Bookmarked Messages (${bookmarked.length}):**\n\n${summaryLines.join('\n')}`,
+            timestamp: Date.now(),
+          };
+          this.renderMessage(bookmarkMsg);
+          this.scrollToBottom(true);
+        }
+        return true;
+      }
+
       case 'help':
       case '?':
         this.showSlashCommandHelp();
@@ -1921,6 +1980,7 @@ export class ChatView extends ItemView {
 - \`/note [question]\` - Insert current note
 - \`/search <query>\` - Search messages
 - \`/queue [clear]\` - Message queue status
+- \`/bookmarks\` - Show bookmarked messages
 
 **Shortcuts:**
 \`Enter\` send · \`Shift+Enter\` newline · \`↑↓\` history
