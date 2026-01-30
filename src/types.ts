@@ -65,6 +65,8 @@ export interface ConversationMetadata {
   sessionId?: string;
   /** Session ID to fork from on next message (one-time use, then cleared) */
   forkFromSessionId?: string;
+  /** Message UUID to resume at (one-time use, then cleared) */
+  resumeAtUuid?: string;
   /** Timestamp of last sync (for Obsidian Sync) */
   lastSyncAt?: number;
 }

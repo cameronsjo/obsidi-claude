@@ -1641,7 +1641,61 @@ export class ChatView extends ItemView {
           }
         }
       };
+
+      // Resume from here button (SDK only, requires UUID)
+      if (msg.sdkUuid && this.getBackend().type === 'sdk') {
+        const resumeBtn = container.createEl('button', {
+          cls: 'message-action-btn',
+          attr: { 'aria-label': 'Resume from this point' }
+        });
+        setIcon(resumeBtn, 'corner-up-left');
+        resumeBtn.onclick = (e) => {
+          e.stopPropagation();
+          this.resumeFromMessage(msg);
+        };
+      }
     }
+  }
+
+  private async resumeFromMessage(msg: ChatMessage): Promise<void> {
+    if (!msg.sdkUuid) {
+      this.showTemporaryStatus('Cannot resume: message has no SDK UUID', 'error', 3000);
+      return;
+    }
+
+    const sessionId = this.conversation.metadata?.sessionId;
+    if (!sessionId) {
+      this.showTemporaryStatus('Cannot resume: no session ID', 'error', 3000);
+      return;
+    }
+
+    // Create a new conversation forked from this point
+    const newConv = await this.plugin.storage.duplicateConversation(this.conversation.id);
+    if (!newConv) {
+      this.showTemporaryStatus('Failed to create forked conversation', 'error', 3000);
+      return;
+    }
+
+    // Trim messages to only include up to the selected message
+    const msgIndex = this.conversation.messages.findIndex(m => m.id === msg.id);
+    if (msgIndex >= 0) {
+      newConv.messages = this.conversation.messages.slice(0, msgIndex + 1);
+    }
+
+    // Set up the fork metadata
+    if (!newConv.metadata) {
+      newConv.metadata = { backendType: 'sdk' };
+    }
+    newConv.metadata.resumeAtUuid = msg.sdkUuid;
+    newConv.metadata.forkFromSessionId = sessionId;
+    newConv.title = `${this.conversation.title} (from checkpoint)`;
+
+    await this.plugin.storage.saveConversation(newConv);
+    this.conversation = newConv;
+    await this.plugin.storage.setCurrentConversationId(newConv.id);
+    this.renderAllMessages();
+    this.updateTitle();
+    this.showTemporaryStatus('Resumed from checkpoint - continue the conversation', 'success', 3000);
   }
 
   private async toggleBookmark(messageId: string): Promise<void> {
@@ -3288,8 +3342,9 @@ export class ChatView extends ItemView {
         : undefined;
       this.clearPendingImages();
 
-      // Check if we should fork from another session
+      // Check if we should fork from another session or resume at a specific point
       const forkFromSessionId = this.conversation.metadata?.forkFromSessionId;
+      const resumeAtUuid = this.conversation.metadata?.resumeAtUuid;
       const resumeSessionId = forkFromSessionId || this.conversation.metadata?.sessionId || this.conversation.sessionId;
 
       await backend.sendMessage(
@@ -3299,6 +3354,7 @@ export class ChatView extends ItemView {
         {
           resumeSessionId,
           forkSession: !!forkFromSessionId,
+          resumeSessionAt: resumeAtUuid,
           systemPrompt: enhancedPrompt,
           // Show only the user's input in UI, not the injected context
           displayContent: content !== messageContent ? content : undefined,
@@ -3306,9 +3362,10 @@ export class ChatView extends ItemView {
         }
       );
 
-      // Clear the fork flag after use (one-time)
-      if (forkFromSessionId && this.conversation.metadata) {
+      // Clear the fork/resume flags after use (one-time)
+      if ((forkFromSessionId || resumeAtUuid) && this.conversation.metadata) {
         delete this.conversation.metadata.forkFromSessionId;
+        delete this.conversation.metadata.resumeAtUuid;
         await this.plugin.storage.saveConversation(this.conversation);
       }
     } catch (error) {

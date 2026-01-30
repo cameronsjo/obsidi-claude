@@ -32,6 +32,8 @@ export interface BackendOptions {
   resumeSessionId?: string;
   /** Fork the session when resuming (creates new session with copied history) */
   forkSession?: boolean;
+  /** Resume only up to this message UUID (SDK backend only) */
+  resumeSessionAt?: string;
   /** Override the default model */
   model?: string;
   /** Maximum conversation turns */

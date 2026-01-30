@@ -403,6 +403,11 @@ export class SDKAgentBackend implements AgentBackend {
           queryOptions.forkSession = true;
           log.info('Forking session', { sourceSessionId: resumeSessionId });
         }
+        // Resume at specific message UUID (go back in time)
+        if (options?.resumeSessionAt) {
+          queryOptions.resumeSessionAt = options.resumeSessionAt;
+          log.info('Resuming at specific message', { uuid: options.resumeSessionAt });
+        }
       } else if (this.settings.continueSession) {
         // Auto-continue most recent session in this working directory
         queryOptions.continue = true;
