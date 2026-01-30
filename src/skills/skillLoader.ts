@@ -1,7 +1,7 @@
 import type { App, TFile } from 'obsidian';
 import type { Skill, SkillSettings } from '../types';
 import { createLogger } from '../logger';
-import { BUNDLED_SKILLS } from './bundledSkills';
+import { BUNDLED_SKILL_SOURCES, fetchSkillContent } from './bundledSkills';
 
 const log = createLogger('SkillLoader');
 
@@ -116,7 +116,7 @@ export class SkillLoader {
 
   /**
    * Ensure bundled skills are present in the skills folder.
-   * Creates them if they don't exist.
+   * Fetches them from remote sources if they don't exist.
    */
   private async ensureBundledSkills(folderPath: string): Promise<void> {
     // Skip if vault.create is not available (e.g., in tests)
@@ -124,17 +124,24 @@ export class SkillLoader {
       return;
     }
 
-    for (const bundled of BUNDLED_SKILLS) {
-      const skillPath = `${folderPath}/${bundled.filename}`;
+    for (const source of BUNDLED_SKILL_SOURCES) {
+      const skillPath = `${folderPath}/${source.filename}`;
       const existing = this.app.vault.getAbstractFileByPath(skillPath);
 
       if (!existing) {
-        log.info('Creating bundled skill', { name: bundled.filename });
-        try {
-          await this.app.vault.create(skillPath, bundled.content);
-        } catch (error) {
-          // File might have been created by another process
-          log.debug('Could not create bundled skill', { name: bundled.filename, error });
+        log.info('Fetching bundled skill', { name: source.filename, source: source.source });
+
+        const content = await fetchSkillContent(source);
+        if (content) {
+          try {
+            await this.app.vault.create(skillPath, content);
+            log.info('Installed bundled skill', { name: source.filename });
+          } catch (error) {
+            // File might have been created by another process
+            log.debug('Could not create bundled skill', { name: source.filename, error });
+          }
+        } else {
+          log.warn('Failed to fetch bundled skill', { name: source.filename });
         }
       }
     }

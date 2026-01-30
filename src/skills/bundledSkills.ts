@@ -1,162 +1,62 @@
 /**
- * Bundled skills that ship with the plugin.
- * These can be automatically installed to the user's skills folder.
- *
- * Based on kepano/obsidian-skills (MIT License)
- * https://github.com/kepano/obsidian-skills
+ * Bundled skills that can be fetched from remote sources.
+ * These are downloaded and installed to the user's skills folder.
  */
 
-export interface BundledSkill {
-  /** Filename for the skill (e.g., "obsidian-markdown.md") */
+import { requestUrl } from 'obsidian';
+import { createLogger } from '../logger';
+
+const log = createLogger('BundledSkills');
+
+export interface BundledSkillSource {
+  /** Filename to save as (e.g., "obsidian-markdown.md") */
   filename: string;
-  /** Full content of the skill file including frontmatter */
-  content: string;
+  /** URL to fetch the skill content from */
+  url: string;
+  /** Attribution/source info */
+  source: string;
 }
 
 /**
- * Obsidian Markdown skill by kepano
- * Teaches Claude about Obsidian-specific markdown syntax
+ * Remote skill sources to fetch.
+ * These are downloaded fresh from GitHub.
  */
-const OBSIDIAN_MARKDOWN_SKILL = `---
-name: obsidian-markdown
-description: Create and edit Obsidian Flavored Markdown with wikilinks, embeds, callouts, properties, and other Obsidian-specific syntax.
-triggers:
-  - wikilink
-  - callout
-  - frontmatter
-  - embed
-  - obsidian
-  - markdown
-  - note
-alwaysActive: true
----
-
-# Obsidian Flavored Markdown
-
-This skill enables creating and editing valid Obsidian Flavored Markdown.
-
-## Internal Links (Wikilinks)
-
-\`\`\`markdown
-[[Note Name]]
-[[Note Name|Display Text]]
-[[Note Name#Heading]]
-[[Note Name#^block-id]]
-[[#Heading in same note]]
-\`\`\`
-
-## Embeds
-
-\`\`\`markdown
-![[Note Name]]
-![[Note Name#Heading]]
-![[image.png]]
-![[image.png|300]]         Width only
-![[image.png|640x480]]     Width x Height
-![[document.pdf#page=3]]
-\`\`\`
-
-## Callouts
-
-\`\`\`markdown
-> [!note]
-> Basic callout
-
-> [!warning] Custom Title
-> With custom title
-
-> [!tip]- Collapsed by default
-> Foldable content
-
-> [!info]+ Expanded by default
-> Foldable content (expanded)
-\`\`\`
-
-**Types:** note, abstract, info, todo, tip, success, question, warning, failure, danger, bug, example, quote
-
-## Properties (Frontmatter)
-
-\`\`\`yaml
----
-title: My Note
-date: 2024-01-15
-tags:
-  - project
-  - important
-aliases:
-  - Alternative Name
-status: in-progress
-rating: 4.5
-completed: false
----
-\`\`\`
-
-## Tags
-
-\`\`\`markdown
-#tag
-#nested/tag
-#tag-with-dashes
-\`\`\`
-
-## Task Lists
-
-\`\`\`markdown
-- [ ] Incomplete task
-- [x] Completed task
-\`\`\`
-
-## Code Blocks
-
-\`\`\`\`markdown
-\`\`\`javascript
-console.log("Hello");
-\`\`\`
-\`\`\`\`
-
-## Math (LaTeX)
-
-\`\`\`markdown
-Inline: $e^{i\\pi} + 1 = 0$
-
-Block:
-$$
-\\frac{a}{b}
-$$
-\`\`\`
-
-## Comments
-
-\`\`\`markdown
-Visible %%hidden%% text
-
-%%
-Hidden block
-%%
-\`\`\`
-
-## Block References
-
-Add \`^block-id\` at end of paragraph to make it linkable:
-
-\`\`\`markdown
-This paragraph can be linked. ^my-id
-
-Then link with [[Note#^my-id]]
-\`\`\`
-
-## References
-
-- [Obsidian Help: Basic Syntax](https://help.obsidian.md/syntax)
-- [Obsidian Help: Callouts](https://help.obsidian.md/callouts)
-- [Obsidian Help: Properties](https://help.obsidian.md/properties)
-
-*Based on [kepano/obsidian-skills](https://github.com/kepano/obsidian-skills) (MIT License)*
-`;
-
-export const BUNDLED_SKILLS: BundledSkill[] = [
+export const BUNDLED_SKILL_SOURCES: BundledSkillSource[] = [
   {
     filename: 'obsidian-markdown.md',
-    content: OBSIDIAN_MARKDOWN_SKILL,
+    url: 'https://raw.githubusercontent.com/kepano/obsidian-skills/main/skills/obsidian-markdown/SKILL.md',
+    source: 'kepano/obsidian-skills',
   },
 ];
+
+/**
+ * Fetch a skill from a remote URL.
+ * Returns the content or null if fetch fails.
+ */
+export async function fetchSkillContent(source: BundledSkillSource): Promise<string | null> {
+  try {
+    log.info('Fetching bundled skill', { filename: source.filename, url: source.url });
+
+    const response = await requestUrl({
+      url: source.url,
+      method: 'GET',
+    });
+
+    if (response.status !== 200) {
+      log.warn('Failed to fetch skill', { filename: source.filename, status: response.status });
+      return null;
+    }
+
+    const content = response.text;
+
+    // Add attribution comment at the end if not already present
+    if (!content.includes(source.source)) {
+      return `${content}\n\n<!-- Source: ${source.source} -->\n`;
+    }
+
+    return content;
+  } catch (error) {
+    log.error('Error fetching skill', error, { filename: source.filename });
+    return null;
+  }
+}
