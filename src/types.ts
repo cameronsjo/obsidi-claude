@@ -285,6 +285,8 @@ export interface ObsidiClaudeSettings {
   continueSession: boolean;
   /** Tools to block entirely (removed from model context) */
   disallowedTools: string[];
+  /** Load project CLAUDE.md from vault (requires .claude/CLAUDE.md in working directory) */
+  loadVaultClaudeMd: boolean;
 }
 
 /**
@@ -394,6 +396,7 @@ When the user asks about their notes, always search first to ground your respons
   systemPromptMode: 'append', // Append to Claude Code's default prompt
   continueSession: false, // Don't auto-continue by default
   disallowedTools: [], // No tools blocked by default
+  loadVaultClaudeMd: false, // Don't load vault CLAUDE.md by default
 };
 
 export function generateId(): string {

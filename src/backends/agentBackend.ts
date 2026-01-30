@@ -71,6 +71,8 @@ export interface AgentCallbacks {
   onError: (error: Error) => void;
   /** Called when SDK UUID is available for a message (SDK backend only, enables rewind) */
   onSdkUuid?: (messageId: string, uuid: string) => void;
+  /** Called when files are persisted by Claude (SDK backend only, for vault sync) */
+  onFilesPersisted?: (filenames: string[]) => void;
 }
 
 /**

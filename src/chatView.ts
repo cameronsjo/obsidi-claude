@@ -60,6 +60,7 @@ export class ChatView extends ItemView {
   private currentSearchIndex = -1;
   private userScrolledUp = false;
   private historyFilterTag: string | null = null; // Filter history by tag
+  private vaultRefreshTimeout: ReturnType<typeof setTimeout> | null = null;
   private historyTagsBar: HTMLElement | null = null;
   private historySearchInput: HTMLInputElement | null = null;
   private historySearchQuery: string = '';
@@ -2402,6 +2403,21 @@ export class ChatView extends ItemView {
           msg.sdkUuid = uuid;
           log.debug('Stored SDK UUID for message', { messageId, uuid });
         }
+      },
+
+      onFilesPersisted: (filenames) => {
+        // Trigger vault refresh when Claude modifies files
+        log.info('Files modified by Claude, refreshing vault', { count: filenames.length });
+
+        // Schedule a vault refresh (debounced to avoid rapid refreshes)
+        if (this.vaultRefreshTimeout) {
+          clearTimeout(this.vaultRefreshTimeout);
+        }
+        this.vaultRefreshTimeout = setTimeout(() => {
+          // Trigger Obsidian's file cache update
+          this.plugin.app.vault.trigger('modify');
+          log.debug('Vault refresh triggered');
+        }, 500);
       },
     };
 

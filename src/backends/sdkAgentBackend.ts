@@ -334,6 +334,8 @@ export class SDKAgentBackend implements AgentBackend {
         additionalDirectories: additionalDirectories.length > 0 ? additionalDirectories : undefined,
         betas: betas.length > 0 ? betas : undefined,
         disallowedTools: this.settings.disallowedTools.length > 0 ? this.settings.disallowedTools : undefined,
+        // Load vault's .claude/CLAUDE.md if enabled
+        settingSources: this.settings.loadVaultClaudeMd ? ['project'] : undefined,
       };
 
       // Build MCP servers config
@@ -456,6 +458,29 @@ export class SDKAgentBackend implements AgentBackend {
             toolCount: message.tools?.length ?? 0,
           });
           callbacks.onSessionInit(message.session_id, message.tools || []);
+        } else if (message.subtype === 'files_persisted') {
+          // Handle file changes for vault sync
+          const filesPersisted = message as import('@anthropic-ai/claude-agent-sdk').SDKFilesPersistedEvent;
+          const files = filesPersisted.files || [];
+          const failed = filesPersisted.failed || [];
+
+          if (files.length > 0) {
+            log.info('Files persisted by Claude', {
+              count: files.length,
+              files: files.map(f => f.filename),
+            });
+            // Notify for vault refresh via callback
+            if (callbacks.onFilesPersisted) {
+              callbacks.onFilesPersisted(files.map(f => f.filename));
+            }
+          }
+
+          if (failed.length > 0) {
+            log.warn('Files failed to persist', {
+              count: failed.length,
+              failed: failed.map(f => ({ file: f.filename, error: f.error })),
+            });
+          }
         }
         break;
 
