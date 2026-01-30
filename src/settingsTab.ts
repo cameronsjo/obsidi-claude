@@ -1353,7 +1353,7 @@ export class SettingsTab extends PluginSettingTab {
     if (dynamicModels && dynamicModels.length > 0) {
       // Use dynamic models from SDK
       for (const model of dynamicModels) {
-        dropdown.addOption(model.value, model.label);
+        dropdown.addOption(model.value, model.displayName);
       }
     } else {
       // Fallback to static list

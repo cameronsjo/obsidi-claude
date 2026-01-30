@@ -39,8 +39,9 @@ jobs:
           # Get current version from manifest.json
           CURRENT_VERSION=$(node -p "require('./manifest.json').version")
 
-          # Get the last release tag
-          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          # Get the last RELEASE tag (exclude "beta" tag)
+          # Use git tag -l to list semver tags, sort them, and get the latest
+          LAST_TAG=$(git tag -l '[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -1)
 
           if [ -z "$LAST_TAG" ]; then
             # No previous release, count all commits
@@ -61,7 +62,7 @@ jobs:
 
           BETA_VERSION="${NEXT_VERSION}-beta.${COMMIT_COUNT}"
           echo "beta_version=$BETA_VERSION" >> $GITHUB_OUTPUT
-          echo "Beta version: $BETA_VERSION"
+          echo "Beta version: $BETA_VERSION (commits since $LAST_TAG: $COMMIT_COUNT)"
 
       - name: Update manifest for beta
         run: |
