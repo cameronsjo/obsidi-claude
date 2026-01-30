@@ -27,6 +27,11 @@ import {
   type PermissionUpdate,
   type SpawnOptions,
   type SpawnedProcess,
+  // V2 API (unstable/alpha)
+  unstable_v2_createSession,
+  unstable_v2_resumeSession,
+  type SDKSession,
+  type SDKSessionOptions,
 } from '@anthropic-ai/claude-agent-sdk';
 import type { ObsidiClaudeSettings, Conversation, ToolCallInfo, SpawnConfig } from '../types';
 import { BUILTIN_AGENTS } from '../types';
@@ -113,6 +118,8 @@ export class SDKAgentBackend implements AgentBackend {
   private activeQuery: Query | null = null;
   private cachedAccountInfo: AccountInfo | null = null;
   private hookCallbacks: HookCallbacks = {};
+  /** V2 API session (unstable) */
+  private v2Session: SDKSession | null = null;
 
   constructor(settings: ObsidiClaudeSettings, obsidianTools: ObsidianTools) {
     this.settings = settings;
@@ -571,6 +578,48 @@ export class SDKAgentBackend implements AgentBackend {
   }
 
   /**
+   * Get or create a V2 session for multi-turn conversations.
+   * @experimental V2 API is marked as @alpha and may change.
+   */
+  private getOrCreateV2Session(
+    resumeSessionId?: string,
+    model?: string,
+    cwd?: string
+  ): SDKSession {
+    // Build session options
+    const sessionOptions: SDKSessionOptions = {
+      model: model || this.settings.model,
+      pathToClaudeCodeExecutable: cachedCliPath || undefined,
+      allowedTools: this.settings.allowedTools,
+      disallowedTools: this.settings.disallowedTools.length > 0 ? this.settings.disallowedTools : undefined,
+    };
+
+    // Resume existing session or create new one
+    if (resumeSessionId) {
+      log.info('Resuming V2 session', { sessionId: resumeSessionId });
+      return unstable_v2_resumeSession(resumeSessionId, sessionOptions);
+    }
+
+    log.info('Creating new V2 session', { model: sessionOptions.model, cwd });
+    return unstable_v2_createSession(sessionOptions);
+  }
+
+  /**
+   * Close any active V2 session.
+   */
+  private closeV2Session(): void {
+    if (this.v2Session) {
+      try {
+        this.v2Session.close();
+        log.debug('V2 session closed');
+      } catch (error) {
+        log.warn('Failed to close V2 session', error);
+      }
+      this.v2Session = null;
+    }
+  }
+
+  /**
    * Builds the spawnClaudeCodeProcess function for custom execution environments.
    * Supports Docker containers and SSH remote execution.
    */
@@ -686,6 +735,7 @@ export class SDKAgentBackend implements AgentBackend {
   async dispose(): Promise<void> {
     log.info('Disposing SDK backend');
     this.abort();
+    this.closeV2Session();
     this.obsidianMcpServer = null;
     this.initialized = false;
   }

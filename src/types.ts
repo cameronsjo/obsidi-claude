@@ -385,6 +385,11 @@ export interface ObsidiClaudeSettings {
   strictMcpConfig: boolean;
   /** Custom spawn configuration for Docker/SSH execution (SDK only) */
   spawnConfig?: SpawnConfig;
+  /**
+   * Use unstable V2 Session API for improved multi-turn conversation handling.
+   * @experimental V2 API is marked as @alpha and may change.
+   */
+  useV2SessionApi: boolean;
 }
 
 /**
@@ -599,6 +604,7 @@ When the user asks about their notes, always search first to ground your respons
   },
   savedPrompts: [], // No saved prompts by default
   strictMcpConfig: false, // Don't enforce strict MCP validation by default
+  useV2SessionApi: false, // Use stable query() API by default
 };
 
 export function generateId(): string {
