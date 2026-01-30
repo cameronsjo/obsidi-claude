@@ -69,6 +69,8 @@ export interface AgentCallbacks {
   onComplete: (result: AgentResult) => void;
   /** Called when an error occurs */
   onError: (error: Error) => void;
+  /** Called when SDK UUID is available for a message (SDK backend only, enables rewind) */
+  onSdkUuid?: (messageId: string, uuid: string) => void;
 }
 
 /**

@@ -2307,6 +2307,15 @@ export class ChatView extends ItemView {
         this.setStatus(`Error: ${error.message}`, 'error');
         log.error('Agent error during message processing', error);
       },
+
+      onSdkUuid: (messageId, uuid) => {
+        // Store SDK UUID for file checkpointing/rewind support
+        const msg = this.conversation.messages.find((m) => m.id === messageId);
+        if (msg) {
+          msg.sdkUuid = uuid;
+          log.debug('Stored SDK UUID for message', { messageId, uuid });
+        }
+      },
     };
 
     try {

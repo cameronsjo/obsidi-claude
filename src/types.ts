@@ -26,6 +26,8 @@ export interface ChatMessage {
   bookmarked?: boolean;
   /** Token usage for this message (assistant messages only) */
   usage?: MessageUsage;
+  /** SDK message UUID for file checkpointing/rewind (SDK backend only) */
+  sdkUuid?: string;
 }
 
 export interface ToolCallInfo {

@@ -449,6 +449,12 @@ export class SDKAgentBackend implements AgentBackend {
         break;
 
       case 'assistant': {
+        // Capture SDK UUID for file checkpointing/rewind support
+        if (message.uuid && callbacks.onSdkUuid) {
+          callbacks.onSdkUuid(assistantMsgId, message.uuid);
+          log.debug('Captured SDK UUID', { messageId: assistantMsgId, uuid: message.uuid });
+        }
+
         const contentBlocks = message.message?.content;
 
         if (Array.isArray(contentBlocks)) {
