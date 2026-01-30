@@ -2044,10 +2044,95 @@ export class ChatView extends ItemView {
         this.showSlashCommandHelp();
         return true;
 
+      case 'undo': {
+        await this.handleUndoCommand(args);
+        return true;
+      }
+
       default:
         // Unknown command - show help hint
         this.showTemporaryStatus(`Unknown command: /${command}. Type /help for available commands.`, 'info');
         return true;
+    }
+  }
+
+  /**
+   * Handle /undo command to rewind file changes to a previous checkpoint.
+   * Requires SDK backend with file checkpointing enabled.
+   */
+  private async handleUndoCommand(args: string): Promise<void> {
+    const backend = this.plugin.agentManager?.getBackend();
+
+    // Check if we have SDK backend
+    if (!backend || backend.type !== 'sdk') {
+      this.showTemporaryStatus('Undo requires SDK backend (not available on mobile)', 'info', 3000);
+      return;
+    }
+
+    // Check if file checkpointing is enabled
+    if (!this.plugin.settings.enableFileCheckpointing) {
+      this.showTemporaryStatus('File checkpointing is disabled. Enable it in settings to use /undo', 'info', 3000);
+      return;
+    }
+
+    // Find messages with SDK UUIDs (checkpoints)
+    const checkpoints = this.conversation.messages
+      .filter(m => m.sdkUuid && m.role === 'assistant')
+      .map((m, index) => ({
+        uuid: m.sdkUuid!,
+        timestamp: m.timestamp,
+        preview: m.content.slice(0, 80).replace(/\n/g, ' ') + (m.content.length > 80 ? '...' : ''),
+        index,
+      }));
+
+    if (checkpoints.length === 0) {
+      this.showTemporaryStatus('No checkpoints available. File changes are tracked after each message.', 'info', 3000);
+      return;
+    }
+
+    const isDryRun = args.includes('--dry-run') || args.includes('-n');
+
+    // If no specific checkpoint requested, show list
+    if (!args || isDryRun) {
+      const sdkBackend = backend as import('./backends/sdkAgentBackend').SDKAgentBackend;
+
+      // Default to most recent checkpoint
+      const latest = checkpoints[checkpoints.length - 1];
+
+      // Do a dry run first to show what would change
+      const result = await sdkBackend.rewindFiles(latest.uuid, true);
+
+      if (!result || !result.canRewind) {
+        this.showTemporaryStatus(result?.error || 'Cannot rewind to this checkpoint', 'error', 3000);
+        return;
+      }
+
+      const filesChanged = result.filesChanged?.length || 0;
+      const insertions = result.insertions || 0;
+      const deletions = result.deletions || 0;
+
+      if (filesChanged === 0) {
+        this.showTemporaryStatus('No file changes to undo', 'info', 3000);
+        return;
+      }
+
+      if (isDryRun) {
+        // Just show what would happen
+        const changesMsg = `Would restore ${filesChanged} file(s): +${insertions}/-${deletions} lines`;
+        this.showTemporaryStatus(changesMsg, 'info', 5000);
+        return;
+      }
+
+      // Actually perform the rewind
+      const actualResult = await sdkBackend.rewindFiles(latest.uuid, false);
+
+      if (actualResult?.canRewind) {
+        const changesMsg = `Restored ${filesChanged} file(s): +${insertions}/-${deletions} lines`;
+        this.showTemporaryStatus(changesMsg, 'success', 3000);
+        log.info('Files rewound successfully', { uuid: latest.uuid, result: actualResult });
+      } else {
+        this.showTemporaryStatus(actualResult?.error || 'Failed to rewind files', 'error', 3000);
+      }
     }
   }
 
@@ -2059,6 +2144,8 @@ export class ChatView extends ItemView {
 - \`/copy\` - Copy conversation to clipboard
 - \`/export\` - Export as markdown note
 - \`/duplicate\` - Fork conversation (create editable copy)
+- \`/undo\` - Rewind file changes to last checkpoint (SDK only)
+- \`/undo --dry-run\` - Preview what /undo would restore
 - \`/stats\` - Show conversation statistics
 - \`/usage\` - Show usage dashboard (costs across conversations)
 - \`/rename [title]\` - Rename conversation
