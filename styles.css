@@ -872,6 +872,40 @@ pre:hover .code-copy-btn {
   font-weight: 600;
 }
 
+/* History tag filter bar */
+.history-tags-bar {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--background-modifier-border);
+  flex-wrap: wrap;
+  background-color: var(--background-secondary);
+}
+
+.history-tags-bar:empty {
+  display: none;
+}
+
+.history-filter-tag {
+  font-size: 0.7rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 10px;
+  background-color: var(--background-modifier-border);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.1s ease;
+}
+
+.history-filter-tag:hover {
+  background-color: var(--interactive-accent-hover);
+  color: var(--text-normal);
+}
+
+.history-filter-tag.filter-tag-active {
+  background-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
 .history-list {
   padding: 0.5rem;
 }

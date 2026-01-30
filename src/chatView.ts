@@ -58,6 +58,8 @@ export class ChatView extends ItemView {
   private searchMatches: string[] = []; // message IDs that match
   private currentSearchIndex = -1;
   private userScrolledUp = false;
+  private historyFilterTag: string | null = null; // Filter history by tag
+  private historyTagsBar: HTMLElement | null = null;
 
   // Input history for up/down arrow navigation
   private inputHistory: string[] = [];
@@ -293,7 +295,40 @@ export class ChatView extends ItemView {
     setIcon(closeBtn, 'x');
     closeBtn.onclick = () => this.toggleHistory();
 
+    // Tag filter bar
+    this.historyTagsBar = panel.createDiv('history-tags-bar');
+
     this.historyList = panel.createDiv('history-list');
+  }
+
+  private async refreshTagsBar(): Promise<void> {
+    if (!this.historyTagsBar) return;
+    this.historyTagsBar.empty();
+
+    const allTags = await this.plugin.storage.getAllTags();
+    if (allTags.length === 0) return;
+
+    // "All" button
+    const allBtn = this.historyTagsBar.createSpan({
+      cls: `history-filter-tag ${this.historyFilterTag === null ? 'filter-tag-active' : ''}`,
+    });
+    allBtn.setText('All');
+    allBtn.onclick = () => this.filterHistoryByTag(null);
+
+    // Tag buttons
+    for (const tag of allTags) {
+      const tagBtn = this.historyTagsBar.createSpan({
+        cls: `history-filter-tag ${this.historyFilterTag === tag ? 'filter-tag-active' : ''}`,
+      });
+      tagBtn.setText(tag);
+      tagBtn.onclick = () => this.filterHistoryByTag(tag);
+    }
+  }
+
+  private async filterHistoryByTag(tag: string | null): Promise<void> {
+    this.historyFilterTag = tag;
+    await this.refreshTagsBar();
+    await this.refreshHistoryList();
   }
 
   private async toggleHistory(): Promise<void> {
@@ -574,10 +609,23 @@ export class ChatView extends ItemView {
     if (!this.historyList) return;
     this.historyList.empty();
 
-    const conversations = await this.plugin.storage.listConversations();
+    // Refresh tags bar first
+    await this.refreshTagsBar();
+
+    let conversations = await this.plugin.storage.listConversations();
+
+    // Filter by tag if one is selected
+    if (this.historyFilterTag) {
+      conversations = conversations.filter(c =>
+        c.tags && c.tags.includes(this.historyFilterTag!)
+      );
+    }
 
     if (conversations.length === 0) {
-      this.historyList.createDiv('history-empty').setText('No conversations yet');
+      const emptyMsg = this.historyFilterTag
+        ? `No conversations with tag "${this.historyFilterTag}"`
+        : 'No conversations yet';
+      this.historyList.createDiv('history-empty').setText(emptyMsg);
       return;
     }
 
