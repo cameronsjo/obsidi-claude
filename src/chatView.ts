@@ -694,6 +694,17 @@ export class ChatView extends ItemView {
         this.promptRenameConversation(conv.id, conv.title);
       };
 
+      // Tag button
+      const tagBtn = actions.createEl('button', {
+        cls: 'history-action-btn',
+        attr: { 'aria-label': 'Manage tags' },
+      });
+      setIcon(tagBtn, 'tag');
+      tagBtn.onclick = (e) => {
+        e.stopPropagation();
+        this.promptManageTags(conv.id, conv.tags || []);
+      };
+
       // Continue button (if has session)
       const continueBtn = actions.createEl('button', {
         cls: 'history-action-btn',
@@ -811,6 +822,150 @@ export class ChatView extends ItemView {
 
     saveBtn.onclick = saveRename;
     cancelBtn.onclick = closeModal;
+    backdrop.onclick = closeModal;
+  }
+
+  private async promptManageTags(id: string, currentTags: string[]): Promise<void> {
+    // Create tag management modal
+    const modal = document.createElement('div');
+    modal.className = 'obsidi-claude-rename-modal'; // Reuse modal styles
+
+    const backdrop = document.createElement('div');
+    backdrop.className = 'rename-modal-backdrop';
+    modal.appendChild(backdrop);
+
+    const content = document.createElement('div');
+    content.className = 'rename-modal-content';
+
+    const heading = document.createElement('h3');
+    heading.textContent = 'Manage Tags';
+    content.appendChild(heading);
+
+    // Current tags display
+    const tagsContainer = document.createElement('div');
+    tagsContainer.className = 'tag-manager-tags';
+    content.appendChild(tagsContainer);
+
+    const renderTags = (tags: string[]) => {
+      tagsContainer.innerHTML = '';
+      if (tags.length === 0) {
+        const empty = document.createElement('span');
+        empty.className = 'tag-manager-empty';
+        empty.textContent = 'No tags yet';
+        tagsContainer.appendChild(empty);
+      } else {
+        for (const tag of tags) {
+          const tagEl = document.createElement('span');
+          tagEl.className = 'tag-manager-tag';
+          tagEl.textContent = tag;
+
+          const removeBtn = document.createElement('span');
+          removeBtn.className = 'tag-remove-btn';
+          removeBtn.textContent = '×';
+          removeBtn.onclick = async () => {
+            const idx = tags.indexOf(tag);
+            if (idx >= 0) {
+              tags.splice(idx, 1);
+              await this.plugin.storage.updateTags(id, tags);
+              renderTags(tags);
+            }
+          };
+          tagEl.appendChild(removeBtn);
+          tagsContainer.appendChild(tagEl);
+        }
+      }
+    };
+
+    renderTags([...currentTags]);
+
+    // Add tag input
+    const inputRow = document.createElement('div');
+    inputRow.className = 'tag-manager-input-row';
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'rename-input';
+    input.placeholder = 'Add a tag...';
+    inputRow.appendChild(input);
+
+    const addBtn = document.createElement('button');
+    addBtn.className = 'mod-cta';
+    addBtn.textContent = 'Add';
+    inputRow.appendChild(addBtn);
+
+    content.appendChild(inputRow);
+
+    // All existing tags (for suggestions)
+    const allTags = await this.plugin.storage.getAllTags();
+    const unusedTags = allTags.filter(t => !currentTags.includes(t));
+
+    if (unusedTags.length > 0) {
+      const suggestionsLabel = document.createElement('div');
+      suggestionsLabel.className = 'tag-suggestions-label';
+      suggestionsLabel.textContent = 'Existing tags:';
+      content.appendChild(suggestionsLabel);
+
+      const suggestions = document.createElement('div');
+      suggestions.className = 'tag-suggestions';
+      for (const tag of unusedTags) {
+        const suggBtn = document.createElement('span');
+        suggBtn.className = 'tag-suggestion';
+        suggBtn.textContent = tag;
+        suggBtn.onclick = async () => {
+          if (!currentTags.includes(tag)) {
+            currentTags.push(tag);
+            await this.plugin.storage.updateTags(id, currentTags);
+            renderTags(currentTags);
+            // Remove from suggestions
+            suggBtn.remove();
+          }
+        };
+        suggestions.appendChild(suggBtn);
+      }
+      content.appendChild(suggestions);
+    }
+
+    // Close button
+    const actions = document.createElement('div');
+    actions.className = 'rename-modal-actions';
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'rename-cancel';
+    closeBtn.textContent = 'Done';
+    actions.appendChild(closeBtn);
+
+    content.appendChild(actions);
+    modal.appendChild(content);
+    document.body.appendChild(modal);
+
+    const closeModal = async () => {
+      modal.remove();
+      await this.refreshHistoryList();
+      // Update current conversation if modified
+      if (this.conversation.id === id) {
+        this.conversation.tags = currentTags;
+      }
+    };
+
+    const addTag = async () => {
+      const newTag = input.value.trim().toLowerCase();
+      if (newTag && !currentTags.includes(newTag)) {
+        currentTags.push(newTag);
+        await this.plugin.storage.updateTags(id, currentTags);
+        renderTags(currentTags);
+        input.value = '';
+      }
+    };
+
+    input.focus();
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') addTag();
+      if (e.key === 'Escape') closeModal();
+    });
+
+    addBtn.onclick = addTag;
+    closeBtn.onclick = closeModal;
     backdrop.onclick = closeModal;
   }
 

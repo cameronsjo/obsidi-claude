@@ -1110,6 +1110,81 @@ pre:hover .code-copy-btn {
   border: 1px solid var(--background-modifier-border);
 }
 
+/* Tag manager modal */
+.tag-manager-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  min-height: 32px;
+}
+
+.tag-manager-empty {
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: 0.9rem;
+}
+
+.tag-manager-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 12px;
+  background-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.tag-remove-btn {
+  cursor: pointer;
+  font-weight: bold;
+  opacity: 0.7;
+  margin-left: 0.25rem;
+}
+
+.tag-remove-btn:hover {
+  opacity: 1;
+}
+
+.tag-manager-input-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.tag-manager-input-row input {
+  flex: 1;
+}
+
+.tag-suggestions-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+}
+
+.tag-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-bottom: 1rem;
+}
+
+.tag-suggestion {
+  font-size: 0.75rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 10px;
+  background-color: var(--background-modifier-border);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.1s ease;
+}
+
+.tag-suggestion:hover {
+  background-color: var(--interactive-accent-hover);
+  color: var(--text-normal);
+}
+
 /* Message reactions */
 .reaction-btn {
   transition: transform 0.1s ease, color 0.1s ease;
