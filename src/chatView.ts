@@ -10,7 +10,7 @@ import {
   App,
 } from 'obsidian';
 import type ObsidiClaudePlugin from '../main';
-import type { ChatMessage, ToolCallInfo, Conversation, MessageUsage } from './types';
+import type { ChatMessage, ToolCallInfo, Conversation, MessageUsage, ChatTab } from './types';
 import { generateId, calculateCost, calculateConversationUsage } from './types';
 import type { AgentBackend, AgentCallbacks, AgentResult } from './backends';
 import type { PermissionRequestContext, PermissionResponse } from './backends/sdkAgentBackend';
@@ -97,6 +97,12 @@ export class ChatView extends ItemView {
   private queueContainer: HTMLElement;
   private queueBadge: HTMLElement;
 
+  // Tab management
+  private tabs: ChatTab[] = [];
+  private activeTabId: string | null = null;
+  private tabBar: HTMLElement | null = null;
+  private tabsEnabled = true; // Can be disabled via settings
+
   // Input wrapper for processing state styling
   private inputWrapper!: HTMLElement;
 
@@ -134,6 +140,11 @@ export class ChatView extends ItemView {
     // Header
     const header = container.createDiv('chat-header');
     this.createHeader(header);
+
+    // Tab bar (below header)
+    this.tabBar = container.createDiv('chat-tab-bar');
+    this.initializeTabs();
+    this.renderTabBar();
 
     // History panel (hidden by default)
     this.historyPanel = container.createDiv('chat-history-panel');
@@ -1361,6 +1372,8 @@ export class ChatView extends ItemView {
     if (!this.chatTitleEl) return;
     const title = this.conversation.title || 'New Conversation';
     this.chatTitleEl.setText(title.length > 30 ? title.slice(0, 30) + '...' : title);
+    // Also update the active tab label
+    this.updateActiveTabLabel();
   }
 
   private createInputArea(inputArea: HTMLElement): void {
@@ -4757,9 +4770,305 @@ ${content}
     }
   }
 
+  // ===== TAB MANAGEMENT =====
+
+  /**
+   * Initialize tabs from saved state or create default tab.
+   */
+  private initializeTabs(): void {
+    // Load saved tabs from plugin data
+    const savedTabs = this.plugin.settings.savedTabs as ChatTab[] | undefined;
+    const savedActiveTabId = this.plugin.settings.activeTabId as string | undefined;
+
+    if (savedTabs && savedTabs.length > 0) {
+      this.tabs = savedTabs;
+      this.activeTabId = savedActiveTabId || savedTabs[0].id;
+    } else {
+      // Create initial tab for current conversation
+      const initialTab: ChatTab = {
+        id: generateId(),
+        conversationId: this.conversation?.id || '',
+        label: this.conversation?.title || 'New Chat',
+      };
+      this.tabs = [initialTab];
+      this.activeTabId = initialTab.id;
+    }
+    log.debug('Tabs initialized', { count: this.tabs.length, activeTabId: this.activeTabId });
+  }
+
+  /**
+   * Render the tab bar UI.
+   */
+  private renderTabBar(): void {
+    if (!this.tabBar) return;
+    this.tabBar.empty();
+
+    // Only show tab bar if we have multiple tabs or user explicitly enabled
+    if (this.tabs.length <= 1 && !this.tabsEnabled) {
+      this.tabBar.style.display = 'none';
+      return;
+    }
+    this.tabBar.style.display = 'flex';
+
+    // Render each tab
+    for (const tab of this.tabs) {
+      const tabEl = this.tabBar.createDiv({
+        cls: `chat-tab ${tab.id === this.activeTabId ? 'chat-tab-active' : ''}`,
+      });
+
+      // Tab icon for pinned/linked
+      if (tab.pinned) {
+        const pinIcon = tabEl.createSpan('chat-tab-icon');
+        setIcon(pinIcon, 'pin');
+      } else if (tab.linkedPath) {
+        const linkIcon = tabEl.createSpan('chat-tab-icon');
+        setIcon(linkIcon, 'link');
+      }
+
+      // Tab label
+      const labelEl = tabEl.createSpan('chat-tab-label');
+      labelEl.setText(tab.label.slice(0, 20) + (tab.label.length > 20 ? '...' : ''));
+      labelEl.setAttribute('title', tab.label);
+
+      // Click to switch
+      tabEl.onclick = (e) => {
+        e.stopPropagation();
+        this.switchToTab(tab.id);
+      };
+
+      // Close button (unless pinned)
+      if (!tab.pinned && this.tabs.length > 1) {
+        const closeBtn = tabEl.createSpan('chat-tab-close');
+        setIcon(closeBtn, 'x');
+        closeBtn.onclick = (e) => {
+          e.stopPropagation();
+          this.closeTab(tab.id);
+        };
+      }
+
+      // Right-click context menu
+      tabEl.oncontextmenu = (e) => {
+        e.preventDefault();
+        this.showTabContextMenu(e, tab);
+      };
+    }
+
+    // New tab button
+    const newTabBtn = this.tabBar.createDiv('chat-tab-new');
+    setIcon(newTabBtn, 'plus');
+    newTabBtn.setAttribute('aria-label', 'New tab');
+    newTabBtn.onclick = () => this.createNewTab();
+  }
+
+  /**
+   * Switch to a different tab.
+   */
+  private async switchToTab(tabId: string): Promise<void> {
+    if (tabId === this.activeTabId) return;
+
+    const tab = this.tabs.find(t => t.id === tabId);
+    if (!tab) return;
+
+    log.info('Switching tab', { fromTabId: this.activeTabId, toTabId: tabId });
+
+    // Save current conversation before switching
+    await this.saveConversation();
+
+    // Update active tab
+    this.activeTabId = tabId;
+
+    // Load the conversation for this tab
+    const conversations = await this.plugin.conversationStore.list();
+    const targetConversation = conversations.find(c => c.id === tab.conversationId);
+
+    if (targetConversation) {
+      this.conversation = targetConversation;
+    } else {
+      // Create new conversation if not found
+      this.conversation = {
+        id: tab.conversationId || generateId(),
+        title: 'New Chat',
+        messages: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+      tab.conversationId = this.conversation.id;
+    }
+
+    // Update UI
+    this.renderAllMessages();
+    this.updateTitle();
+    this.renderTabBar();
+    await this.saveTabState();
+  }
+
+  /**
+   * Create a new tab with a fresh conversation.
+   */
+  private async createNewTab(): Promise<void> {
+    log.info('Creating new tab');
+
+    // Save current conversation
+    await this.saveConversation();
+
+    // Create new conversation
+    const newConversation: Conversation = {
+      id: generateId(),
+      title: 'New Chat',
+      messages: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    // Create new tab
+    const newTab: ChatTab = {
+      id: generateId(),
+      conversationId: newConversation.id,
+      label: 'New Chat',
+    };
+
+    this.tabs.push(newTab);
+    this.activeTabId = newTab.id;
+    this.conversation = newConversation;
+
+    // Update UI
+    this.renderAllMessages();
+    this.updateTitle();
+    this.renderTabBar();
+    await this.saveTabState();
+
+    // Focus input
+    this.inputEl.focus();
+  }
+
+  /**
+   * Close a tab.
+   */
+  private async closeTab(tabId: string): Promise<void> {
+    if (this.tabs.length <= 1) return; // Don't close last tab
+
+    const tabIndex = this.tabs.findIndex(t => t.id === tabId);
+    if (tabIndex === -1) return;
+
+    log.info('Closing tab', { tabId });
+
+    // Remove tab
+    this.tabs.splice(tabIndex, 1);
+
+    // If we closed the active tab, switch to adjacent one
+    if (tabId === this.activeTabId) {
+      const newIndex = Math.min(tabIndex, this.tabs.length - 1);
+      await this.switchToTab(this.tabs[newIndex].id);
+    } else {
+      this.renderTabBar();
+      await this.saveTabState();
+    }
+  }
+
+  /**
+   * Show context menu for a tab.
+   */
+  private showTabContextMenu(event: MouseEvent, tab: ChatTab): void {
+    const menu = new (require('obsidian').Menu)();
+
+    menu.addItem((item: { setTitle: (arg0: string) => { (): unknown; new(): unknown; setIcon: { (arg0: string): { (): unknown; new(): unknown; onClick: { (arg0: () => void): unknown; new(): unknown } } } } }) => {
+      item.setTitle(tab.pinned ? 'Unpin tab' : 'Pin tab')
+        .setIcon('pin')
+        .onClick(() => {
+          tab.pinned = !tab.pinned;
+          this.renderTabBar();
+          this.saveTabState();
+        });
+    });
+
+    menu.addItem((item: { setTitle: (arg0: string) => { (): unknown; new(): unknown; setIcon: { (arg0: string): { (): unknown; new(): unknown; onClick: { (arg0: () => void): unknown; new(): unknown } } } } }) => {
+      item.setTitle('Rename tab')
+        .setIcon('pencil')
+        .onClick(() => {
+          const newName = prompt('Enter new tab name:', tab.label);
+          if (newName) {
+            tab.label = newName;
+            this.renderTabBar();
+            this.saveTabState();
+          }
+        });
+    });
+
+    menu.addItem((item: { setTitle: (arg0: string) => { (): unknown; new(): unknown; setIcon: { (arg0: string): { (): unknown; new(): unknown; onClick: { (arg0: () => void): unknown; new(): unknown } } } } }) => {
+      item.setTitle('Duplicate tab')
+        .setIcon('copy')
+        .onClick(async () => {
+          const newTab: ChatTab = {
+            id: generateId(),
+            conversationId: tab.conversationId,
+            label: `${tab.label} (copy)`,
+          };
+          this.tabs.push(newTab);
+          this.renderTabBar();
+          await this.saveTabState();
+        });
+    });
+
+    if (!tab.pinned && this.tabs.length > 1) {
+      menu.addSeparator();
+      menu.addItem((item: { setTitle: (arg0: string) => { (): unknown; new(): unknown; setIcon: { (arg0: string): { (): unknown; new(): unknown; onClick: { (arg0: () => Promise<void>): unknown; new(): unknown } } } } }) => {
+        item.setTitle('Close tab')
+          .setIcon('x')
+          .onClick(async () => {
+            await this.closeTab(tab.id);
+          });
+      });
+
+      menu.addItem((item: { setTitle: (arg0: string) => { (): unknown; new(): unknown; setIcon: { (arg0: string): { (): unknown; new(): unknown; onClick: { (arg0: () => Promise<void>): unknown; new(): unknown } } } } }) => {
+        item.setTitle('Close other tabs')
+          .setIcon('x-circle')
+          .onClick(async () => {
+            const otherTabs = this.tabs.filter(t => t.id !== tab.id && !t.pinned);
+            for (const other of otherTabs) {
+              await this.closeTab(other.id);
+            }
+          });
+      });
+    }
+
+    menu.showAtMouseEvent(event);
+  }
+
+  /**
+   * Save tab state to plugin settings.
+   */
+  private async saveTabState(): Promise<void> {
+    // Update tab labels from current conversation
+    const activeTab = this.tabs.find(t => t.id === this.activeTabId);
+    if (activeTab && this.conversation) {
+      activeTab.label = this.conversation.title;
+      activeTab.conversationId = this.conversation.id;
+    }
+
+    // Save to plugin settings (need to extend settings type)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (this.plugin.settings as any).savedTabs = this.tabs;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (this.plugin.settings as any).activeTabId = this.activeTabId;
+    await this.plugin.saveSettings();
+    log.debug('Tab state saved', { tabs: this.tabs.length, activeTabId: this.activeTabId });
+  }
+
+  /**
+   * Update the active tab's label when conversation title changes.
+   */
+  private updateActiveTabLabel(): void {
+    const activeTab = this.tabs.find(t => t.id === this.activeTabId);
+    if (activeTab && this.conversation) {
+      activeTab.label = this.conversation.title;
+      this.renderTabBar();
+    }
+  }
+
   async onClose(): Promise<void> {
     log.info('Closing chat view');
-    // Save before closing
+    // Save tabs and conversation before closing
+    await this.saveTabState();
     await this.saveConversation();
   }
 }

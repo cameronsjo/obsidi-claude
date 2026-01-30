@@ -644,6 +644,23 @@ export function generateId(): string {
 }
 
 /**
+ * A chat tab representing an active conversation in the UI.
+ * Tabs allow switching between multiple conversations.
+ */
+export interface ChatTab {
+  /** Unique tab identifier */
+  id: string;
+  /** Conversation ID this tab is showing */
+  conversationId: string;
+  /** Display name (defaults to conversation title) */
+  label: string;
+  /** Whether this tab is pinned (won't close on accident) */
+  pinned?: boolean;
+  /** Optional context: linked note or folder path */
+  linkedPath?: string;
+}
+
+/**
  * Pricing per 1M tokens in USD (as of 2025)
  */
 export const MODEL_PRICING: Record<string, { input: number; output: number }> = {

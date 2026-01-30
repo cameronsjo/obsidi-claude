@@ -1861,3 +1861,103 @@ pre:hover .code-copy-btn {
   background: var(--background-modifier-hover);
   border-radius: 4px;
 }
+
+/* Tab bar */
+.chat-tab-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 8px;
+  background: var(--background-secondary);
+  border-bottom: 1px solid var(--background-modifier-border);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+
+.chat-tab-bar::-webkit-scrollbar {
+  height: 4px;
+}
+
+.chat-tab {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px 4px 0 0;
+  cursor: pointer;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  max-width: 150px;
+  transition: background-color 0.15s ease;
+}
+
+.chat-tab:hover {
+  background: var(--background-modifier-hover);
+}
+
+.chat-tab-active {
+  background: var(--background-primary-alt);
+  border-bottom-color: var(--background-primary-alt);
+  font-weight: 500;
+}
+
+.chat-tab-icon {
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+}
+
+.chat-tab-icon svg {
+  width: 12px;
+  height: 12px;
+}
+
+.chat-tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-tab-close {
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  padding: 2px;
+  border-radius: 3px;
+  opacity: 0.6;
+  transition: opacity 0.15s ease, background-color 0.15s ease;
+}
+
+.chat-tab-close:hover {
+  opacity: 1;
+  background: var(--background-modifier-error);
+  color: var(--text-on-accent);
+}
+
+.chat-tab-close svg {
+  width: 12px;
+  height: 12px;
+}
+
+.chat-tab-new {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background-color 0.15s ease;
+}
+
+.chat-tab-new:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.chat-tab-new svg {
+  width: 14px;
+  height: 14px;
+}
