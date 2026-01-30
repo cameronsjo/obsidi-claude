@@ -1,3 +1,4 @@
+import Anthropic from '@anthropic-ai/sdk';
 import {
   query,
   type SDKMessage,
@@ -1329,5 +1330,40 @@ export class SDKAgentBackend implements AgentBackend {
     }
     this.abortController = null;
     this.activeQuery = null;
+  }
+
+  /**
+   * Generate a conversation title using Haiku for speed.
+   * Uses direct API call to avoid spawning a subprocess.
+   */
+  async generateTitle(firstUserMessage: string, firstAssistantMessage: string): Promise<string | null> {
+    const apiKey = this.settings.anthropicApiKey || process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      log.debug('No API key for title generation, using fallback');
+      return null;
+    }
+
+    try {
+      const client = new Anthropic({ apiKey });
+      const response = await client.messages.create({
+        model: 'claude-3-5-haiku-20241022',
+        max_tokens: 30,
+        messages: [
+          {
+            role: 'user',
+            content: `Generate a short title (3-6 words, no quotes) for this conversation:\n\nUser: ${firstUserMessage.slice(0, 500)}\n\nAssistant: ${firstAssistantMessage.slice(0, 500)}`,
+          },
+        ],
+      });
+
+      const textBlock = response.content.find(b => b.type === 'text');
+      if (textBlock && textBlock.type === 'text') {
+        return textBlock.text.trim().replace(/^["']|["']$/g, '');
+      }
+      return null;
+    } catch (error) {
+      log.warn('Failed to generate title', error);
+      return null;
+    }
   }
 }

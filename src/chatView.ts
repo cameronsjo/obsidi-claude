@@ -1600,13 +1600,19 @@ export class ChatView extends ItemView {
       this.conversation.metadata.sessionId = sessionId;
     }
 
-    // Auto-generate title from first user message if still default
+    // Auto-generate title after first exchange if still default
     if (
       this.conversation.title === 'New Conversation' &&
-      this.conversation.messages.length > 0
+      this.conversation.messages.length >= 2
     ) {
       const firstUserMsg = this.conversation.messages.find((m) => m.role === 'user');
-      if (firstUserMsg) {
+      const firstAssistantMsg = this.conversation.messages.find((m) => m.role === 'assistant');
+
+      if (firstUserMsg && firstAssistantMsg) {
+        // Try smart title generation in background
+        this.generateSmartTitle(firstUserMsg.content, firstAssistantMsg.content);
+      } else if (firstUserMsg) {
+        // Fallback to simple truncation
         this.conversation.title = this.plugin.storage.generateTitle(firstUserMsg.content);
         this.updateTitle();
       }
@@ -2341,19 +2347,67 @@ export class ChatView extends ItemView {
     if (!this.tokenCounter) return;
 
     const tokens = this.estimateTokens();
-    if (tokens === 0) {
+    const usage = this.conversation?.usage ?? calculateConversationUsage(this.conversation?.messages ?? []);
+    const totalCost = usage.totalCost;
+
+    // Show nothing if no tokens and no cost
+    if (tokens === 0 && totalCost === 0) {
       this.tokenCounter.style.display = 'none';
       return;
     }
 
-    // Format with K suffix for thousands
-    const formatted = tokens >= 1000
-      ? `${(tokens / 1000).toFixed(1)}K`
-      : tokens.toString();
+    // Build display string
+    const parts: string[] = [];
 
-    this.tokenCounter.setText(`~${formatted} tokens`);
+    // Token estimate (for current context)
+    if (tokens > 0) {
+      const formatted = tokens >= 1000
+        ? `${(tokens / 1000).toFixed(1)}K`
+        : tokens.toString();
+      parts.push(`~${formatted} tokens`);
+    }
+
+    // Actual cost from usage tracking
+    if (totalCost > 0) {
+      parts.push(`$${totalCost.toFixed(4)}`);
+    }
+
+    this.tokenCounter.setText(parts.join(' · '));
     this.tokenCounter.style.display = 'inline';
-    this.tokenCounter.setAttribute('aria-label', `Estimated ${tokens.toLocaleString()} tokens in conversation`);
+    this.tokenCounter.setAttribute('aria-label',
+      `Estimated ${tokens.toLocaleString()} tokens in context` +
+      (totalCost > 0 ? `, session cost: $${totalCost.toFixed(4)}` : '')
+    );
+  }
+
+  /**
+   * Generate a smart title using Claude (Haiku) in the background.
+   * Falls back to simple truncation if generation fails.
+   */
+  private async generateSmartTitle(userMessage: string, assistantMessage: string): Promise<void> {
+    const backend = this.plugin.backendFactory?.getBackend();
+
+    // Try smart generation if backend supports it
+    if (backend?.generateTitle) {
+      try {
+        const smartTitle = await backend.generateTitle(userMessage, assistantMessage);
+        if (smartTitle && this.conversation.title === 'New Conversation') {
+          this.conversation.title = smartTitle;
+          this.updateTitle();
+          await this.plugin.storage.saveConversation(this.conversation);
+          log.debug('Generated smart title', { title: smartTitle });
+          return;
+        }
+      } catch (error) {
+        log.debug('Smart title generation failed, using fallback', error);
+      }
+    }
+
+    // Fallback to simple truncation
+    if (this.conversation.title === 'New Conversation') {
+      this.conversation.title = this.plugin.storage.generateTitle(userMessage);
+      this.updateTitle();
+    }
   }
 
   private setProcessing(processing: boolean): void {
@@ -4092,13 +4146,10 @@ ${content}
         }
 
         if (result.success) {
-          const costInfo = result.totalCost
-            ? ` (Cost: $${result.totalCost.toFixed(4)})`
-            : '';
-          const queueInfo = this.messageQueue.length > 0
-            ? ` | ${this.messageQueue.length} queued`
-            : '';
-          this.showTemporaryStatus(`Complete${costInfo}${queueInfo}`, 'success');
+          // Clear status - completion is evident from the message itself
+          this.setStatus('');
+          // Update token/cost display
+          this.updateTokenCounter();
         } else {
           this.setStatus(
             `Errors: ${result.errors?.join(', ') || 'Unknown error'}`,

@@ -153,6 +153,13 @@ export interface AgentBackend {
 
   /** Get available models (SDK backend only, may be null if not yet fetched) */
   getAvailableModels?(): AvailableModel[] | null;
+
+  /**
+   * Generate a short title for a conversation based on its content.
+   * Uses a fast model (Haiku) to generate a 3-6 word title.
+   * Returns null if title generation fails.
+   */
+  generateTitle?(firstUserMessage: string, firstAssistantMessage: string): Promise<string | null>;
 }
 
 /**

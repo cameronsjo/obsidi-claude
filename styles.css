@@ -749,6 +749,7 @@ pre:hover .code-copy-btn {
 }
 
 .chat-input-wrapper {
+  position: relative; /* Anchor for autocomplete positioning */
   display: flex;
   flex-direction: column;
   gap: 0.5rem;

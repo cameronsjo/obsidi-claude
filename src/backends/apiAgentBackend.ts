@@ -447,4 +447,36 @@ export class APIAgentBackend implements AgentBackend {
       this.abortController = null;
     }
   }
+
+  /**
+   * Generate a conversation title using Haiku for speed.
+   */
+  async generateTitle(firstUserMessage: string, firstAssistantMessage: string): Promise<string | null> {
+    if (!this.initialized) {
+      await this.initialize();
+    }
+    if (!this.client) return null;
+
+    try {
+      const response = await this.client.messages.create({
+        model: 'claude-3-5-haiku-20241022',
+        max_tokens: 30,
+        messages: [
+          {
+            role: 'user',
+            content: `Generate a short title (3-6 words, no quotes) for this conversation:\n\nUser: ${firstUserMessage.slice(0, 500)}\n\nAssistant: ${firstAssistantMessage.slice(0, 500)}`,
+          },
+        ],
+      });
+
+      const textBlock = response.content.find(b => b.type === 'text');
+      if (textBlock && textBlock.type === 'text') {
+        return textBlock.text.trim().replace(/^["']|["']$/g, '');
+      }
+      return null;
+    } catch (error) {
+      log.warn('Failed to generate title', error);
+      return null;
+    }
+  }
 }
