@@ -1741,3 +1741,109 @@ pre:hover .code-copy-btn {
 .message-image:hover {
   opacity: 0.9;
 }
+
+/* Permission modal styles */
+.permission-modal {
+  padding: 1rem;
+}
+
+.permission-modal-header h2 {
+  margin: 0 0 1rem 0;
+  color: var(--text-warning);
+}
+
+.permission-modal-tool,
+.permission-modal-agent,
+.permission-modal-reason,
+.permission-modal-path {
+  margin-bottom: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.permission-label {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.permission-tool-name,
+.permission-agent-id,
+.permission-path {
+  background: var(--background-secondary);
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-family: var(--font-monospace);
+  font-size: 0.9rem;
+}
+
+.permission-reason-text {
+  color: var(--text-normal);
+}
+
+.permission-modal-input {
+  margin: 1rem 0;
+}
+
+.permission-modal-input h4 {
+  margin: 0 0 0.5rem 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.permission-input-preview {
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  padding: 0.75rem;
+  overflow: auto;
+  max-height: 150px;
+}
+
+.permission-input-preview code {
+  font-family: var(--font-monospace);
+  font-size: 0.85rem;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.permission-modal-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1.5rem;
+}
+
+.permission-btn {
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.permission-btn-deny {
+  background: var(--background-modifier-error);
+  color: var(--text-on-accent);
+  border: none;
+}
+
+.permission-btn-deny:hover {
+  opacity: 0.9;
+}
+
+.permission-btn-allow-once {
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  color: var(--text-normal);
+}
+
+.permission-btn-allow-once:hover {
+  background: var(--background-modifier-hover);
+}
+
+.permission-btn-always-allow {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border: none;
+}

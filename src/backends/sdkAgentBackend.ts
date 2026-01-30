@@ -22,6 +22,9 @@ import {
   type SDKCompactBoundaryMessage,
   type SDKStatusMessage,
   type SDKStatus,
+  type CanUseTool,
+  type PermissionResult,
+  type PermissionUpdate,
 } from '@anthropic-ai/claude-agent-sdk';
 import type { ObsidiClaudeSettings, Conversation, ToolCallInfo } from '../types';
 import { BUILTIN_AGENTS } from '../types';
@@ -55,6 +58,33 @@ let cachedCliPath: string | null = null;
 /**
  * Callbacks for hook events that need to communicate back to the UI.
  */
+/**
+ * Permission request context passed to the UI handler.
+ */
+export interface PermissionRequestContext {
+  toolName: string;
+  input: Record<string, unknown>;
+  toolUseID: string;
+  decisionReason?: string;
+  blockedPath?: string;
+  suggestions?: PermissionUpdate[];
+  agentID?: string;
+}
+
+/**
+ * User's response to a permission request.
+ */
+export interface PermissionResponse {
+  /** Whether the user allowed the action */
+  allowed: boolean;
+  /** If true and allowed, apply suggestions for "always allow" */
+  applyAlwaysAllow?: boolean;
+  /** Optional message to include in deny response */
+  denyMessage?: string;
+  /** If true and denied, interrupt the entire conversation */
+  interrupt?: boolean;
+}
+
 export interface HookCallbacks {
   /** Called when vault should be refreshed (after file edits) */
   onVaultRefresh?: () => void;
@@ -64,6 +94,8 @@ export interface HookCallbacks {
   onToolBlocked?: (toolName: string, reason: string) => void;
   /** Called when audit logging is enabled (logs tool usage) */
   onAuditLog?: (toolName: string, input: unknown, output: unknown) => void;
+  /** Called when a permission request needs user input (returns user's decision) */
+  onPermissionRequest?: (context: PermissionRequestContext) => Promise<PermissionResponse>;
 }
 
 export class SDKAgentBackend implements AgentBackend {
@@ -426,6 +458,89 @@ export class SDKAgentBackend implements AgentBackend {
     return undefined;
   }
 
+  /**
+   * Builds the canUseTool callback for custom permission UI.
+   * This enables native Obsidian modals instead of CLI prompts.
+   */
+  private buildCanUseTool(): CanUseTool {
+    return async (
+      toolName: string,
+      input: Record<string, unknown>,
+      options: {
+        signal: AbortSignal;
+        suggestions?: PermissionUpdate[];
+        blockedPath?: string;
+        decisionReason?: string;
+        toolUseID: string;
+        agentID?: string;
+      }
+    ): Promise<PermissionResult> => {
+      log.info('Permission request for tool', {
+        toolName,
+        toolUseID: options.toolUseID,
+        agentID: options.agentID,
+        decisionReason: options.decisionReason,
+        blockedPath: options.blockedPath,
+      });
+
+      // Check for abort signal
+      if (options.signal.aborted) {
+        return {
+          behavior: 'deny',
+          message: 'Request aborted',
+          toolUseID: options.toolUseID,
+        };
+      }
+
+      // Invoke the UI callback to show permission modal
+      if (!this.hookCallbacks.onPermissionRequest) {
+        // Fallback: allow if no callback set (shouldn't happen)
+        log.warn('No permission callback set, allowing by default');
+        return {
+          behavior: 'allow',
+          toolUseID: options.toolUseID,
+        };
+      }
+
+      try {
+        const response = await this.hookCallbacks.onPermissionRequest({
+          toolName,
+          input,
+          toolUseID: options.toolUseID,
+          decisionReason: options.decisionReason,
+          blockedPath: options.blockedPath,
+          suggestions: options.suggestions,
+          agentID: options.agentID,
+        });
+
+        if (response.allowed) {
+          log.info('Permission granted', { toolName, applyAlwaysAllow: response.applyAlwaysAllow });
+          return {
+            behavior: 'allow',
+            // Apply "always allow" suggestions if user chose that option
+            updatedPermissions: response.applyAlwaysAllow ? options.suggestions : undefined,
+            toolUseID: options.toolUseID,
+          };
+        } else {
+          log.info('Permission denied', { toolName, message: response.denyMessage, interrupt: response.interrupt });
+          return {
+            behavior: 'deny',
+            message: response.denyMessage || 'User denied permission',
+            interrupt: response.interrupt,
+            toolUseID: options.toolUseID,
+          };
+        }
+      } catch (error) {
+        log.error('Permission callback failed', { toolName, error });
+        return {
+          behavior: 'deny',
+          message: `Permission handler error: ${error instanceof Error ? error.message : String(error)}`,
+          toolUseID: options.toolUseID,
+        };
+      }
+    };
+  }
+
   isAvailable(): boolean {
     // Check if Claude CLI is available
     if (!cachedCliPath) {
@@ -609,6 +724,10 @@ export class SDKAgentBackend implements AgentBackend {
         outputFormat: options?.outputFormat,
         // Custom permission prompt routing via MCP tool
         permissionPromptToolName: this.settings.permissionPromptToolName || undefined,
+        // Custom permission handler for native UI prompts
+        canUseTool: this.hookCallbacks.onPermissionRequest
+          ? this.buildCanUseTool()
+          : undefined,
       };
 
       // Build MCP servers config
