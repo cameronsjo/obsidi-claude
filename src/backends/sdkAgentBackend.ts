@@ -261,6 +261,31 @@ export class SDKAgentBackend implements AgentBackend {
   }
 
   /**
+   * Dynamically add, remove, or reconfigure MCP servers at runtime.
+   * Pass the new desired server configuration - servers not in the config are removed.
+   */
+  async setMcpServers(
+    servers: Record<string, McpServerConfig>
+  ): Promise<{ added: string[]; removed: string[]; errors: Record<string, string> } | null> {
+    if (!this.activeQuery) {
+      log.warn('Cannot set MCP servers: no active query');
+      return null;
+    }
+    try {
+      const result = await this.activeQuery.setMcpServers(servers);
+      log.info('MCP servers updated', {
+        added: result.added,
+        removed: result.removed,
+        errors: Object.keys(result.errors),
+      });
+      return result;
+    } catch (error) {
+      log.error('Failed to set MCP servers', error);
+      return null;
+    }
+  }
+
+  /**
    * Dynamically switch the model during a conversation.
    */
   async setModel(model: string): Promise<void> {

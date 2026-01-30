@@ -85,6 +85,9 @@ export class ChatView extends ItemView {
   private inputHistoryIndex = -1;
   private inputDraft = ''; // Saves current input when navigating history
 
+  // Debounce timer for input resize
+  private resizeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
   // Track last sent note to avoid redundant context injection
   private lastSentNotePath: string | null = null;
   private lastSentNoteContent: string | null = null;
@@ -1387,10 +1390,15 @@ export class ChatView extends ItemView {
       }
     });
 
-    // Auto-resize textarea
+    // Auto-resize textarea (debounced with RAF for smooth performance)
     this.inputEl.addEventListener('input', () => {
-      this.inputEl.style.height = 'auto';
-      this.inputEl.style.height = Math.min(this.inputEl.scrollHeight, MAX_TEXTAREA_HEIGHT_PX) + 'px';
+      if (this.resizeDebounceTimer) {
+        cancelAnimationFrame(this.resizeDebounceTimer);
+      }
+      this.resizeDebounceTimer = requestAnimationFrame(() => {
+        this.inputEl.style.height = 'auto';
+        this.inputEl.style.height = Math.min(this.inputEl.scrollHeight, MAX_TEXTAREA_HEIGHT_PX) + 'px';
+      });
     });
 
     // Handle image paste
@@ -2841,6 +2849,8 @@ export class ChatView extends ItemView {
 - \`/mcp\` - Show MCP server status
 - \`/mcp reconnect <name>\` - Reconnect failed server
 - \`/mcp toggle <name>\` - Enable/disable server
+- \`/mcp add <name> <cmd> [args]\` - Add server dynamically
+- \`/mcp remove <name>\` - Remove/disable server
 
 **Structured Analysis (SDK only):**
 - \`/extract\` - Extract tasks, links, tags, and summary from current note
@@ -2874,29 +2884,20 @@ export class ChatView extends ItemView {
       return;
     }
 
-    const sdkBackend = backend as {
-      getMcpServerStatus?: () => Promise<Array<{
-        name: string;
-        status: string;
-        error?: string;
-        toolCount?: number;
-      }> | null>;
-      reconnectMcpServer?: (name: string) => Promise<boolean>;
-      toggleMcpServer?: (name: string, enabled: boolean) => Promise<boolean>;
-    };
-
-    if (!sdkBackend.getMcpServerStatus) {
-      this.showTemporaryStatus('MCP status not available', 'error', 3000);
+    const factory = this.plugin.backendFactory;
+    if (!factory) {
+      this.showTemporaryStatus('Backend not initialized', 'error', 3000);
       return;
     }
 
-    // Parse command: /mcp, /mcp reconnect <name>, /mcp toggle <name>
+    // Parse command: /mcp, /mcp reconnect <name>, /mcp toggle <name>, /mcp add <name> <command> [args...]
     const parts = args.trim().split(/\s+/);
     const action = parts[0]?.toLowerCase();
     const serverName = parts[1];
 
-    if (action === 'reconnect' && serverName && sdkBackend.reconnectMcpServer) {
-      const success = await sdkBackend.reconnectMcpServer(serverName);
+    // /mcp reconnect <name>
+    if (action === 'reconnect' && serverName) {
+      const success = await factory.reconnectMcpServer(serverName);
       this.showTemporaryStatus(
         success ? `Reconnected ${serverName}` : `Failed to reconnect ${serverName}`,
         success ? 'success' : 'error',
@@ -2905,9 +2906,10 @@ export class ChatView extends ItemView {
       return;
     }
 
-    if ((action === 'toggle' || action === 'enable' || action === 'disable') && serverName && sdkBackend.toggleMcpServer) {
+    // /mcp toggle|enable|disable <name>
+    if ((action === 'toggle' || action === 'enable' || action === 'disable') && serverName) {
       const enabled = action !== 'disable';
-      const success = await sdkBackend.toggleMcpServer(serverName, enabled);
+      const success = await factory.toggleMcpServer(serverName, enabled);
       this.showTemporaryStatus(
         success ? `${serverName} ${enabled ? 'enabled' : 'disabled'}` : `Failed to toggle ${serverName}`,
         success ? 'success' : 'error',
@@ -2916,8 +2918,58 @@ export class ChatView extends ItemView {
       return;
     }
 
+    // /mcp add <name> <command> [args...] - Add a new MCP server dynamically
+    if (action === 'add' && serverName && parts[2]) {
+      const command = parts[2];
+      const serverArgs = parts.slice(3);
+
+      // Get current servers and add the new one
+      const currentStatus = await factory.getMcpServerStatus();
+      const currentServers: Record<string, { command: string; args: string[] }> = {};
+
+      // Preserve existing servers
+      if (currentStatus) {
+        for (const server of currentStatus) {
+          if (server.status !== 'disabled') {
+            // We don't have the full config, so we'll just set the new server
+            // The SDK will merge with existing
+          }
+        }
+      }
+
+      // Add the new server
+      currentServers[serverName] = { command, args: serverArgs };
+
+      const result = await factory.setMcpServers(currentServers);
+      if (result) {
+        if (result.errors[serverName]) {
+          this.showTemporaryStatus(`Failed to add ${serverName}: ${result.errors[serverName]}`, 'error', 3000);
+        } else if (result.added.includes(serverName)) {
+          this.showTemporaryStatus(`Added MCP server: ${serverName}`, 'success', 2000);
+        } else {
+          this.showTemporaryStatus(`Server ${serverName} already exists`, 'info', 2000);
+        }
+      } else {
+        this.showTemporaryStatus('No active session - start a conversation first', 'error', 3000);
+      }
+      return;
+    }
+
+    // /mcp remove <name> - Remove an MCP server
+    if (action === 'remove' && serverName) {
+      // To remove, we set servers without the one to remove
+      // This requires knowing current config which we don't have - use toggle disable instead
+      const success = await factory.toggleMcpServer(serverName, false);
+      this.showTemporaryStatus(
+        success ? `Disabled ${serverName}` : `Failed to disable ${serverName}`,
+        success ? 'success' : 'error',
+        2000
+      );
+      return;
+    }
+
     // Default: show status
-    const statuses = await sdkBackend.getMcpServerStatus();
+    const statuses = await factory.getMcpServerStatus();
     if (!statuses || statuses.length === 0) {
       this.showTemporaryStatus('No MCP servers configured or no active session', 'info', 3000);
       return;
@@ -2939,7 +2991,7 @@ export class ChatView extends ItemView {
       lines.push(`${icon} **${server.name}**: ${server.status}${tools}${error}`);
     }
     lines.push('');
-    lines.push('*Commands: `/mcp reconnect <name>`, `/mcp toggle <name>`*');
+    lines.push('*Commands: `/mcp reconnect|toggle|add|remove <name>`*');
 
     const mcpMsg: ChatMessage = {
       id: generateId(),

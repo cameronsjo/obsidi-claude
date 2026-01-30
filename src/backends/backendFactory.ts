@@ -146,6 +146,36 @@ export class BackendFactory {
   }
 
   /**
+   * Dynamically set MCP servers at runtime (SDK backend only).
+   */
+  async setMcpServers(
+    servers: Record<string, { command?: string; args?: string[]; env?: Record<string, string>; type?: 'stdio' | 'http' | 'sse'; url?: string; headers?: Record<string, string> }>
+  ): Promise<{ added: string[]; removed: string[]; errors: Record<string, string> } | null> {
+    return this.sdkBackend?.setMcpServers(servers) ?? null;
+  }
+
+  /**
+   * Get MCP server status (SDK backend only).
+   */
+  async getMcpServerStatus(): Promise<Array<{ name: string; status: string; error?: string }> | null> {
+    return this.sdkBackend?.mcpServerStatus() ?? null;
+  }
+
+  /**
+   * Toggle MCP server enabled state (SDK backend only).
+   */
+  async toggleMcpServer(name: string, enabled: boolean): Promise<boolean> {
+    return this.sdkBackend?.toggleMcpServer(name, enabled) ?? false;
+  }
+
+  /**
+   * Reconnect a failed MCP server (SDK backend only).
+   */
+  async reconnectMcpServer(name: string): Promise<boolean> {
+    return this.sdkBackend?.reconnectMcpServer(name) ?? false;
+  }
+
+  /**
    * Get info about available backends for UI display.
    */
   getBackendInfo(): {
