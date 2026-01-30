@@ -2433,6 +2433,12 @@ export class ChatView extends ItemView {
         return true;
       }
 
+      case 'mode':
+      case 'permission': {
+        await this.handlePermissionModeCommand(args);
+        return true;
+      }
+
       default:
         // Unknown command - show help hint
         this.showTemporaryStatus(`Unknown command: /${command}. Type /help for available commands.`, 'info');
@@ -2616,6 +2622,10 @@ export class ChatView extends ItemView {
 **Skills:**
 - \`/skills\` - List available skills and their triggers
 
+**Permissions (SDK only):**
+- \`/mode\` - Show current permission mode
+- \`/mode <mode>\` - Switch mode (default, acceptEdits, plan, etc.)
+
 **Shortcuts:**
 \`Enter\` send · \`Shift+Enter\` newline · \`↑↓\` history
 \`Cmd+F\` search · \`Cmd+N\` new · \`Cmd+H\` history · \`Cmd+E\` export
@@ -2632,6 +2642,72 @@ export class ChatView extends ItemView {
 
     this.renderMessage(helpMsg);
     this.scrollToBottom(true);
+  }
+
+  /**
+   * Handle /mode command to change permission mode mid-conversation.
+   */
+  private async handlePermissionModeCommand(args: string): Promise<void> {
+    const backend = this.getBackend();
+    if (backend.type !== 'sdk') {
+      this.showTemporaryStatus('Permission mode switching requires SDK backend', 'info', 3000);
+      return;
+    }
+
+    const validModes = ['default', 'acceptEdits', 'bypassPermissions', 'plan', 'dontAsk'] as const;
+    type Mode = typeof validModes[number];
+
+    if (!args) {
+      // Show current mode and available options
+      const current = this.plugin.settings.permissionMode;
+      const modeDescriptions = {
+        default: 'Prompt for dangerous operations',
+        acceptEdits: 'Auto-accept file edits',
+        bypassPermissions: 'Skip all checks (dangerous)',
+        plan: 'Planning mode, no execution',
+        dontAsk: 'Deny if not pre-approved',
+      };
+
+      const lines = [
+        `**Current mode:** \`${current}\` - ${modeDescriptions[current as Mode] || 'Unknown'}`,
+        '',
+        '**Available modes:**',
+        ...validModes.map((m) => `- \`/mode ${m}\` - ${modeDescriptions[m]}`),
+      ];
+
+      const modeMsg: ChatMessage = {
+        id: generateId(),
+        role: 'assistant',
+        content: lines.join('\n'),
+        timestamp: Date.now(),
+      };
+      this.renderMessage(modeMsg);
+      this.scrollToBottom(true);
+      return;
+    }
+
+    const mode = args.toLowerCase() as Mode;
+    if (!validModes.includes(mode)) {
+      this.showTemporaryStatus(`Invalid mode: ${args}. Use: ${validModes.join(', ')}`, 'error', 3000);
+      return;
+    }
+
+    // Check for SDK-specific method
+    const sdkBackend = backend as { setPermissionMode?: (mode: Mode) => Promise<boolean> };
+    if (!sdkBackend.setPermissionMode) {
+      this.showTemporaryStatus('setPermissionMode not available on this backend', 'error', 3000);
+      return;
+    }
+
+    const success = await sdkBackend.setPermissionMode(mode);
+    if (success) {
+      // Also update settings so it persists
+      this.plugin.settings.permissionMode = mode;
+      await this.plugin.saveSettings();
+      this.showTemporaryStatus(`Permission mode changed to: ${mode}`, 'success', 2000);
+    } else {
+      this.showTemporaryStatus('Failed to change permission mode (no active session)', 'error', 3000);
+    }
   }
 
   /**

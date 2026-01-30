@@ -97,6 +97,25 @@ export class SDKAgentBackend implements AgentBackend {
   }
 
   /**
+   * Change the permission mode mid-conversation.
+   * @param mode - The permission mode to switch to
+   */
+  async setPermissionMode(mode: 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan' | 'dontAsk'): Promise<boolean> {
+    if (!this.activeQuery) {
+      log.warn('Cannot set permission mode: no active query');
+      return false;
+    }
+    try {
+      await this.activeQuery.setPermissionMode(mode);
+      log.info('Permission mode changed', { mode });
+      return true;
+    } catch (error) {
+      log.error('Failed to set permission mode', error);
+      return false;
+    }
+  }
+
+  /**
    * Gracefully interrupt the current query (better than abort).
    */
   async interrupt(): Promise<void> {
