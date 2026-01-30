@@ -87,6 +87,7 @@ export class ObsidianTools {
       this.getSearchByPropertyTool(),
       this.getCreateNoteTool(),
       this.getAppendToNoteTool(),
+      this.getSetFrontmatterTool(),
       this.getDailyNoteTool(),
       this.getSearchContentTool(),
       this.getOpenNoteTool(),
@@ -670,6 +671,119 @@ export class ObsidianTools {
 
         await this.app.vault.modify(tfile, existingContent);
         return { success: true, path: filepath };
+      }),
+    };
+  }
+
+  /**
+   * Set frontmatter properties on a note
+   */
+  private getSetFrontmatterTool(): ToolDefinition {
+    return {
+      name: 'set_frontmatter',
+      description:
+        'Set or update frontmatter (YAML metadata) properties on a note. Properties can be added, updated, or removed.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: {
+            type: 'string',
+            description: 'Path to the note',
+          },
+          properties: {
+            type: 'object',
+            description: 'Properties to set. Set a property to null to remove it.',
+          },
+          merge: {
+            type: 'boolean',
+            description: 'Merge with existing frontmatter (default: true). If false, replaces all frontmatter.',
+          },
+        },
+        required: ['path', 'properties'],
+      },
+      handler: this.wrapHandler(async (params) => {
+        const filepath = params.path as string;
+        const newProps = params.properties as Record<string, unknown>;
+        const merge = params.merge !== false;
+
+        const fileResult = this.getFileOrError(filepath);
+        if ('error' in fileResult) {
+          return fileResult;
+        }
+
+        const tfile = fileResult;
+        let content = await this.app.vault.read(tfile);
+
+        // Parse existing frontmatter
+        const frontmatterRegex = /^---\n([\s\S]*?)\n---\n?/;
+        const match = content.match(frontmatterRegex);
+        let existingProps: Record<string, unknown> = {};
+        let bodyContent = content;
+
+        if (match) {
+          // Parse existing YAML frontmatter
+          const yamlContent = match[1];
+          bodyContent = content.slice(match[0].length);
+
+          // Simple YAML parsing for common cases
+          for (const line of yamlContent.split('\n')) {
+            const colonIdx = line.indexOf(':');
+            if (colonIdx > 0) {
+              const key = line.slice(0, colonIdx).trim();
+              let value: unknown = line.slice(colonIdx + 1).trim();
+
+              // Parse value types
+              if (value === 'true') value = true;
+              else if (value === 'false') value = false;
+              else if (value === 'null' || value === '') value = null;
+              else if (!isNaN(Number(value)) && value !== '') value = Number(value);
+              else if (typeof value === 'string' && value.startsWith('[') && value.endsWith(']')) {
+                // Simple array parsing: [item1, item2]
+                value = value.slice(1, -1).split(',').map(s => s.trim()).filter(s => s);
+              } else if (typeof value === 'string' && (value.startsWith('"') || value.startsWith("'"))) {
+                value = value.slice(1, -1);
+              }
+
+              existingProps[key] = value;
+            }
+          }
+        }
+
+        // Merge or replace properties
+        const finalProps = merge ? { ...existingProps } : {};
+        for (const [key, value] of Object.entries(newProps)) {
+          if (value === null) {
+            delete finalProps[key];
+          } else {
+            finalProps[key] = value;
+          }
+        }
+
+        // Build new frontmatter YAML
+        const yamlLines: string[] = [];
+        for (const [key, value] of Object.entries(finalProps)) {
+          if (Array.isArray(value)) {
+            yamlLines.push(`${key}: [${value.join(', ')}]`);
+          } else if (typeof value === 'string' && (value.includes(':') || value.includes('#') || value.includes('\n'))) {
+            yamlLines.push(`${key}: "${value.replace(/"/g, '\\"')}"`);
+          } else {
+            yamlLines.push(`${key}: ${value}`);
+          }
+        }
+
+        // Reconstruct file content
+        const newFrontmatter = yamlLines.length > 0
+          ? `---\n${yamlLines.join('\n')}\n---\n`
+          : '';
+        const newContent = newFrontmatter + bodyContent;
+
+        await this.app.vault.modify(tfile, newContent);
+
+        return {
+          success: true,
+          path: filepath,
+          frontmatter: finalProps,
+        };
       }),
     };
   }
