@@ -215,8 +215,7 @@ export class ChatView extends ItemView {
     this.plugin.backendFactory?.setHookCallbacks({
       onVaultRefresh: () => {
         log.debug('Hook triggered vault refresh');
-        // Force Obsidian to refresh the vault
-        this.plugin.app.vault.trigger('modify', null as unknown as import('obsidian').TFile);
+        // Obsidian auto-refreshes from filesystem changes - just log for debugging
       },
       onNotification: (title: string, message: string, type: 'info' | 'warning' | 'error') => {
         log.debug('Hook notification', { title, message, type });
