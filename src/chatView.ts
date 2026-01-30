@@ -46,6 +46,7 @@ export class ChatView extends ItemView {
   private backendBadge: HTMLElement;
   private contextBadge: HTMLElement;
   private accountBadge: HTMLElement;
+  private ephemeralBadge: HTMLElement;
   private tokenCounter: HTMLElement;
   private searchInput: HTMLInputElement;
   private searchContainer: HTMLElement;
@@ -261,6 +262,12 @@ export class ChatView extends ItemView {
     // Account info badge (SDK only)
     this.accountBadge = header.createDiv('account-badge');
     this.accountBadge.style.display = 'none';
+
+    // Ephemeral mode badge
+    this.ephemeralBadge = header.createDiv('ephemeral-badge');
+    this.ephemeralBadge.setText('🔒');
+    this.ephemeralBadge.setAttribute('aria-label', 'Ephemeral mode - sessions not saved');
+    this.updateEphemeralBadge();
 
     // Active note context badge
     this.contextBadge = header.createDiv('context-badge');
@@ -1960,6 +1967,11 @@ export class ChatView extends ItemView {
         ? 'Using Claude Code SDK (full features)'
         : 'Using direct API (mobile compatible)'
     );
+  }
+
+  private updateEphemeralBadge(): void {
+    if (!this.ephemeralBadge) return;
+    this.ephemeralBadge.style.display = this.plugin.settings.ephemeralMode ? 'inline-flex' : 'none';
   }
 
   private updateAccountBadge(): void {

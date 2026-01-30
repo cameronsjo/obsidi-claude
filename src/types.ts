@@ -314,6 +314,8 @@ export interface ObsidiClaudeSettings {
   mainAgent?: string;
   /** Fallback model to use if primary model fails or is rate-limited (SDK only) */
   fallbackModel?: 'claude-sonnet-4-5' | 'claude-opus-4' | 'claude-3-5-sonnet-20241022';
+  /** Ephemeral/privacy mode - sessions are not saved to disk (SDK only) */
+  ephemeralMode: boolean;
 }
 
 /**
@@ -466,6 +468,7 @@ When the user asks about their notes, always search first to ground your respons
   disallowedTools: [], // No tools blocked by default
   loadVaultClaudeMd: false, // Don't load vault CLAUDE.md by default
   mainAgent: undefined, // No main agent by default (use normal conversation)
+  ephemeralMode: false, // Persist sessions by default
 };
 
 export function generateId(): string {

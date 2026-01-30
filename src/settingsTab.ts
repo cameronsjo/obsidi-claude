@@ -538,6 +538,17 @@ export class SettingsTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           })
       );
+
+    // Ephemeral/privacy mode
+    new Setting(containerEl)
+      .setName('Ephemeral Mode')
+      .setDesc('Privacy mode - sessions are not saved to disk and cannot be resumed')
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.ephemeralMode).onChange(async (value) => {
+          this.plugin.settings.ephemeralMode = value;
+          await this.plugin.saveSettings();
+        })
+      );
   }
 
   private addEmbeddingSettings(containerEl: HTMLElement): void {

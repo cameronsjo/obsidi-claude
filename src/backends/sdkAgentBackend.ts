@@ -340,6 +340,8 @@ export class SDKAgentBackend implements AgentBackend {
         agent: this.settings.mainAgent || undefined,
         // Fallback model for automatic failover on rate limits/errors
         fallbackModel: this.settings.fallbackModel || undefined,
+        // Ephemeral mode - don't persist sessions
+        persistSession: !this.settings.ephemeralMode,
       };
 
       // Build MCP servers config

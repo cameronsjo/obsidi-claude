@@ -137,6 +137,16 @@ body {
   flex-shrink: 0;
 }
 
+/* Ephemeral/privacy mode badge */
+.ephemeral-badge {
+  display: none;
+  align-items: center;
+  font-size: 0.7rem;
+  padding: 0.1rem;
+  cursor: default;
+  flex-shrink: 0;
+}
+
 /* Active note context badge */
 .context-badge {
   display: none;
