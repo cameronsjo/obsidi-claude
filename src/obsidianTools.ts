@@ -93,6 +93,8 @@ export class ObsidianTools {
       this.getOpenNoteTool(),
       this.getActiveNoteTool(),
       this.getReadNoteTool(),
+      this.getListTemplatesTool(),
+      this.getCreateFromTemplateTool(),
       this.getDeleteTool(),
       this.getGraphNeighborsTool(),
       this.getRenameTool(),
@@ -1076,6 +1078,158 @@ export class ObsidianTools {
           content: content.slice(0, maxLength),
           truncated: content.length > maxLength,
           totalLength: content.length,
+        };
+      }),
+    };
+  }
+
+  /**
+   * List available templates
+   */
+  private getListTemplatesTool(): ToolDefinition {
+    return {
+      name: 'list_templates',
+      description: 'List available templates in the vault. Templates are typically markdown files in a Templates folder.',
+      parameters: {
+        type: 'object',
+        properties: {
+          folder: {
+            type: 'string',
+            description: 'Template folder path (default: searches common locations like "Templates", "templates", "_templates")',
+          },
+        },
+      },
+      handler: this.wrapHandler(async (params) => {
+        const customFolder = params.folder as string | undefined;
+
+        // Common template folder locations
+        const templateFolders = customFolder
+          ? [customFolder]
+          : ['Templates', 'templates', '_templates', '.templates', 'template', 'Vorlagen'];
+
+        const templates: Array<{ name: string; path: string; preview: string }> = [];
+
+        for (const folderPath of templateFolders) {
+          const folder = this.app.vault.getAbstractFileByPath(folderPath);
+          if (folder && 'children' in folder) {
+            for (const file of (folder as TFolder).children) {
+              if (file instanceof TFile && file.extension === 'md') {
+                const content = await this.app.vault.cachedRead(file);
+                templates.push({
+                  name: file.basename,
+                  path: file.path,
+                  preview: content.slice(0, 200).replace(/\n/g, ' ').trim() + (content.length > 200 ? '...' : ''),
+                });
+              }
+            }
+          }
+        }
+
+        if (templates.length === 0) {
+          return {
+            templates: [],
+            message: 'No templates found. Check if you have a Templates folder in your vault.',
+            searchedFolders: templateFolders,
+          };
+        }
+
+        return { templates, count: templates.length };
+      }),
+    };
+  }
+
+  /**
+   * Create a note from a template
+   */
+  private getCreateFromTemplateTool(): ToolDefinition {
+    return {
+      name: 'create_from_template',
+      description: 'Create a new note from a template. Supports basic variable substitution like {{title}}, {{date}}, {{time}}.',
+      parameters: {
+        type: 'object',
+        properties: {
+          template: {
+            type: 'string',
+            description: 'Path to the template file, or template name (will search in template folders)',
+          },
+          path: {
+            type: 'string',
+            description: 'Path for the new note (e.g., "Projects/my-project.md")',
+          },
+          title: {
+            type: 'string',
+            description: 'Title for the note (used in {{title}} substitution)',
+          },
+          variables: {
+            type: 'object',
+            description: 'Additional variables for substitution (e.g., { "project": "MyProject" } replaces {{project}})',
+          },
+        },
+        required: ['template', 'path'],
+      },
+      handler: this.wrapHandler(async (params) => {
+        const templatePath = params.template as string;
+        const targetPath = params.path as string;
+        const title = (params.title as string) || targetPath.split('/').pop()?.replace('.md', '') || 'Untitled';
+        const variables = (params.variables as Record<string, string>) || {};
+
+        // Find the template file
+        let templateFile = this.app.vault.getAbstractFileByPath(templatePath);
+
+        // If not found by path, search in template folders
+        if (!templateFile || !(templateFile instanceof TFile)) {
+          const templateFolders = ['Templates', 'templates', '_templates', '.templates'];
+          for (const folder of templateFolders) {
+            const tryPath = `${folder}/${templatePath}${templatePath.endsWith('.md') ? '' : '.md'}`;
+            templateFile = this.app.vault.getAbstractFileByPath(tryPath);
+            if (templateFile instanceof TFile) break;
+          }
+        }
+
+        if (!templateFile || !(templateFile instanceof TFile)) {
+          return { error: `Template not found: ${templatePath}` };
+        }
+
+        // Check target doesn't exist
+        if (this.app.vault.getAbstractFileByPath(targetPath)) {
+          return { error: `File already exists: ${targetPath}` };
+        }
+
+        // Read template content
+        let content = await this.app.vault.read(templateFile);
+
+        // Build substitution map
+        const now = new Date();
+        const dateStr = now.toISOString().split('T')[0];
+        const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+        const fullDate = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
+        const substitutions: Record<string, string> = {
+          title,
+          date: dateStr,
+          time: timeStr,
+          datetime: `${dateStr} ${timeStr}`,
+          fulldate: fullDate,
+          year: String(now.getFullYear()),
+          month: String(now.getMonth() + 1).padStart(2, '0'),
+          day: String(now.getDate()).padStart(2, '0'),
+          ...variables,
+        };
+
+        // Replace {{variable}} patterns
+        content = content.replace(/\{\{(\w+)\}\}/g, (match, varName) => {
+          return substitutions[varName.toLowerCase()] ?? match;
+        });
+
+        // Create the note
+        await this.ensureParentFolder(targetPath);
+        await this.app.vault.create(targetPath, content);
+
+        return {
+          success: true,
+          path: targetPath,
+          template: templateFile.path,
+          substitutionsApplied: Object.keys(substitutions),
         };
       }),
     };
