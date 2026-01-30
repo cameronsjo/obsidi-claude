@@ -1847,3 +1847,17 @@ pre:hover .code-copy-btn {
   color: var(--text-on-accent);
   border: none;
 }
+
+/* Status bar widget */
+.obsidi-claude-status-bar {
+  cursor: pointer;
+  padding: 0 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.obsidi-claude-status-bar:hover {
+  background: var(--background-modifier-hover);
+  border-radius: 4px;
+}

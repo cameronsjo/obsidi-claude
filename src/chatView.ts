@@ -2288,6 +2288,9 @@ export class ChatView extends ItemView {
     if (this.inputWrapper) {
       this.inputWrapper.toggleClass('is-processing', processing);
     }
+
+    // Update status bar
+    this.plugin.updateStatusBar(processing ? 'processing' : 'connected');
   }
 
   /**

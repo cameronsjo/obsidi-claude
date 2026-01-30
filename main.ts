@@ -20,6 +20,7 @@ export default class ObsidiClaudePlugin extends Plugin {
   mcpServer: MCPServer | null = null;
   backendFactory: BackendFactory;
   skillRegistry: SkillRegistry;
+  statusBarItem: HTMLElement | null = null;
 
   async onload(): Promise<void> {
     console.log('Loading Obsidi-Claude plugin');
@@ -67,6 +68,9 @@ export default class ObsidiClaudePlugin extends Plugin {
     this.addRibbonIcon('message-circle', 'Open Claude Chat', () => {
       this.activateChatView();
     });
+
+    // Add status bar item
+    this.setupStatusBar();
 
     // Add command to open chat
     this.addCommand({
@@ -559,6 +563,104 @@ export default class ObsidiClaudePlugin extends Plugin {
     if (this.skillRegistry) {
       await this.skillRegistry.updateSettings(this.settings.skills);
     }
+  }
+
+  /**
+   * Setup status bar indicator for Claude.
+   */
+  private setupStatusBar(): void {
+    this.statusBarItem = this.addStatusBarItem();
+    this.statusBarItem.addClass('obsidi-claude-status-bar');
+    this.statusBarItem.setAttribute('aria-label', 'Claude Chat');
+    this.updateStatusBar('idle');
+
+    // Left click: Open chat
+    this.statusBarItem.addEventListener('click', () => {
+      this.activateChatView();
+    });
+
+    // Right click: Context menu
+    this.statusBarItem.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      this.showStatusBarMenu(e);
+    });
+  }
+
+  /**
+   * Update status bar indicator state.
+   */
+  updateStatusBar(state: 'idle' | 'processing' | 'error' | 'connected'): void {
+    if (!this.statusBarItem) return;
+
+    const icons: Record<string, string> = {
+      idle: '⚪',
+      processing: '🟡',
+      error: '🔴',
+      connected: '🟢',
+    };
+
+    const labels: Record<string, string> = {
+      idle: 'Claude (idle)',
+      processing: 'Claude (thinking...)',
+      error: 'Claude (error)',
+      connected: 'Claude (ready)',
+    };
+
+    this.statusBarItem.setText(`${icons[state]} Claude`);
+    this.statusBarItem.setAttribute('aria-label', labels[state]);
+  }
+
+  /**
+   * Show context menu for status bar item.
+   */
+  private showStatusBarMenu(e: MouseEvent): void {
+    const menu = new Menu();
+
+    menu.addItem((item) => {
+      item
+        .setTitle('Open Chat')
+        .setIcon('message-circle')
+        .onClick(() => this.activateChatView());
+    });
+
+    menu.addSeparator();
+
+    menu.addItem((item) => {
+      item
+        .setTitle('New Conversation')
+        .setIcon('plus')
+        .onClick(() => {
+          const chatView = this.getChatView();
+          chatView?.newConversation();
+        });
+    });
+
+    menu.addItem((item) => {
+      item
+        .setTitle('Clear Messages')
+        .setIcon('trash-2')
+        .onClick(() => {
+          const chatView = this.getChatView();
+          chatView?.clearMessages();
+        });
+    });
+
+    menu.addSeparator();
+
+    menu.addItem((item) => {
+      item
+        .setTitle('Settings')
+        .setIcon('settings')
+        .onClick(() => {
+          // Open plugin settings
+          (this.app as unknown as { setting: { open(): void; openTabById(id: string): void } })
+            .setting.open();
+          (this.app as unknown as { setting: { openTabById(id: string): void } })
+            .setting.openTabById(this.manifest.id);
+        });
+    });
+
+    menu.showAtMouseEvent(e);
   }
 
   async startMCPServer(): Promise<void> {
