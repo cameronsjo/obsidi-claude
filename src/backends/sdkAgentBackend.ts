@@ -4,14 +4,18 @@ import {
   type Options,
   type McpSdkServerConfigWithInstance,
   type McpServerConfig,
+  type AgentDefinition,
+  type ModelInfo,
 } from '@anthropic-ai/claude-agent-sdk';
 import type { ObsidiClaudeSettings, Conversation, ToolCallInfo } from '../types';
+import { BUILTIN_AGENTS } from '../types';
 import {
   type AgentBackend,
   type AgentCallbacks,
   type AgentResult,
   type BackendFeature,
   type BackendOptions,
+  type AvailableModel,
   createUserMessage,
   createStreamingAssistantMessage,
   appendStreamingText,
@@ -41,10 +45,67 @@ export class SDKAgentBackend implements AgentBackend {
   private obsidianTools: ObsidianTools;
   private obsidianMcpServer: McpSdkServerConfigWithInstance | null = null;
   private initialized = false;
+  private cachedModels: ModelInfo[] | null = null;
 
   constructor(settings: ObsidiClaudeSettings, obsidianTools: ObsidianTools) {
     this.settings = settings;
     this.obsidianTools = obsidianTools;
+  }
+
+  /**
+   * Get available models from the SDK.
+   * Cached after first fetch.
+   */
+  getAvailableModels(): AvailableModel[] | null {
+    return this.cachedModels;
+  }
+
+  /**
+   * Build agents configuration for the SDK query.
+   */
+  private buildAgents(): Record<string, AgentDefinition> | undefined {
+    const agentSettings = this.settings.agents;
+    if (!agentSettings?.enabled) {
+      return undefined;
+    }
+
+    const agents: Record<string, AgentDefinition> = {};
+
+    // Add built-in agents if enabled
+    if (agentSettings.useBuiltinAgents) {
+      for (const [name, agent] of Object.entries(BUILTIN_AGENTS)) {
+        agents[name] = {
+          description: agent.description,
+          prompt: agent.prompt,
+          model: agent.model,
+          tools: agent.tools,
+          maxTurns: agent.maxTurns,
+        };
+      }
+      log.debug('Added built-in agents', { count: Object.keys(BUILTIN_AGENTS).length });
+    }
+
+    // Add custom agents
+    for (const agent of agentSettings.customAgents || []) {
+      if (agent.enabled) {
+        agents[agent.name] = {
+          description: agent.description,
+          prompt: agent.prompt,
+          model: agent.model,
+          tools: agent.tools,
+          disallowedTools: agent.disallowedTools,
+          maxTurns: agent.maxTurns,
+        };
+      }
+    }
+
+    const count = Object.keys(agents).length;
+    if (count > 0) {
+      log.info('Agents configured', { count, names: Object.keys(agents) });
+      return agents;
+    }
+
+    return undefined;
   }
 
   isAvailable(): boolean {
@@ -169,6 +230,9 @@ export class SDKAgentBackend implements AgentBackend {
       const allowedTools = [...this.settings.allowedTools];
       allowedTools.push(...getObsidianToolNames(this.obsidianTools, 'obsidian'));
 
+      // Build agents configuration
+      const agents = this.buildAgents();
+
       const queryOptions: Options = {
         model: options?.model ?? this.settings.model,
         cwd,
@@ -179,6 +243,7 @@ export class SDKAgentBackend implements AgentBackend {
         abortController: this.abortController,
         includePartialMessages: true,
         pathToClaudeCodeExecutable: cachedCliPath,
+        agents,
       };
 
       // Build MCP servers config
@@ -217,6 +282,16 @@ export class SDKAgentBackend implements AgentBackend {
       });
 
       log.debug('SDK query initiated', { cwd, permissionMode: this.settings.permissionMode });
+
+      // Fetch available models on first query (non-blocking)
+      if (!this.cachedModels) {
+        response.supportedModels().then((models) => {
+          this.cachedModels = models;
+          log.info('Fetched available models', { count: models.length, models: models.map(m => m.value) });
+        }).catch((err) => {
+          log.warn('Failed to fetch models', err);
+        });
+      }
 
       for await (const message of response) {
         if (this.abortController?.signal.aborted) {

@@ -37,3 +37,4 @@ settings.json
 
 # Test coverage
 coverage/
+mcp-sessions.json

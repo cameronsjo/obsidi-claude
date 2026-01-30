@@ -5,6 +5,7 @@ import {
   DEFAULT_EMBEDDING_SETTINGS,
   DEFAULT_MCP_SETTINGS,
   DEFAULT_SKILL_SETTINGS,
+  DEFAULT_AGENT_SETTINGS,
   generateId,
 } from './types';
 import * as fs from 'fs';
@@ -98,6 +99,7 @@ export class StorageService {
       embedding: { ...DEFAULT_EMBEDDING_SETTINGS, ...(saved.embedding || {}) },
       mcp: { ...DEFAULT_MCP_SETTINGS, ...(saved.mcp || {}) },
       skills: { ...DEFAULT_SKILL_SETTINGS, ...(saved.skills || {}) },
+      agents: { ...DEFAULT_AGENT_SETTINGS, ...(saved.agents || {}) },
     };
   }
 

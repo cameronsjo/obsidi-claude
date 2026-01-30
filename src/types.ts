@@ -151,6 +151,97 @@ export const DEFAULT_SKILL_SETTINGS: SkillSettings = {
   folderPath: '.claude/skills',
 };
 
+/**
+ * Custom subagent definition (mirrors SDK AgentDefinition)
+ */
+export interface CustomAgent {
+  /** Unique identifier for the agent */
+  name: string;
+  /** Natural language description of when to use this agent */
+  description: string;
+  /** The agent's system prompt */
+  prompt: string;
+  /** Model to use (inherit = use main model) */
+  model?: 'sonnet' | 'opus' | 'haiku' | 'inherit';
+  /** Array of allowed tool names (empty = inherit all) */
+  tools?: string[];
+  /** Array of tool names to explicitly disallow */
+  disallowedTools?: string[];
+  /** Maximum agentic turns before stopping */
+  maxTurns?: number;
+  /** Whether this agent is enabled */
+  enabled: boolean;
+}
+
+export interface AgentSettings {
+  /** Enable custom agents feature */
+  enabled: boolean;
+  /** Use built-in Obsidian agents (research, writer, organizer) */
+  useBuiltinAgents: boolean;
+  /** Custom user-defined agents */
+  customAgents: CustomAgent[];
+}
+
+export const DEFAULT_AGENT_SETTINGS: AgentSettings = {
+  enabled: true,
+  useBuiltinAgents: true,
+  customAgents: [],
+};
+
+/**
+ * Built-in agents optimized for Obsidian knowledge work
+ */
+export const BUILTIN_AGENTS: Record<string, Omit<CustomAgent, 'enabled'>> = {
+  research: {
+    name: 'research',
+    description: 'Research agent for finding, reading, and synthesizing information from notes. Use when you need to gather information across multiple notes or explore a topic in depth.',
+    prompt: `You are a research assistant focused on the user's Obsidian vault.
+
+Your goal is to find relevant information by:
+1. Using semantic_search to find notes by meaning
+2. Using search_content for keyword-based searches
+3. Reading and synthesizing information from multiple notes
+4. Following links to discover connected knowledge
+
+Always cite your sources with [[note names]]. Summarize findings clearly and indicate confidence levels.`,
+    model: 'haiku',
+    tools: ['semantic_search', 'search_content', 'read_note', 'file_metadata', 'backlinks', 'outgoing_links', 'graph_neighbors'],
+    maxTurns: 15,
+  },
+  writer: {
+    name: 'writer',
+    description: 'Writing agent for creating well-structured notes with proper formatting, frontmatter, and links. Use when creating new content or significantly expanding existing notes.',
+    prompt: `You are a writing assistant for Obsidian notes.
+
+Your goal is to create high-quality notes by:
+1. Using proper markdown formatting
+2. Adding appropriate frontmatter (tags, aliases, dates)
+3. Creating links to related notes using [[wikilinks]]
+4. Following the user's existing note conventions
+
+Before creating a note, search to avoid duplicates. Structure content with clear headings and maintain consistent style.`,
+    model: 'inherit',
+    tools: ['create_note', 'append_to_note', 'search_content', 'semantic_search', 'vault_structure', 'vault_tags'],
+    maxTurns: 10,
+  },
+  organizer: {
+    name: 'organizer',
+    description: 'Organization agent for tagging, linking, and restructuring notes. Use when you need to improve note organization, add missing links, or clean up tags.',
+    prompt: `You are an organization assistant for Obsidian vaults.
+
+Your goal is to improve vault organization by:
+1. Adding appropriate tags based on content
+2. Creating bidirectional links between related notes
+3. Identifying orphaned notes that need connections
+4. Suggesting folder reorganization
+
+Analyze existing patterns before making changes. Preserve the user's organizational style while improving discoverability.`,
+    model: 'haiku',
+    tools: ['vault_tags', 'search_by_property', 'backlinks', 'outgoing_links', 'append_to_note', 'file_metadata', 'vault_structure'],
+    maxTurns: 20,
+  },
+};
+
 export interface ObsidiClaudeSettings {
   model: 'claude-sonnet-4-5' | 'claude-opus-4' | 'claude-3-5-sonnet-20241022';
   systemPrompt: string;
@@ -170,6 +261,8 @@ export interface ObsidiClaudeSettings {
   preferredBackend: 'auto' | 'sdk' | 'api';
   /** Skills configuration */
   skills: SkillSettings;
+  /** Custom agents configuration */
+  agents: AgentSettings;
   /** Automatically include active note as context */
   activeNoteContext: boolean;
 }
@@ -270,6 +363,7 @@ When the user asks about their notes, always search first to ground your respons
   anthropicApiKey: '',
   preferredBackend: 'auto',
   skills: DEFAULT_SKILL_SETTINGS,
+  agents: DEFAULT_AGENT_SETTINGS,
   activeNoteContext: true,
 };
 

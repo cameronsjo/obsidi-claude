@@ -13,6 +13,18 @@ export type BackendFeature =
   | 'structured-output';
 
 /**
+ * Model information from the SDK
+ */
+export interface AvailableModel {
+  /** Model identifier for API calls */
+  value: string;
+  /** Human-readable display name */
+  displayName: string;
+  /** Model description */
+  description: string;
+}
+
+/**
  * Options for sending a message
  */
 export interface BackendOptions {
@@ -105,6 +117,9 @@ export interface AgentBackend {
 
   /** Update settings */
   updateSettings(settings: ObsidiClaudeSettings): void;
+
+  /** Get available models (SDK backend only, may be null if not yet fetched) */
+  getAvailableModels?(): AvailableModel[] | null;
 }
 
 /**
