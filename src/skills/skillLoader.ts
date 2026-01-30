@@ -1,6 +1,7 @@
 import type { App, TFile } from 'obsidian';
 import type { Skill, SkillSettings } from '../types';
 import { createLogger } from '../logger';
+import { BUNDLED_SKILLS } from './bundledSkills';
 
 const log = createLogger('SkillLoader');
 
@@ -65,11 +66,13 @@ export class SkillLoader {
     }
 
     const folderPath = this.settings.folderPath;
-    const folder = this.app.vault.getAbstractFileByPath(folderPath);
 
-    if (!folder) {
-      log.debug('Skills folder not found', { path: folderPath });
-      return [];
+    // Ensure skills folder exists
+    await this.ensureSkillsFolder(folderPath);
+
+    // Ensure bundled skills are present (if enabled)
+    if (this.settings.installBundledSkills) {
+      await this.ensureBundledSkills(folderPath);
     }
 
     this.skills.clear();
@@ -93,6 +96,48 @@ export class SkillLoader {
 
     log.info('Skills loaded', { count: this.skills.size });
     return Array.from(this.skills.values());
+  }
+
+  /**
+   * Ensure the skills folder exists.
+   */
+  private async ensureSkillsFolder(folderPath: string): Promise<void> {
+    const folder = this.app.vault.getAbstractFileByPath(folderPath);
+    if (!folder && typeof this.app.vault.createFolder === 'function') {
+      log.info('Creating skills folder', { path: folderPath });
+      try {
+        await this.app.vault.createFolder(folderPath);
+      } catch (error) {
+        // Folder might have been created by another process
+        log.debug('Could not create skills folder', { path: folderPath, error });
+      }
+    }
+  }
+
+  /**
+   * Ensure bundled skills are present in the skills folder.
+   * Creates them if they don't exist.
+   */
+  private async ensureBundledSkills(folderPath: string): Promise<void> {
+    // Skip if vault.create is not available (e.g., in tests)
+    if (typeof this.app.vault.create !== 'function') {
+      return;
+    }
+
+    for (const bundled of BUNDLED_SKILLS) {
+      const skillPath = `${folderPath}/${bundled.filename}`;
+      const existing = this.app.vault.getAbstractFileByPath(skillPath);
+
+      if (!existing) {
+        log.info('Creating bundled skill', { name: bundled.filename });
+        try {
+          await this.app.vault.create(skillPath, bundled.content);
+        } catch (error) {
+          // File might have been created by another process
+          log.debug('Could not create bundled skill', { name: bundled.filename, error });
+        }
+      }
+    }
   }
 
   /**

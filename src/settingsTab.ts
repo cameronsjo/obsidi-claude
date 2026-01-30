@@ -293,6 +293,23 @@ export class SettingsTab extends PluginSettingTab {
             })
         );
 
+      new Setting(containerEl)
+        .setName('Install Bundled Skills')
+        .setDesc('Auto-install default skills like Obsidian Markdown (by kepano). You can delete them from the skills folder if unwanted.')
+        .addToggle((toggle) =>
+          toggle
+            .setValue(this.plugin.settings.skills.installBundledSkills)
+            .onChange(async (value) => {
+              this.plugin.settings.skills.installBundledSkills = value;
+              await this.plugin.saveSettings();
+              // Reload skills to install bundled ones if enabled
+              if (value) {
+                await this.plugin.skillRegistry?.reload();
+                this.display();
+              }
+            })
+        );
+
       // Skills management
       const skills = this.plugin.skillRegistry?.getSkills() ?? [];
       new Setting(containerEl)

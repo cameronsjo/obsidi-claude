@@ -124,6 +124,8 @@ export interface SkillSettings {
   enabled: boolean;
   /** Folder path within vault for skills (e.g., ".claude/skills") */
   folderPath: string;
+  /** Install bundled skills (e.g., kepano's obsidian-markdown) */
+  installBundledSkills: boolean;
 }
 
 /**
@@ -151,6 +153,7 @@ export interface Skill {
 export const DEFAULT_SKILL_SETTINGS: SkillSettings = {
   enabled: true,
   folderPath: '.claude/skills',
+  installBundledSkills: true,
 };
 
 /**
