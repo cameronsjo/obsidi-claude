@@ -392,6 +392,32 @@ export interface ObsidiClaudeSettings {
   useV2SessionApi: boolean;
   /** Plugin loading configuration (SDK only) */
   pluginSettings: PluginSettings;
+  /** Inline completion settings */
+  inlineCompletion: InlineCompletionSettings;
+}
+
+/**
+ * Settings for inline ghost text completions.
+ */
+export interface InlineCompletionSettings {
+  /** Enable inline completions */
+  enabled: boolean;
+  /** Delay before triggering completion (ms) */
+  triggerDelay: number;
+  /** Maximum completions per minute (rate limiting) */
+  maxCompletionsPerMinute: number;
+  /** Minimum characters before triggering */
+  minTriggerLength: number;
+  /** Maximum context characters to send */
+  maxContextLength: number;
+}
+
+export const DEFAULT_INLINE_COMPLETION_SETTINGS: InlineCompletionSettings = {
+  enabled: false,
+  triggerDelay: 500,
+  maxCompletionsPerMinute: 20,
+  minTriggerLength: 10,
+  maxContextLength: 2000,
 }
 
 /**
@@ -637,6 +663,7 @@ When the user asks about their notes, always search first to ground your respons
   strictMcpConfig: false, // Don't enforce strict MCP validation by default
   useV2SessionApi: false, // Use stable query() API by default
   pluginSettings: DEFAULT_PLUGIN_SETTINGS,
+  inlineCompletion: DEFAULT_INLINE_COMPLETION_SETTINGS,
 };
 
 export function generateId(): string {

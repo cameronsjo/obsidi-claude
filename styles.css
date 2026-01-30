@@ -2149,3 +2149,44 @@ pre:hover .code-copy-btn {
 .is-mobile .obsidi-claude-container {
   padding-bottom: env(safe-area-inset-bottom, 0);
 }
+
+/* ===== INLINE COMPLETION / GHOST TEXT ===== */
+
+.inline-completion-ghost {
+  color: var(--text-faint);
+  opacity: 0.5;
+  pointer-events: none;
+  font-style: italic;
+  white-space: pre-wrap;
+}
+
+/* Hint text for accepting suggestions */
+.inline-completion-hint {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.inline-completion-hint.visible {
+  opacity: 1;
+}
+
+.inline-completion-hint kbd {
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 3px;
+  padding: 2px 6px;
+  font-family: var(--font-monospace);
+  font-size: 11px;
+  margin: 0 2px;
+}
