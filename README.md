@@ -109,3 +109,5 @@ Check Obsidian's developer console (Cmd+Option+I) for errors. Common issues:
 ## License
 
 MIT
+
+

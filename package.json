@@ -1,6 +1,6 @@
 {
   "name": "obsidi-claude",
-  "version": "0.1.0",
+  "version": "1.0.1",
   "description": "Chat with Claude AI using the Agent SDK in Obsidian",
   "main": "main.js",
   "scripts": {
@@ -9,7 +9,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "version": "node version-bump.mjs && git add manifest.json versions.json"
+    "version": "node scripts/update-versions.mjs"
   },
   "keywords": [
     "obsidian",

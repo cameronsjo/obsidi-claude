@@ -133,8 +133,7 @@ export class APIAgentBackend implements AgentBackend {
     log.debug('Message preview', { preview: messagePreview });
 
     // Create user message for UI (use displayContent if provided, otherwise full message)
-    const displayContent = options?.displayContent ?? userMessage;
-    const userMsg = createUserMessage(displayContent);
+    const userMsg = createUserMessage(options?.displayContent ?? userMessage);
     callbacks.onMessage(userMsg);
 
     // Emit a fake session init for compatibility
@@ -217,6 +216,9 @@ export class APIAgentBackend implements AgentBackend {
       setNeedsParagraphBreak: (value: boolean) => { needsParagraphBreak = value; },
     };
 
+    // Track current content block type for proper paragraph breaks
+    let currentBlockType: string | null = null;
+
     // Process streaming events
     for await (const event of stream) {
       if (this.abortController?.signal.aborted) {
@@ -240,9 +242,15 @@ export class APIAgentBackend implements AgentBackend {
           if (this.settings.showToolCalls) {
             callbacks.onToolCall(assistantMsgId, toolCall);
           }
+        } else if (event.content_block.type === 'text') {
+          // If we had a previous text block, add paragraph break before new one
+          if (currentBlockType === 'text' && assistantContent.trim()) {
+            needsParagraphBreak = true;
+          }
         }
+        currentBlockType = event.content_block.type;
       } else if (event.type === 'content_block_stop') {
-        // Content block finished
+        // Content block finished - keep track for paragraph breaks
       } else if (event.type === 'message_stop') {
         // Message complete
       }
