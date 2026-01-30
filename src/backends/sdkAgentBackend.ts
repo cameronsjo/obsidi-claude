@@ -310,10 +310,16 @@ export class SDKAgentBackend implements AgentBackend {
         log.info('Extended context (1M tokens) enabled');
       }
 
+      // Build system prompt (either replace or append to Claude Code default)
+      const userPrompt = options?.systemPrompt ?? this.settings.systemPrompt;
+      const systemPrompt: Options['systemPrompt'] = this.settings.systemPromptMode === 'append'
+        ? { type: 'preset', preset: 'claude_code', append: userPrompt }
+        : userPrompt;
+
       const queryOptions: Options = {
         model: options?.model ?? this.settings.model,
         cwd,
-        systemPrompt: options?.systemPrompt ?? this.settings.systemPrompt,
+        systemPrompt,
         permissionMode: this.settings.permissionMode,
         maxTurns: options?.maxTurns ?? this.settings.maxTurns,
         allowedTools,
@@ -327,6 +333,7 @@ export class SDKAgentBackend implements AgentBackend {
         maxThinkingTokens: this.settings.maxThinkingTokens,
         additionalDirectories: additionalDirectories.length > 0 ? additionalDirectories : undefined,
         betas: betas.length > 0 ? betas : undefined,
+        disallowedTools: this.settings.disallowedTools.length > 0 ? this.settings.disallowedTools : undefined,
       };
 
       // Build MCP servers config
@@ -357,6 +364,10 @@ export class SDKAgentBackend implements AgentBackend {
 
       if (resumeSessionId) {
         queryOptions.resume = resumeSessionId;
+      } else if (this.settings.continueSession) {
+        // Auto-continue most recent session in this working directory
+        queryOptions.continue = true;
+        log.debug('Auto-continuing most recent session');
       }
 
       const response = query({

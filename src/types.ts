@@ -279,6 +279,12 @@ export interface ObsidiClaudeSettings {
   maxThinkingTokens?: number;
   /** Additional directories Claude can access beyond working directory */
   additionalDirectories: string[];
+  /** System prompt mode: 'replace' replaces Claude Code default, 'append' adds to it */
+  systemPromptMode: 'replace' | 'append';
+  /** Auto-continue most recent session in working directory */
+  continueSession: boolean;
+  /** Tools to block entirely (removed from model context) */
+  disallowedTools: string[];
 }
 
 /**
@@ -385,6 +391,9 @@ When the user asks about their notes, always search first to ground your respons
   extendedContext: false, // Opt-in for 1M context
   maxThinkingTokens: undefined, // No limit by default
   additionalDirectories: [], // Vault path added dynamically
+  systemPromptMode: 'append', // Append to Claude Code's default prompt
+  continueSession: false, // Don't auto-continue by default
+  disallowedTools: [], // No tools blocked by default
 };
 
 export function generateId(): string {
