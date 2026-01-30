@@ -703,7 +703,8 @@ pre:hover .code-copy-btn {
 }
 
 .chat-send-btn,
-.chat-stop-btn {
+.chat-stop-btn,
+.chat-voice-btn {
   padding: 0.375rem 1rem;
   font-size: 0.85rem;
   border-radius: 0.5rem;
@@ -718,7 +719,8 @@ pre:hover .code-copy-btn {
 
 /* Fixed icon sizing for proper alignment with text */
 .chat-send-btn svg,
-.chat-stop-btn svg {
+.chat-stop-btn svg,
+.chat-voice-btn svg {
   width: 14px;
   height: 14px;
   flex-shrink: 0;
@@ -759,6 +761,34 @@ pre:hover .code-copy-btn {
 .chat-stop-btn:hover {
   opacity: 0.9;
   animation: none;
+}
+
+/* Voice input button */
+.chat-voice-btn {
+  background-color: var(--background-modifier-hover);
+  color: var(--text-normal);
+  border: 1px solid var(--background-modifier-border);
+  padding: 0.375rem 0.5rem;
+}
+
+.chat-voice-btn:hover {
+  background-color: var(--background-modifier-border);
+}
+
+.chat-voice-btn.recording {
+  background-color: var(--text-error);
+  color: white;
+  border-color: var(--text-error);
+  animation: voice-pulse 1s ease-in-out infinite;
+}
+
+@keyframes voice-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(239, 68, 68, 0);
+  }
 }
 
 /* Scrollbar styling */

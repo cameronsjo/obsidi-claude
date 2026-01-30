@@ -38,6 +38,7 @@ export class ChatView extends ItemView {
   private inputEl: HTMLTextAreaElement;
   private sendButton: HTMLButtonElement;
   private stopButton: HTMLButtonElement;
+  private voiceButton: HTMLButtonElement;
   private statusEl: HTMLElement;
   private historyPanel: HTMLElement;
   private historyList: HTMLElement;
@@ -62,6 +63,10 @@ export class ChatView extends ItemView {
   private historyTagsBar: HTMLElement | null = null;
   private historySearchInput: HTMLInputElement | null = null;
   private historySearchQuery: string = '';
+
+  // Voice input state
+  private isRecording = false;
+  private speechRecognition: SpeechRecognition | null = null;
 
   // Input history for up/down arrow navigation
   private inputHistory: string[] = [];
@@ -1124,6 +1129,18 @@ export class ChatView extends ItemView {
     this.stopButton.createSpan({ text: 'Stop' });
     this.stopButton.style.display = 'none';
     this.stopButton.onclick = () => this.stopGeneration();
+
+    // Voice input button (if Web Speech API available)
+    this.voiceButton = buttonArea.createEl('button', {
+      cls: 'chat-voice-btn',
+      attr: { 'aria-label': 'Voice input' },
+    });
+    setIcon(this.voiceButton, 'mic');
+    this.voiceButton.onclick = () => this.toggleVoiceInput();
+    // Hide if Speech API not available
+    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+      this.voiceButton.style.display = 'none';
+    }
 
     // Send button
     this.sendButton = buttonArea.createEl('button', {
@@ -2372,6 +2389,92 @@ export class ChatView extends ItemView {
     this.getBackend().abort();
     this.setProcessing(false);
     this.setStatus('Stopped', 'info');
+  }
+
+  /**
+   * Toggle voice input using Web Speech API
+   */
+  private toggleVoiceInput(): void {
+    if (this.isRecording) {
+      this.stopVoiceInput();
+    } else {
+      this.startVoiceInput();
+    }
+  }
+
+  private startVoiceInput(): void {
+    // Use webkit prefix for Safari/older Chrome, or standard API
+    const SpeechRecognitionAPI = (window as unknown as { SpeechRecognition?: typeof SpeechRecognition; webkitSpeechRecognition?: typeof SpeechRecognition }).SpeechRecognition
+      || (window as unknown as { webkitSpeechRecognition?: typeof SpeechRecognition }).webkitSpeechRecognition;
+
+    if (!SpeechRecognitionAPI) {
+      this.showTemporaryStatus('Voice input not supported in this browser', 'error');
+      return;
+    }
+
+    this.speechRecognition = new SpeechRecognitionAPI();
+    this.speechRecognition.continuous = true;
+    this.speechRecognition.interimResults = true;
+    this.speechRecognition.lang = 'en-US';
+
+    let finalTranscript = this.inputEl.value;
+    let interimTranscript = '';
+
+    this.speechRecognition.onresult = (event: SpeechRecognitionEvent) => {
+      interimTranscript = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          finalTranscript += (finalTranscript ? ' ' : '') + transcript;
+        } else {
+          interimTranscript += transcript;
+        }
+      }
+      // Show final + interim in input
+      this.inputEl.value = finalTranscript + (interimTranscript ? ' ' + interimTranscript : '');
+      this.autoResizeInput();
+    };
+
+    this.speechRecognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+      log.error('Speech recognition error', { error: event.error });
+      this.stopVoiceInput();
+      if (event.error === 'not-allowed') {
+        this.showTemporaryStatus('Microphone access denied', 'error');
+      } else {
+        this.showTemporaryStatus(`Voice error: ${event.error}`, 'error');
+      }
+    };
+
+    this.speechRecognition.onend = () => {
+      // Auto-stop UI if recognition ends
+      if (this.isRecording) {
+        this.stopVoiceInput();
+      }
+    };
+
+    try {
+      this.speechRecognition.start();
+      this.isRecording = true;
+      this.voiceButton.addClass('recording');
+      setIcon(this.voiceButton, 'mic-off');
+      this.showTemporaryStatus('Listening...', 'info', 10000);
+      log.info('Voice input started');
+    } catch (error) {
+      log.error('Failed to start voice input', error);
+      this.showTemporaryStatus('Failed to start voice input', 'error');
+    }
+  }
+
+  private stopVoiceInput(): void {
+    if (this.speechRecognition) {
+      this.speechRecognition.stop();
+      this.speechRecognition = null;
+    }
+    this.isRecording = false;
+    this.voiceButton.removeClass('recording');
+    setIcon(this.voiceButton, 'mic');
+    this.setStatus('');
+    log.info('Voice input stopped');
   }
 
   /**
