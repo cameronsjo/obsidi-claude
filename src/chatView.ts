@@ -2302,9 +2302,18 @@ export class ChatView extends ItemView {
     this.inputEl.style.height = Math.min(this.inputEl.scrollHeight, MAX_TEXTAREA_HEIGHT_PX) + 'px';
   }
 
-  private async sendMessage(): Promise<void> {
-    const content = this.inputEl.value.trim();
+  /**
+   * Public method to send a message programmatically.
+   * Used by command palette and context menu integrations.
+   */
+  public async sendMessage(message?: string): Promise<void> {
+    const content = message ?? this.inputEl.value.trim();
     if (!content) return;
+
+    // If called with a message, put it in the input first
+    if (message) {
+      this.inputEl.value = message;
+    }
 
     // Check for slash commands (even when processing)
     if (content.startsWith('/')) {

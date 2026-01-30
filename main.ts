@@ -1,4 +1,4 @@
-import { Plugin, WorkspaceLeaf, TFile, Notice } from 'obsidian';
+import { Plugin, WorkspaceLeaf, TFile, Notice, Editor, MarkdownView, Menu } from 'obsidian';
 import { ChatView, CHAT_VIEW_TYPE } from './src/chatView';
 import { SettingsTab } from './src/settingsTab';
 import { DEFAULT_SETTINGS, type ObsidiClaudeSettings } from './src/types';
@@ -175,6 +175,146 @@ export default class ObsidiClaudePlugin extends Plugin {
       },
     });
 
+    // Add selection-based commands
+    this.addCommand({
+      id: 'ask-about-selection',
+      name: 'Ask Claude about selection',
+      editorCallback: (editor: Editor) => {
+        const selection = editor.getSelection();
+        if (!selection) {
+          new Notice('No text selected');
+          return;
+        }
+        this.sendToClaude(`Please explain or answer questions about the following:\n\n${selection}`);
+      },
+    });
+
+    this.addCommand({
+      id: 'summarize-selection',
+      name: 'Summarize selection',
+      editorCallback: (editor: Editor) => {
+        const selection = editor.getSelection();
+        if (!selection) {
+          new Notice('No text selected');
+          return;
+        }
+        this.sendToClaude(`Please provide a concise summary of the following:\n\n${selection}`);
+      },
+    });
+
+    this.addCommand({
+      id: 'improve-writing',
+      name: 'Improve writing',
+      editorCallback: (editor: Editor) => {
+        const selection = editor.getSelection();
+        if (!selection) {
+          new Notice('No text selected');
+          return;
+        }
+        this.sendToClaude(`Please improve the writing quality of the following text while preserving its meaning. Suggest the improved version:\n\n${selection}`);
+      },
+    });
+
+    this.addCommand({
+      id: 'fix-grammar',
+      name: 'Fix grammar and spelling',
+      editorCallback: (editor: Editor) => {
+        const selection = editor.getSelection();
+        if (!selection) {
+          new Notice('No text selected');
+          return;
+        }
+        this.sendToClaude(`Please fix any grammar and spelling errors in the following text:\n\n${selection}`);
+      },
+    });
+
+    this.addCommand({
+      id: 'explain-code',
+      name: 'Explain code',
+      editorCallback: (editor: Editor) => {
+        const selection = editor.getSelection();
+        if (!selection) {
+          new Notice('No text selected');
+          return;
+        }
+        this.sendToClaude(`Please explain what this code does:\n\n\`\`\`\n${selection}\n\`\`\``);
+      },
+    });
+
+    this.addCommand({
+      id: 'summarize-note',
+      name: 'Summarize current note',
+      editorCallback: (editor: Editor) => {
+        const content = editor.getValue();
+        if (!content) {
+          new Notice('Note is empty');
+          return;
+        }
+        const activeFile = this.app.workspace.getActiveFile();
+        const title = activeFile?.basename || 'this note';
+        this.sendToClaude(`Please summarize "${title}":\n\n${content.slice(0, 10000)}${content.length > 10000 ? '\n\n[Content truncated...]' : ''}`);
+      },
+    });
+
+    this.addCommand({
+      id: 'generate-from-selection',
+      name: 'Generate content from selection',
+      editorCallback: (editor: Editor) => {
+        const selection = editor.getSelection();
+        if (!selection) {
+          new Notice('No text selected');
+          return;
+        }
+        this.sendToClaude(`Based on the following outline/notes, please generate expanded content:\n\n${selection}`);
+      },
+    });
+
+    // Register editor context menu
+    this.registerEvent(
+      this.app.workspace.on('editor-menu', (menu: Menu, editor: Editor, view: MarkdownView) => {
+        const selection = editor.getSelection();
+        if (selection) {
+          menu.addSeparator();
+
+          menu.addItem((item) => {
+            item
+              .setTitle('Ask Claude about this')
+              .setIcon('message-circle')
+              .onClick(() => {
+                this.sendToClaude(`Please explain or answer questions about the following:\n\n${selection}`);
+              });
+          });
+
+          menu.addItem((item) => {
+            item
+              .setTitle('Summarize')
+              .setIcon('file-text')
+              .onClick(() => {
+                this.sendToClaude(`Please provide a concise summary of the following:\n\n${selection}`);
+              });
+          });
+
+          menu.addItem((item) => {
+            item
+              .setTitle('Improve writing')
+              .setIcon('pencil')
+              .onClick(() => {
+                this.sendToClaude(`Please improve the writing quality of the following text while preserving its meaning:\n\n${selection}`);
+              });
+          });
+
+          menu.addItem((item) => {
+            item
+              .setTitle('Fix grammar')
+              .setIcon('check-circle')
+              .onClick(() => {
+                this.sendToClaude(`Please fix any grammar and spelling errors in the following text:\n\n${selection}`);
+              });
+          });
+        }
+      })
+    );
+
     // Add settings tab
     this.addSettingTab(new SettingsTab(this.app, this));
 
@@ -232,6 +372,23 @@ export default class ObsidiClaudePlugin extends Plugin {
         await this.startMCPServer();
       }
     });
+  }
+
+  /**
+   * Send a message to Claude, opening the chat view if needed.
+   */
+  private async sendToClaude(message: string): Promise<void> {
+    await this.activateChatView();
+
+    // Get the chat view and send the message
+    const leaves = this.app.workspace.getLeavesOfType(CHAT_VIEW_TYPE);
+    if (leaves.length > 0) {
+      const chatView = leaves[0].view as ChatView;
+      // Use a small delay to ensure the view is ready
+      setTimeout(() => {
+        chatView.sendMessage(message);
+      }, 100);
+    }
   }
 
   private async initializeRAGService(): Promise<void> {
