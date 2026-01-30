@@ -1088,6 +1088,90 @@ pre:hover .code-copy-btn {
   color: var(--text-faint);
 }
 
+/* History panel header actions */
+.history-header-actions {
+  display: flex;
+  gap: 0.25rem;
+}
+
+/* Date group headers */
+.history-group-header {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  padding: 0.75rem 0.75rem 0.25rem;
+  margin-top: 0.5rem;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.history-group-header:first-child {
+  margin-top: 0;
+  border-top: none;
+}
+
+/* Conversation preview */
+.history-item-preview {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 0.25rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+/* Bulk select mode */
+.history-bulk-actions {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--background-modifier-hover);
+  border-radius: 6px;
+  margin-bottom: 0.5rem;
+  align-items: center;
+}
+
+.history-bulk-btn {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  cursor: pointer;
+  color: var(--text-normal);
+}
+
+.history-bulk-btn:hover {
+  background: var(--background-modifier-hover);
+}
+
+.history-bulk-delete {
+  color: var(--text-error);
+  border-color: var(--text-error);
+}
+
+.history-bulk-delete:hover {
+  background: var(--text-error);
+  color: var(--background-primary);
+}
+
+.history-bulk-count {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+.history-item-checkbox {
+  margin-right: 0.5rem;
+  flex-shrink: 0;
+}
+
+.history-item-selected {
+  background-color: var(--background-modifier-active-hover);
+}
+
 /* Rename modal */
 .obsidi-claude-rename-modal {
   position: fixed;

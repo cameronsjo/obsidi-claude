@@ -116,6 +116,7 @@ export class StorageService {
     updatedAt: number;
     tags?: string[];
     pinned?: boolean;
+    preview?: string;
   }>> {
     const indexPath = path.join(this.conversationsPath, 'index.json');
     try {
@@ -140,6 +141,7 @@ export class StorageService {
       updatedAt: number;
       tags?: string[];
       pinned?: boolean;
+      preview?: string;
     }>
   ): Promise<void> {
     const indexPath = path.join(this.conversationsPath, 'index.json');
@@ -205,6 +207,15 @@ export class StorageService {
     const index = await this.listConversations();
     const existing = index.findIndex((c) => c.id === conversation.id);
 
+    // Extract preview from last assistant message (truncated)
+    const lastAssistantMsg = [...conversation.messages]
+      .reverse()
+      .find(m => m.role === 'assistant' && m.content);
+    const preview = lastAssistantMsg?.content
+      ? lastAssistantMsg.content.slice(0, 100).replace(/\s+/g, ' ').trim() +
+        (lastAssistantMsg.content.length > 100 ? '...' : '')
+      : undefined;
+
     const meta = {
       id: conversation.id,
       title: conversation.title,
@@ -213,6 +224,7 @@ export class StorageService {
       updatedAt: conversation.updatedAt,
       tags: conversation.tags,
       pinned: conversation.pinned,
+      preview,
     };
 
     if (existing >= 0) {
