@@ -371,6 +371,8 @@ export interface ObsidiClaudeSettings {
   compactionInstructions?: string;
   /** MCP tool name for custom permission prompts (SDK only) */
   permissionPromptToolName?: string;
+  /** Saved prompt templates */
+  savedPrompts: SavedPrompt[];
 }
 
 /**
@@ -387,6 +389,20 @@ export interface HookSettings {
   showNotifications: boolean;
   /** Tools to always block (deny permission) */
   blockedTools: string[];
+}
+
+/**
+ * A saved prompt template with optional variable placeholders.
+ */
+export interface SavedPrompt {
+  id: string;
+  name: string;
+  category: string;
+  content: string;
+  /** Variable placeholders (e.g., {{selection}}, {{note}}) */
+  variables?: string[];
+  createdAt: number;
+  updatedAt: number;
 }
 
 /**
@@ -549,6 +565,7 @@ When the user asks about their notes, always search first to ground your respons
     showNotifications: false, // Don't show extra notifications by default
     blockedTools: [], // No blocked tools by default
   },
+  savedPrompts: [], // No saved prompts by default
 };
 
 export function generateId(): string {

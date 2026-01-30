@@ -2599,6 +2599,12 @@ export class ChatView extends ItemView {
         this.showSlashCommandHelp();
         return true;
 
+      case 'prompts':
+      case 'prompt': {
+        await this.handlePromptsCommand(args);
+        return true;
+      }
+
       case 'undo': {
         await this.handleUndoCommand(args);
         return true;
@@ -2800,6 +2806,156 @@ export class ChatView extends ItemView {
     }
   }
 
+  /**
+   * Handle /prompts command for managing saved prompts.
+   */
+  private async handlePromptsCommand(args: string): Promise<void> {
+    const parts = args.trim().split(/\s+/);
+    const action = parts[0]?.toLowerCase();
+    const nameArg = parts.slice(1).join(' ');
+
+    const savedPrompts = this.plugin.settings.savedPrompts || [];
+
+    // /prompts - list all
+    if (!action || action === 'list') {
+      if (savedPrompts.length === 0) {
+        this.showTemporaryStatus('No saved prompts. Use /prompts save <name> to create one.', 'info', 3000);
+        return;
+      }
+
+      const lines: string[] = ['**Saved Prompts:**\n'];
+      const byCategory = new Map<string, typeof savedPrompts>();
+
+      for (const prompt of savedPrompts) {
+        const cat = prompt.category || 'General';
+        if (!byCategory.has(cat)) byCategory.set(cat, []);
+        byCategory.get(cat)!.push(prompt);
+      }
+
+      for (const [category, prompts] of byCategory) {
+        lines.push(`**${category}:**`);
+        for (const p of prompts) {
+          const preview = p.content.slice(0, 50).replace(/\n/g, ' ') + (p.content.length > 50 ? '...' : '');
+          lines.push(`- **${p.name}**: ${preview}`);
+        }
+        lines.push('');
+      }
+
+      lines.push('*Use `/prompts use <name>` to insert a prompt*');
+
+      const msg: ChatMessage = {
+        id: generateId(),
+        role: 'assistant',
+        content: lines.join('\n'),
+        timestamp: Date.now(),
+      };
+      this.renderMessage(msg);
+      this.scrollToBottom(true);
+      return;
+    }
+
+    // /prompts use <name>
+    if (action === 'use' && nameArg) {
+      const prompt = savedPrompts.find(p => p.name.toLowerCase() === nameArg.toLowerCase());
+      if (!prompt) {
+        this.showTemporaryStatus(`Prompt "${nameArg}" not found`, 'error', 2000);
+        return;
+      }
+
+      // Replace variables
+      let content = prompt.content;
+      const activeFile = this.plugin.app.workspace.getActiveFile();
+
+      // {{selection}} - Editor selection
+      const activeView = this.plugin.app.workspace.getActiveViewOfType(MarkdownView);
+      if (activeView?.editor) {
+        content = content.replace(/\{\{selection\}\}/gi, activeView.editor.getSelection() || '');
+      }
+
+      // {{note}} - Current note content
+      if (activeFile) {
+        const noteContent = await this.plugin.app.vault.cachedRead(activeFile);
+        content = content.replace(/\{\{note\}\}/gi, noteContent.slice(0, 8000));
+        content = content.replace(/\{\{note_title\}\}/gi, activeFile.basename);
+      }
+
+      // {{clipboard}} - Clipboard content
+      try {
+        const clipboardText = await navigator.clipboard.readText();
+        content = content.replace(/\{\{clipboard\}\}/gi, clipboardText);
+      } catch {
+        content = content.replace(/\{\{clipboard\}\}/gi, '');
+      }
+
+      this.inputEl.value = content;
+      this.inputEl.focus();
+      this.showTemporaryStatus(`Loaded prompt: ${prompt.name}`, 'success', 2000);
+      return;
+    }
+
+    // /prompts save <name> [category]
+    if (action === 'save' && nameArg) {
+      const currentInput = this.inputEl.value.trim();
+      if (!currentInput) {
+        this.showTemporaryStatus('Nothing to save. Enter text in input first.', 'error', 2000);
+        return;
+      }
+
+      // Parse name and optional category: "name | category"
+      const [name, category] = nameArg.split('|').map(s => s.trim());
+
+      // Check for duplicate
+      const existingIdx = savedPrompts.findIndex(p => p.name.toLowerCase() === name.toLowerCase());
+
+      const newPrompt: import('./types').SavedPrompt = {
+        id: generateId(),
+        name,
+        category: category || 'General',
+        content: currentInput,
+        variables: this.extractVariables(currentInput),
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+
+      if (existingIdx >= 0) {
+        savedPrompts[existingIdx] = { ...savedPrompts[existingIdx], ...newPrompt, id: savedPrompts[existingIdx].id, createdAt: savedPrompts[existingIdx].createdAt };
+      } else {
+        savedPrompts.push(newPrompt);
+      }
+
+      this.plugin.settings.savedPrompts = savedPrompts;
+      await this.plugin.saveSettings();
+      this.showTemporaryStatus(`Saved prompt: ${name}`, 'success', 2000);
+      return;
+    }
+
+    // /prompts delete <name>
+    if ((action === 'delete' || action === 'remove') && nameArg) {
+      const idx = savedPrompts.findIndex(p => p.name.toLowerCase() === nameArg.toLowerCase());
+      if (idx < 0) {
+        this.showTemporaryStatus(`Prompt "${nameArg}" not found`, 'error', 2000);
+        return;
+      }
+
+      savedPrompts.splice(idx, 1);
+      this.plugin.settings.savedPrompts = savedPrompts;
+      await this.plugin.saveSettings();
+      this.showTemporaryStatus(`Deleted prompt: ${nameArg}`, 'success', 2000);
+      return;
+    }
+
+    this.showTemporaryStatus('Usage: /prompts, /prompts use <name>, /prompts save <name>, /prompts delete <name>', 'info', 4000);
+  }
+
+  /**
+   * Extract variable placeholders from prompt content.
+   */
+  private extractVariables(content: string): string[] {
+    const matches = content.match(/\{\{(\w+)\}\}/g);
+    if (!matches) return [];
+    return [...new Set(matches.map(m => m.slice(2, -2)))];
+  }
+
   private showSlashCommandHelp(): void {
     const helpText = `
 **Conversation:**
@@ -2845,6 +3001,12 @@ export class ChatView extends ItemView {
 
 **Skills:**
 - \`/skills\` - List available skills and their triggers
+
+**Prompts:**
+- \`/prompts\` - List saved prompt templates
+- \`/prompts use <name>\` - Insert a saved prompt
+- \`/prompts save <name>\` - Save current input as prompt
+- \`/prompts delete <name>\` - Delete a saved prompt
 
 **Permissions (SDK only):**
 - \`/mode\` - Show current permission mode
