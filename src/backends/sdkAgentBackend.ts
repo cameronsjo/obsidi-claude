@@ -280,6 +280,7 @@ export class SDKAgentBackend implements AgentBackend {
           tools: agent.tools,
           disallowedTools: agent.disallowedTools,
           skills: agent.skills,
+          mcpServers: agent.mcpServers,
           maxTurns: agent.maxTurns,
         };
       }
@@ -606,6 +607,8 @@ export class SDKAgentBackend implements AgentBackend {
         hooks,
         // Structured output format (JSON Schema)
         outputFormat: options?.outputFormat,
+        // Custom permission prompt routing via MCP tool
+        permissionPromptToolName: this.settings.permissionPromptToolName || undefined,
       };
 
       // Build MCP servers config
@@ -616,16 +619,41 @@ export class SDKAgentBackend implements AgentBackend {
         log.debug('Added Obsidian MCP server');
       }
 
-      // Add external MCP servers from settings
+      // Add external MCP servers from settings (supporting stdio, http, sse transports)
       for (const server of this.settings.externalMcpServers) {
         if (server.enabled) {
-          mcpServers[server.name] = {
-            type: 'stdio',
-            command: server.command,
-            args: server.args,
-            env: server.env,
-          };
-          log.debug('Added external MCP server', { name: server.name });
+          const transport = server.transport || 'stdio';
+
+          if (transport === 'http' && server.url) {
+            mcpServers[server.name] = {
+              type: 'http',
+              url: server.url,
+              headers: server.headers,
+            };
+            log.debug('Added HTTP MCP server', { name: server.name, url: server.url });
+          } else if (transport === 'sse' && server.url) {
+            mcpServers[server.name] = {
+              type: 'sse',
+              url: server.url,
+              headers: server.headers,
+            };
+            log.debug('Added SSE MCP server', { name: server.name, url: server.url });
+          } else if (transport === 'stdio' && server.command) {
+            mcpServers[server.name] = {
+              type: 'stdio',
+              command: server.command,
+              args: server.args || [],
+              env: server.env,
+            };
+            log.debug('Added stdio MCP server', { name: server.name, command: server.command });
+          } else {
+            log.warn('Invalid MCP server configuration, skipping', {
+              name: server.name,
+              transport,
+              hasUrl: !!server.url,
+              hasCommand: !!server.command,
+            });
+          }
         }
       }
 

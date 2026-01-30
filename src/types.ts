@@ -142,11 +142,28 @@ export interface MCPSettings {
   httpPort: number;
 }
 
+/**
+ * Transport type for MCP servers.
+ * - stdio: Local process with stdin/stdout (default)
+ * - http: HTTP/REST-based server
+ * - sse: Server-Sent Events streaming
+ */
+export type MCPTransportType = 'stdio' | 'http' | 'sse';
+
 export interface ExternalMCPServer {
   name: string;
-  command: string;
-  args: string[];
+  /** Transport type (default: stdio) */
+  transport?: MCPTransportType;
+  /** For stdio: command to execute */
+  command?: string;
+  /** For stdio: command arguments */
+  args?: string[];
+  /** For stdio: environment variables */
   env?: Record<string, string>;
+  /** For http/sse: server URL */
+  url?: string;
+  /** For http/sse: optional HTTP headers */
+  headers?: Record<string, string>;
   enabled: boolean;
 }
 
@@ -189,6 +206,20 @@ export const DEFAULT_SKILL_SETTINGS: SkillSettings = {
 /**
  * Custom subagent definition (mirrors SDK AgentDefinition)
  */
+/**
+ * MCP server specification for per-agent configuration.
+ * Can be either a string (referencing a pre-configured server by name)
+ * or an inline configuration object.
+ */
+export type AgentMcpServerSpec = string | Record<string, {
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  type?: 'stdio' | 'http' | 'sse';
+  url?: string;
+  headers?: Record<string, string>;
+}>;
+
 export interface CustomAgent {
   /** Unique identifier for the agent */
   name: string;
@@ -204,6 +235,8 @@ export interface CustomAgent {
   disallowedTools?: string[];
   /** Array of skill names to preload into agent context */
   skills?: string[];
+  /** MCP servers available to this agent (names or inline configs) */
+  mcpServers?: AgentMcpServerSpec[];
   /** Maximum agentic turns before stopping */
   maxTurns?: number;
   /** Whether this agent is enabled */
@@ -336,6 +369,8 @@ export interface ObsidiClaudeSettings {
   hooks: HookSettings;
   /** Custom instructions for context compaction (SDK only) */
   compactionInstructions?: string;
+  /** MCP tool name for custom permission prompts (SDK only) */
+  permissionPromptToolName?: string;
 }
 
 /**
