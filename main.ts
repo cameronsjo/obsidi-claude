@@ -383,6 +383,85 @@ export default class ObsidiClaudePlugin extends Plugin {
       })
     );
 
+    // Register file explorer context menu
+    this.registerEvent(
+      this.app.workspace.on('file-menu', (menu: Menu, file) => {
+        if (file instanceof TFile && file.extension === 'md') {
+          menu.addSeparator();
+
+          menu.addItem((item) => {
+            item
+              .setTitle('Ask Claude about note')
+              .setIcon('message-circle')
+              .onClick(async () => {
+                const content = await this.app.vault.read(file);
+                this.sendToClaude(`Please analyze this note "${file.basename}":\n\n${content.slice(0, 10000)}`);
+              });
+          });
+
+          menu.addItem((item) => {
+            item
+              .setTitle('Summarize note')
+              .setIcon('file-text')
+              .onClick(async () => {
+                const content = await this.app.vault.read(file);
+                this.sendToClaude(`Please summarize this note "${file.basename}":\n\n${content.slice(0, 10000)}`);
+              });
+          });
+
+          menu.addItem((item) => {
+            item
+              .setTitle('Suggest links for note')
+              .setIcon('link')
+              .onClick(async () => {
+                this.sendToClaude(`Use the suggest_links tool to find related notes that should be linked to "${file.path}".`);
+              });
+          });
+
+          menu.addItem((item) => {
+            item
+              .setTitle('Suggest tags for note')
+              .setIcon('tag')
+              .onClick(async () => {
+                this.sendToClaude(`Use the suggest_tags tool to suggest relevant tags for "${file.path}".`);
+              });
+          });
+        }
+
+        // Folder context menu items
+        if (!(file instanceof TFile) && 'children' in file) {
+          menu.addSeparator();
+
+          menu.addItem((item) => {
+            item
+              .setTitle('Find orphan notes in folder')
+              .setIcon('file-question')
+              .onClick(() => {
+                this.sendToClaude(`Use the find_orphan_notes tool to find notes with no links in the "${file.path}" folder.`);
+              });
+          });
+
+          menu.addItem((item) => {
+            item
+              .setTitle('Analyze folder structure')
+              .setIcon('folder-tree')
+              .onClick(() => {
+                this.sendToClaude(`Please analyze the structure of the "${file.path}" folder. List its main topics, suggest improvements to organization, and identify any gaps.`);
+              });
+          });
+
+          menu.addItem((item) => {
+            item
+              .setTitle('Create MOC for folder')
+              .setIcon('map')
+              .onClick(() => {
+                this.sendToClaude(`Create a Map of Content (MOC) note for the "${file.path}" folder. Use the vault_structure and get_backlinks tools to understand the connections.`);
+              });
+          });
+        }
+      })
+    );
+
     // Add settings tab
     this.addSettingTab(new SettingsTab(this.app, this));
 
