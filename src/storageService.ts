@@ -112,6 +112,8 @@ export class StorageService {
     messageCount: number;
     createdAt: number;
     updatedAt: number;
+    tags?: string[];
+    pinned?: boolean;
   }>> {
     const indexPath = path.join(this.conversationsPath, 'index.json');
     try {
@@ -134,6 +136,8 @@ export class StorageService {
       messageCount: number;
       createdAt: number;
       updatedAt: number;
+      tags?: string[];
+      pinned?: boolean;
     }>
   ): Promise<void> {
     const indexPath = path.join(this.conversationsPath, 'index.json');
@@ -205,6 +209,8 @@ export class StorageService {
       messageCount: conversation.messages.length,
       createdAt: conversation.createdAt,
       updatedAt: conversation.updatedAt,
+      tags: conversation.tags,
+      pinned: conversation.pinned,
     };
 
     if (existing >= 0) {
@@ -213,8 +219,12 @@ export class StorageService {
       index.unshift(meta); // Add to beginning
     }
 
-    // Sort by updatedAt descending
-    index.sort((a, b) => b.updatedAt - a.updatedAt);
+    // Sort: pinned first, then by updatedAt descending
+    index.sort((a, b) => {
+      if (a.pinned && !b.pinned) return -1;
+      if (!a.pinned && b.pinned) return 1;
+      return b.updatedAt - a.updatedAt;
+    });
 
     await this.saveConversationIndex(index);
   }
@@ -277,6 +287,73 @@ export class StorageService {
 
     // No current conversation, create one
     return this.createConversation();
+  }
+
+  /**
+   * Rename a conversation
+   */
+  async renameConversation(id: string, newTitle: string): Promise<boolean> {
+    const conversation = await this.loadConversation(id);
+    if (!conversation) {
+      log.warn('Cannot rename: conversation not found', { id });
+      return false;
+    }
+
+    conversation.title = newTitle;
+    conversation.updatedAt = Date.now();
+    await this.saveConversation(conversation);
+    log.info('Renamed conversation', { id, newTitle });
+    return true;
+  }
+
+  /**
+   * Toggle pin status of a conversation
+   */
+  async togglePin(id: string): Promise<boolean> {
+    const conversation = await this.loadConversation(id);
+    if (!conversation) {
+      log.warn('Cannot toggle pin: conversation not found', { id });
+      return false;
+    }
+
+    conversation.pinned = !conversation.pinned;
+    conversation.updatedAt = Date.now();
+    await this.saveConversation(conversation);
+    log.info('Toggled pin status', { id, pinned: conversation.pinned });
+    return conversation.pinned ?? false;
+  }
+
+  /**
+   * Update tags on a conversation
+   */
+  async updateTags(id: string, tags: string[]): Promise<boolean> {
+    const conversation = await this.loadConversation(id);
+    if (!conversation) {
+      log.warn('Cannot update tags: conversation not found', { id });
+      return false;
+    }
+
+    conversation.tags = tags;
+    conversation.updatedAt = Date.now();
+    await this.saveConversation(conversation);
+    log.info('Updated conversation tags', { id, tags });
+    return true;
+  }
+
+  /**
+   * Get all unique tags across conversations
+   */
+  async getAllTags(): Promise<string[]> {
+    const conversations = await this.listConversations();
+    const tagSet = new Set<string>();
+    for (const conv of conversations) {
+      if (conv.tags) {
+        for (const tag of conv.tags) {
+          tagSet.add(tag);
+        }
+      }
+    }
+    return Array.from(tagSet).sort();
   }
 
   /**

@@ -1,3 +1,8 @@
+/**
+ * User reaction to a message (thumbs up/down for feedback collection)
+ */
+export type MessageReaction = 'up' | 'down' | null;
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
@@ -5,6 +10,8 @@ export interface ChatMessage {
   timestamp: number;
   toolCalls?: ToolCallInfo[];
   isStreaming?: boolean;
+  /** User feedback reaction */
+  reaction?: MessageReaction;
 }
 
 export interface ToolCallInfo {
@@ -35,6 +42,10 @@ export interface Conversation {
   metadata?: ConversationMetadata;
   createdAt: number;
   updatedAt: number;
+  /** User-defined tags for organization */
+  tags?: string[];
+  /** Pinned conversations appear at top of history */
+  pinned?: boolean;
 }
 
 export type EmbeddingProviderType =

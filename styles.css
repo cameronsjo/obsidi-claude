@@ -955,6 +955,144 @@ pre:hover .code-copy-btn {
   color: var(--text-error);
 }
 
+/* Pinned conversation styles */
+.history-item-pinned {
+  background-color: var(--background-modifier-success-hover, rgba(0, 128, 0, 0.05));
+  border-left: 2px solid var(--interactive-accent);
+}
+
+.history-item-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.history-pin-indicator {
+  color: var(--interactive-accent);
+  flex-shrink: 0;
+}
+
+.history-pin-indicator svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* Conversation tags */
+.history-item-tags {
+  display: flex;
+  gap: 0.25rem;
+  margin-top: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.history-tag {
+  font-size: 0.65rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 10px;
+  background-color: var(--background-modifier-border);
+  color: var(--text-muted);
+}
+
+.history-tag-more {
+  font-size: 0.65rem;
+  color: var(--text-faint);
+}
+
+/* Rename modal */
+.obsidi-claude-rename-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rename-modal-backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+}
+
+.rename-modal-content {
+  position: relative;
+  background-color: var(--background-primary);
+  border-radius: 12px;
+  padding: 1.5rem;
+  min-width: 300px;
+  max-width: 400px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.rename-modal-content h3 {
+  margin: 0 0 1rem 0;
+  font-size: 1.1rem;
+}
+
+.rename-input {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background-color: var(--background-secondary);
+  color: var(--text-normal);
+  font-size: 0.95rem;
+  margin-bottom: 1rem;
+}
+
+.rename-input:focus {
+  outline: none;
+  border-color: var(--interactive-accent);
+}
+
+.rename-modal-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.rename-modal-actions button {
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.rename-save {
+  background-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border: none;
+}
+
+.rename-cancel {
+  background-color: var(--background-secondary);
+  color: var(--text-normal);
+  border: 1px solid var(--background-modifier-border);
+}
+
+/* Message reactions */
+.reaction-btn {
+  transition: transform 0.1s ease, color 0.1s ease;
+}
+
+.reaction-btn:hover {
+  transform: scale(1.1);
+}
+
+.reaction-btn.reaction-active {
+  color: var(--interactive-accent) !important;
+}
+
+.reaction-btn.reaction-active svg {
+  fill: currentColor;
+}
+
 /* Settings styles */
 .obsidi-claude-settings {
   max-width: 800px;

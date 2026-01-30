@@ -540,11 +540,32 @@ export class ChatView extends ItemView {
       if (conv.id === this.conversation.id) {
         item.addClass('history-item-active');
       }
+      if (conv.pinned) {
+        item.addClass('history-item-pinned');
+      }
 
       const info = item.createDiv('history-item-info');
 
-      const title = info.createDiv('history-item-title');
+      // Title row with pin indicator
+      const titleRow = info.createDiv('history-item-title-row');
+      if (conv.pinned) {
+        const pinIcon = titleRow.createSpan('history-pin-indicator');
+        setIcon(pinIcon, 'pin');
+      }
+      const title = titleRow.createSpan('history-item-title');
       title.setText(conv.title || 'Untitled');
+
+      // Tags row (if any)
+      if (conv.tags && conv.tags.length > 0) {
+        const tagsRow = info.createDiv('history-item-tags');
+        for (const tag of conv.tags.slice(0, 3)) { // Show max 3 tags
+          const tagEl = tagsRow.createSpan('history-tag');
+          tagEl.setText(tag);
+        }
+        if (conv.tags.length > 3) {
+          tagsRow.createSpan('history-tag-more').setText(`+${conv.tags.length - 3}`);
+        }
+      }
 
       const meta = info.createDiv('history-item-meta');
       const date = new Date(conv.updatedAt);
@@ -556,6 +577,28 @@ export class ChatView extends ItemView {
 
       // Actions
       const actions = item.createDiv('history-item-actions');
+
+      // Pin/unpin button
+      const pinBtn = actions.createEl('button', {
+        cls: 'history-action-btn',
+        attr: { 'aria-label': conv.pinned ? 'Unpin conversation' : 'Pin conversation' },
+      });
+      setIcon(pinBtn, conv.pinned ? 'pin-off' : 'pin');
+      pinBtn.onclick = (e) => {
+        e.stopPropagation();
+        this.togglePinConversation(conv.id);
+      };
+
+      // Rename button
+      const renameBtn = actions.createEl('button', {
+        cls: 'history-action-btn',
+        attr: { 'aria-label': 'Rename conversation' },
+      });
+      setIcon(renameBtn, 'pencil');
+      renameBtn.onclick = (e) => {
+        e.stopPropagation();
+        this.promptRenameConversation(conv.id, conv.title);
+      };
 
       // Continue button (if has session)
       const continueBtn = actions.createEl('button', {
@@ -594,6 +637,87 @@ export class ChatView extends ItemView {
     if (diffDays < 7) return `${diffDays}d ago`;
 
     return date.toLocaleDateString();
+  }
+
+  private async togglePinConversation(id: string): Promise<void> {
+    const isPinned = await this.plugin.storage.togglePin(id);
+    this.showTemporaryStatus(isPinned ? 'Conversation pinned' : 'Conversation unpinned', 'success', 1500);
+    await this.refreshHistoryList();
+
+    // Update current conversation if it's the one being pinned
+    if (this.conversation.id === id) {
+      this.conversation.pinned = isPinned;
+    }
+  }
+
+  private async promptRenameConversation(id: string, currentTitle: string): Promise<void> {
+    // Create a simple modal for renaming using safe DOM methods
+    const modal = document.createElement('div');
+    modal.className = 'obsidi-claude-rename-modal';
+
+    const backdrop = document.createElement('div');
+    backdrop.className = 'rename-modal-backdrop';
+    modal.appendChild(backdrop);
+
+    const content = document.createElement('div');
+    content.className = 'rename-modal-content';
+
+    const heading = document.createElement('h3');
+    heading.textContent = 'Rename Conversation';
+    content.appendChild(heading);
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'rename-input';
+    input.value = currentTitle;
+    content.appendChild(input);
+
+    const actions = document.createElement('div');
+    actions.className = 'rename-modal-actions';
+
+    const saveBtn = document.createElement('button');
+    saveBtn.className = 'mod-cta rename-save';
+    saveBtn.textContent = 'Save';
+    actions.appendChild(saveBtn);
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'rename-cancel';
+    cancelBtn.textContent = 'Cancel';
+    actions.appendChild(cancelBtn);
+
+    content.appendChild(actions);
+    modal.appendChild(content);
+    document.body.appendChild(modal);
+
+    const closeModal = () => modal.remove();
+
+    const saveRename = async () => {
+      const newTitle = input.value.trim();
+      if (newTitle && newTitle !== currentTitle) {
+        await this.plugin.storage.renameConversation(id, newTitle);
+        this.showTemporaryStatus('Conversation renamed', 'success', 1500);
+        await this.refreshHistoryList();
+
+        // Update current conversation title if it's the one being renamed
+        if (this.conversation.id === id) {
+          this.conversation.title = newTitle;
+          this.updateTitle();
+        }
+      }
+      closeModal();
+    };
+
+    input.focus();
+    input.select();
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') saveRename();
+      if (e.key === 'Escape') closeModal();
+    });
+
+    saveBtn.onclick = saveRename;
+    cancelBtn.onclick = closeModal;
+    backdrop.onclick = closeModal;
   }
 
   private async loadConversationById(id: string): Promise<void> {
@@ -850,8 +974,31 @@ export class ChatView extends ItemView {
       setTimeout(() => setIcon(copyBtn, 'copy'), 1500);
     };
 
-    // Only show regenerate for assistant messages
+    // Only show regenerate and reactions for assistant messages
     if (msg.role === 'assistant') {
+      // Thumbs up reaction
+      const thumbsUpBtn = container.createEl('button', {
+        cls: `message-action-btn reaction-btn ${msg.reaction === 'up' ? 'reaction-active' : ''}`,
+        attr: { 'aria-label': 'Good response' }
+      });
+      setIcon(thumbsUpBtn, 'thumbs-up');
+      thumbsUpBtn.onclick = (e) => {
+        e.stopPropagation();
+        this.toggleReaction(msg.id, 'up');
+      };
+
+      // Thumbs down reaction
+      const thumbsDownBtn = container.createEl('button', {
+        cls: `message-action-btn reaction-btn ${msg.reaction === 'down' ? 'reaction-active' : ''}`,
+        attr: { 'aria-label': 'Poor response' }
+      });
+      setIcon(thumbsDownBtn, 'thumbs-down');
+      thumbsDownBtn.onclick = (e) => {
+        e.stopPropagation();
+        this.toggleReaction(msg.id, 'down');
+      };
+
+      // Regenerate button
       const regenBtn = container.createEl('button', {
         cls: 'message-action-btn',
         attr: { 'aria-label': 'Regenerate response' }
@@ -873,6 +1020,27 @@ export class ChatView extends ItemView {
         }
       };
     }
+  }
+
+  private async toggleReaction(messageId: string, reaction: 'up' | 'down'): Promise<void> {
+    const msg = this.conversation.messages.find(m => m.id === messageId);
+    if (!msg) return;
+
+    // Toggle: if same reaction, clear it; otherwise set new reaction
+    msg.reaction = msg.reaction === reaction ? null : reaction;
+
+    // Re-render the message to update button states
+    const msgEl = this.messageElements.get(messageId);
+    if (msgEl) {
+      const actionsDiv = msgEl.querySelector('.message-actions') as HTMLElement;
+      if (actionsDiv) {
+        actionsDiv.empty();
+        this.createMessageActions(actionsDiv, msg);
+      }
+    }
+
+    // Save the conversation
+    await this.saveConversation();
   }
 
   private renderToolCall(container: HTMLElement, tool: ToolCallInfo): void {
