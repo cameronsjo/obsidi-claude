@@ -6,6 +6,7 @@ import {
   Component,
   setIcon,
   Notice,
+  Menu,
 } from 'obsidian';
 import { PermissionModal } from './chatViewModals';
 import { executeCommand, getCommandList, type ChatViewCommandContext } from './chatViewCommands';
@@ -325,71 +326,106 @@ export class ChatView extends ItemView {
   }
 
   private createHeader(header: HTMLElement): void {
-    // History toggle button
-    const historyBtn = header.createEl('button', {
+    // Left section: History toggle
+    const leftSection = header.createDiv('header-left');
+
+    const historyBtn = leftSection.createEl('button', {
       cls: 'chat-action-btn chat-history-btn',
       attr: { 'aria-label': 'Conversation history' },
     });
-    setIcon(historyBtn, 'history');
+    setIcon(historyBtn, 'menu');
     historyBtn.onclick = () => this._toggleHistory();
 
-    // Title (clickable to show history)
-    this.chatTitleEl = header.createDiv('chat-title');
+    // Center section: Title + subtle status indicators
+    const centerSection = header.createDiv('header-center');
+
+    this.chatTitleEl = centerSection.createDiv('chat-title');
     this.chatTitleEl.setText('Claude Chat');
     this.chatTitleEl.onclick = () => this._toggleHistory();
 
-    // Backend indicator badge
-    this.backendBadge = header.createDiv('backend-badge');
+    // Status indicators (subtle, inline with title area)
+    const statusIndicators = centerSection.createDiv('header-status');
+
+    // Backend indicator badge (smaller, more subtle)
+    this.backendBadge = statusIndicators.createDiv('backend-badge');
     this.updateBackendBadge();
 
-    // Account info badge (SDK only)
-    this.accountBadge = header.createDiv('account-badge');
-    this.accountBadge.style.display = 'none';
-
-    // Ephemeral mode badge
-    this.ephemeralBadge = header.createDiv('ephemeral-badge');
+    // Ephemeral mode indicator
+    this.ephemeralBadge = statusIndicators.createDiv('ephemeral-badge');
     this.ephemeralBadge.setText('🔒');
     this.ephemeralBadge.setAttribute('aria-label', 'Ephemeral mode - sessions not saved');
     this.updateEphemeralBadge();
 
-    // Active note context badge
-    this.contextBadge = header.createDiv('context-badge');
-    this.contextBadge.setAttribute('aria-label', 'Active note will be included as context');
+    // Context indicator (shows when active note context is on)
+    this.contextBadge = statusIndicators.createDiv('context-badge');
+    this.contextBadge.setAttribute('aria-label', 'Active note included as context');
     this.updateContextBadge();
 
-    const actionsEl = header.createDiv('chat-actions');
+    // Account badge (hidden, kept for API compatibility)
+    this.accountBadge = statusIndicators.createDiv('account-badge');
+    this.accountBadge.style.display = 'none';
 
-    // Search button
-    const searchBtn = actionsEl.createEl('button', {
-      cls: 'chat-action-btn',
-      attr: { 'aria-label': 'Search messages' },
-    });
-    setIcon(searchBtn, 'search');
-    searchBtn.onclick = () => this._toggleSearch();
+    // Right section: Primary actions
+    const rightSection = header.createDiv('header-right');
 
-    // New conversation button
-    const newBtn = actionsEl.createEl('button', {
-      cls: 'chat-action-btn',
+    // New conversation (primary action, slightly emphasized)
+    const newBtn = rightSection.createEl('button', {
+      cls: 'chat-action-btn chat-new-btn',
       attr: { 'aria-label': 'New conversation' },
     });
     setIcon(newBtn, 'plus');
     newBtn.onclick = () => this._newConversation();
 
-    // Export button
-    const exportBtn = actionsEl.createEl('button', {
+    // More menu (contains secondary actions)
+    const moreBtn = rightSection.createEl('button', {
       cls: 'chat-action-btn',
-      attr: { 'aria-label': 'Export as note' },
+      attr: { 'aria-label': 'More options' },
     });
-    setIcon(exportBtn, 'file-down');
-    exportBtn.onclick = () => this.exportConversation();
+    setIcon(moreBtn, 'more-vertical');
+    moreBtn.onclick = (e) => this.showHeaderMenu(e);
+  }
 
-    // Clear button
-    const clearBtn = actionsEl.createEl('button', {
-      cls: 'chat-action-btn',
-      attr: { 'aria-label': 'Clear messages' },
+  /**
+   * Show the header "more" menu with secondary actions
+   */
+  private showHeaderMenu(e: MouseEvent): void {
+    const menu = new Menu();
+
+    menu.addItem((item) => {
+      item.setTitle('Search messages')
+        .setIcon('search')
+        .onClick(() => this._toggleSearch());
     });
-    setIcon(clearBtn, 'trash-2');
-    clearBtn.onclick = () => this._clearMessages();
+
+    menu.addSeparator();
+
+    menu.addItem((item) => {
+      item.setTitle('Export as note')
+        .setIcon('file-down')
+        .onClick(() => this.exportConversation());
+    });
+
+    menu.addItem((item) => {
+      item.setTitle('Copy to clipboard')
+        .setIcon('clipboard-copy')
+        .onClick(() => this.copyToClipboard());
+    });
+
+    menu.addSeparator();
+
+    menu.addItem((item) => {
+      item.setTitle('Rename conversation')
+        .setIcon('pencil')
+        .onClick(() => this.promptRenameConversation(this.conversation.id, this.conversation.title));
+    });
+
+    menu.addItem((item) => {
+      item.setTitle('Clear messages')
+        .setIcon('trash-2')
+        .onClick(() => this._clearMessages());
+    });
+
+    menu.showAtMouseEvent(e);
   }
 
   private createHistoryPanel(panel: HTMLElement): void {
