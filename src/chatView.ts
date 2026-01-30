@@ -2311,7 +2311,7 @@ export class ChatView extends ItemView {
         return true;
 
       case 'export':
-        await this.exportConversation();
+        await this.handleExportCommand(args);
         return true;
 
       case 'note': {
@@ -2804,6 +2804,8 @@ export class ChatView extends ItemView {
 - \`/clear\` - Clear all messages
 - \`/copy\` - Copy conversation to clipboard
 - \`/export\` - Export as markdown note
+- \`/export clipboard\` - Copy conversation to clipboard
+- \`/export json\` - Export as JSON file
 - \`/duplicate\` - Fork conversation (create editable copy)
 - \`/undo\` - Rewind file changes to last checkpoint (SDK only)
 - \`/undo --dry-run\` - Preview what /undo would restore
@@ -4419,6 +4421,106 @@ ${content}
       log.info('Conversation exported', { path: filePath });
     } catch (error) {
       log.error('Failed to export conversation', error);
+      this.setStatus('Export failed', 'error');
+    }
+  }
+
+  /**
+   * Handle /export command with format options.
+   */
+  private async handleExportCommand(args: string): Promise<void> {
+    if (this.conversation.messages.length === 0) {
+      this.showTemporaryStatus('No messages to export', 'info', 2000);
+      return;
+    }
+
+    const format = args.toLowerCase().trim();
+
+    switch (format) {
+      case 'clipboard':
+      case 'copy':
+        await this.exportToClipboard();
+        break;
+      case 'json':
+        await this.exportToJson();
+        break;
+      case 'md':
+      case 'markdown':
+      case '':
+        await this.exportConversation();
+        break;
+      default:
+        this.showTemporaryStatus('Unknown format. Use: /export [clipboard|json|markdown]', 'info', 3000);
+    }
+  }
+
+  /**
+   * Export conversation to clipboard as markdown.
+   */
+  private async exportToClipboard(): Promise<void> {
+    const lines: string[] = [];
+    lines.push(`# ${this.conversation.title}`);
+    lines.push('');
+
+    for (const msg of this.conversation.messages) {
+      const role = msg.role === 'user' ? '**You**' : '**Claude**';
+      lines.push(`### ${role}`);
+      lines.push('');
+      lines.push(msg.content);
+      lines.push('');
+      lines.push('---');
+      lines.push('');
+    }
+
+    await navigator.clipboard.writeText(lines.join('\n'));
+    this.showTemporaryStatus('Copied to clipboard', 'success', 2000);
+  }
+
+  /**
+   * Export conversation to JSON file.
+   */
+  private async exportToJson(): Promise<void> {
+    const exportData = {
+      id: this.conversation.id,
+      title: this.conversation.title,
+      createdAt: this.conversation.createdAt,
+      exportedAt: Date.now(),
+      model: this.plugin.settings.model,
+      messages: this.conversation.messages.map(m => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        timestamp: m.timestamp,
+        toolCalls: m.toolCalls,
+      })),
+    };
+
+    const content = JSON.stringify(exportData, null, 2);
+
+    const sanitizedTitle = this.conversation.title
+      .replace(/[\\/:*?"<>|]/g, '-')
+      .slice(0, 50);
+    const filename = `Claude Chat - ${sanitizedTitle}.json`;
+
+    const folderPath = 'Claude Exports';
+    const folder = this.plugin.app.vault.getAbstractFileByPath(folderPath);
+    if (!folder) {
+      await this.plugin.app.vault.createFolder(folderPath);
+    }
+
+    const filePath = `${folderPath}/${filename}`;
+
+    try {
+      const existingFile = this.plugin.app.vault.getAbstractFileByPath(filePath);
+      if (existingFile) {
+        await this.plugin.app.vault.modify(existingFile as import('obsidian').TFile, content);
+      } else {
+        await this.plugin.app.vault.create(filePath, content);
+      }
+
+      this.showTemporaryStatus(`Exported JSON to "${filename}"`, 'success');
+    } catch (error) {
+      log.error('Failed to export JSON', error);
       this.setStatus('Export failed', 'error');
     }
   }
