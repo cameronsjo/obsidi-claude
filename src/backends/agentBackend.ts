@@ -25,6 +25,15 @@ export interface AvailableModel {
 }
 
 /**
+ * JSON Schema output format for structured responses.
+ */
+export interface JsonSchemaOutputFormat {
+  type: 'json_schema';
+  /** JSON Schema definition for the expected output structure */
+  schema: Record<string, unknown>;
+}
+
+/**
  * Options for sending a message
  */
 export interface BackendOptions {
@@ -44,6 +53,8 @@ export interface BackendOptions {
   displayContent?: string;
   /** Images to attach to the message (multimodal) */
   images?: ImageAttachment[];
+  /** Output format for structured responses (SDK backend only) */
+  outputFormat?: JsonSchemaOutputFormat;
 }
 
 /**
@@ -55,6 +66,8 @@ export interface AgentResult {
   inputTokens?: number;
   outputTokens?: number;
   errors?: string[];
+  /** Structured output when outputFormat was specified (SDK backend only) */
+  structuredOutput?: unknown;
 }
 
 /**
@@ -79,6 +92,16 @@ export interface AgentCallbacks {
   onSdkUuid?: (messageId: string, uuid: string) => void;
   /** Called when files are persisted by Claude (SDK backend only, for vault sync) */
   onFilesPersisted?: (filenames: string[]) => void;
+  /** Called when a tool use summary is available (SDK backend only) */
+  onToolSummary?: (messageId: string, summary: string) => void;
+  /** Called when structured output is available (SDK backend only) */
+  onStructuredOutput?: (output: unknown) => void;
+  /** Called when a background task (subagent) status changes (SDK backend only) */
+  onTaskNotification?: (taskId: string, status: 'completed' | 'failed' | 'stopped', summary: string, outputFile: string) => void;
+  /** Called when context compaction starts/ends (SDK backend only) */
+  onCompactionStatus?: (status: 'compacting' | null) => void;
+  /** Called when compaction boundary is recorded (SDK backend only) */
+  onCompactionBoundary?: (trigger: 'manual' | 'auto', preTokens: number) => void;
 }
 
 /**

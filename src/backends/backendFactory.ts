@@ -2,7 +2,7 @@ import { Platform } from 'obsidian';
 import type { ObsidiClaudeSettings } from '../types';
 import type { ObsidianTools } from '../obsidianTools';
 import type { AgentBackend } from './agentBackend';
-import { SDKAgentBackend } from './sdkAgentBackend';
+import { SDKAgentBackend, type HookCallbacks } from './sdkAgentBackend';
 import { APIAgentBackend } from './apiAgentBackend';
 import { createLogger } from '../logger';
 
@@ -135,6 +135,14 @@ export class BackendFactory {
    */
   isSDKAvailable(): boolean {
     return Platform.isDesktopApp && (this.getSDKBackend()?.isAvailable() ?? false);
+  }
+
+  /**
+   * Set hook callbacks for the SDK backend.
+   * This enables vault refresh, notifications, etc.
+   */
+  setHookCallbacks(callbacks: HookCallbacks): void {
+    this.sdkBackend?.setHookCallbacks(callbacks);
   }
 
   /**

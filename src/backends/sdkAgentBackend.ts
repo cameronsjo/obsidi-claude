@@ -9,6 +9,19 @@ import {
   type Query,
   type AccountInfo,
   type RewindFilesResult,
+  type HookEvent,
+  type HookCallbackMatcher,
+  type HookInput,
+  type HookJSONOutput,
+  type PostToolUseHookInput,
+  type PreToolUseHookInput,
+  type NotificationHookInput,
+  type PreCompactHookInput,
+  type SDKResultSuccess,
+  type SDKTaskNotificationMessage,
+  type SDKCompactBoundaryMessage,
+  type SDKStatusMessage,
+  type SDKStatus,
 } from '@anthropic-ai/claude-agent-sdk';
 import type { ObsidiClaudeSettings, Conversation, ToolCallInfo } from '../types';
 import { BUILTIN_AGENTS } from '../types';
@@ -39,6 +52,20 @@ let cachedCliPath: string | null = null;
  * Uses the Claude Agent SDK which spawns Claude Code CLI as a subprocess.
  * Provides full feature set: session resume, MCP servers, hooks, subagents.
  */
+/**
+ * Callbacks for hook events that need to communicate back to the UI.
+ */
+export interface HookCallbacks {
+  /** Called when vault should be refreshed (after file edits) */
+  onVaultRefresh?: () => void;
+  /** Called when a notification should be shown */
+  onNotification?: (title: string, message: string, type: 'info' | 'warning' | 'error') => void;
+  /** Called when a tool is blocked by hooks */
+  onToolBlocked?: (toolName: string, reason: string) => void;
+  /** Called when audit logging is enabled (logs tool usage) */
+  onAuditLog?: (toolName: string, input: unknown, output: unknown) => void;
+}
+
 export class SDKAgentBackend implements AgentBackend {
   readonly type = 'sdk' as const;
 
@@ -51,10 +78,18 @@ export class SDKAgentBackend implements AgentBackend {
   private cachedModels: ModelInfo[] | null = null;
   private activeQuery: Query | null = null;
   private cachedAccountInfo: AccountInfo | null = null;
+  private hookCallbacks: HookCallbacks = {};
 
   constructor(settings: ObsidiClaudeSettings, obsidianTools: ObsidianTools) {
     this.settings = settings;
     this.obsidianTools = obsidianTools;
+  }
+
+  /**
+   * Set callbacks for hook events.
+   */
+  setHookCallbacks(callbacks: HookCallbacks): void {
+    this.hookCallbacks = callbacks;
   }
 
   /**
@@ -228,6 +263,7 @@ export class SDKAgentBackend implements AgentBackend {
           prompt: agent.prompt,
           model: agent.model,
           tools: agent.tools,
+          skills: agent.skills,
           maxTurns: agent.maxTurns,
         };
       }
@@ -243,6 +279,7 @@ export class SDKAgentBackend implements AgentBackend {
           model: agent.model,
           tools: agent.tools,
           disallowedTools: agent.disallowedTools,
+          skills: agent.skills,
           maxTurns: agent.maxTurns,
         };
       }
@@ -252,6 +289,137 @@ export class SDKAgentBackend implements AgentBackend {
     if (count > 0) {
       log.info('Agents configured', { count, names: Object.keys(agents) });
       return agents;
+    }
+
+    return undefined;
+  }
+
+  /**
+   * Build hooks configuration for the SDK query.
+   * Hooks enable custom behavior at key events: tool execution, notifications, etc.
+   */
+  private buildHooks(): Partial<Record<HookEvent, HookCallbackMatcher[]>> | undefined {
+    const hookSettings = this.settings.hooks;
+    if (!hookSettings?.enabled) {
+      return undefined;
+    }
+
+    const hooks: Partial<Record<HookEvent, HookCallbackMatcher[]>> = {};
+
+    // PreToolUse hook - block dangerous tools and add audit logging
+    if (hookSettings.blockedTools.length > 0 || hookSettings.auditToolUsage) {
+      hooks.PreToolUse = [{
+        hooks: [async (input: HookInput): Promise<HookJSONOutput> => {
+          const preToolInput = input as PreToolUseHookInput;
+          const toolName = preToolInput.tool_name;
+
+          // Block tools if configured
+          if (hookSettings.blockedTools.includes(toolName)) {
+            log.info('Hook blocked tool', { toolName });
+            this.hookCallbacks.onToolBlocked?.(toolName, 'Tool is in blocked list');
+            return {
+              continue: true,
+              hookSpecificOutput: {
+                hookEventName: 'PreToolUse',
+                permissionDecision: 'deny',
+                permissionDecisionReason: `Tool "${toolName}" is blocked by plugin settings`,
+              },
+            };
+          }
+
+          // Continue with default behavior
+          return { continue: true };
+        }],
+      }];
+    }
+
+    // PostToolUse hook - auto-refresh vault after file edits and audit logging
+    if (hookSettings.autoRefreshVault || hookSettings.auditToolUsage) {
+      const fileEditTools = ['Edit', 'Write', 'NotebookEdit', 'mcp__obsidian__create_note', 'mcp__obsidian__append_to_note', 'mcp__obsidian__rename_note'];
+
+      hooks.PostToolUse = [{
+        hooks: [async (input: HookInput): Promise<HookJSONOutput> => {
+          const postToolInput = input as PostToolUseHookInput;
+          const toolName = postToolInput.tool_name;
+
+          // Audit logging
+          if (hookSettings.auditToolUsage) {
+            log.debug('Tool usage audit', {
+              tool: toolName,
+              inputSize: JSON.stringify(postToolInput.tool_input).length,
+            });
+            this.hookCallbacks.onAuditLog?.(
+              toolName,
+              postToolInput.tool_input,
+              postToolInput.tool_response
+            );
+          }
+
+          // Auto-refresh vault after file edits
+          if (hookSettings.autoRefreshVault && fileEditTools.some(t => toolName.includes(t))) {
+            log.debug('Auto-refreshing vault after file edit', { toolName });
+            this.hookCallbacks.onVaultRefresh?.();
+          }
+
+          return { continue: true };
+        }],
+      }];
+    }
+
+    // Notification hook - show SDK notifications in Obsidian
+    if (hookSettings.showNotifications) {
+      hooks.Notification = [{
+        hooks: [async (input: HookInput): Promise<HookJSONOutput> => {
+          const notifInput = input as NotificationHookInput;
+          const message = notifInput.message || '';
+          const type = notifInput.level === 'error' ? 'error'
+            : notifInput.level === 'warning' ? 'warning'
+            : 'info';
+
+          this.hookCallbacks.onNotification?.('Claude', message, type);
+
+          return { continue: true };
+        }],
+      }];
+    }
+
+    // PreCompact hook - inject custom compaction instructions
+    if (this.settings.compactionInstructions) {
+      hooks.PreCompact = [{
+        hooks: [async (input: HookInput): Promise<HookJSONOutput> => {
+          const preCompactInput = input as PreCompactHookInput;
+          log.info('PreCompact hook triggered', {
+            trigger: preCompactInput.trigger,
+            existingInstructions: preCompactInput.custom_instructions?.slice(0, 50),
+          });
+
+          // Combine existing instructions with vault-specific ones
+          const vaultContext = this.settings.compactionInstructions || '';
+          const combined = preCompactInput.custom_instructions
+            ? `${preCompactInput.custom_instructions}\n\n${vaultContext}`
+            : vaultContext;
+
+          return {
+            continue: true,
+            hookSpecificOutput: {
+              hookEventName: 'PreCompact' as const,
+              customInstructions: combined,
+            },
+          };
+        }],
+      }];
+    }
+
+    const hookCount = Object.keys(hooks).length;
+    if (hookCount > 0) {
+      log.info('Hooks configured', {
+        events: Object.keys(hooks),
+        autoRefreshVault: hookSettings.autoRefreshVault,
+        auditToolUsage: hookSettings.auditToolUsage,
+        showNotifications: hookSettings.showNotifications,
+        blockedToolsCount: hookSettings.blockedTools.length,
+      });
+      return hooks;
     }
 
     return undefined;
@@ -382,6 +550,9 @@ export class SDKAgentBackend implements AgentBackend {
       // Build agents configuration
       const agents = this.buildAgents();
 
+      // Build hooks configuration
+      const hooks = this.buildHooks();
+
       // Build additional directories (include vault path)
       const additionalDirectories = [...(this.settings.additionalDirectories || [])];
 
@@ -431,6 +602,10 @@ export class SDKAgentBackend implements AgentBackend {
               autoAllowBashIfSandboxed: this.settings.autoAllowBashIfSandboxed,
             }
           : undefined,
+        // SDK hooks for custom event handling
+        hooks,
+        // Structured output format (JSON Schema)
+        outputFormat: options?.outputFormat,
       };
 
       // Build MCP servers config
@@ -586,6 +761,43 @@ export class SDKAgentBackend implements AgentBackend {
               failed: failed.map(f => ({ file: f.filename, error: f.error })),
             });
           }
+        } else if (message.subtype === 'task_notification') {
+          // Handle background task (subagent) notifications
+          const taskNotif = message as SDKTaskNotificationMessage;
+          log.info('Background task notification', {
+            taskId: taskNotif.task_id,
+            status: taskNotif.status,
+            summary: taskNotif.summary,
+            outputFile: taskNotif.output_file,
+          });
+          if (callbacks.onTaskNotification) {
+            callbacks.onTaskNotification(
+              taskNotif.task_id,
+              taskNotif.status,
+              taskNotif.summary,
+              taskNotif.output_file
+            );
+          }
+        } else if (message.subtype === 'compact_boundary') {
+          // Handle compaction boundary marker
+          const compactMsg = message as SDKCompactBoundaryMessage;
+          log.info('Context compaction boundary', {
+            trigger: compactMsg.compact_metadata.trigger,
+            preTokens: compactMsg.compact_metadata.pre_tokens,
+          });
+          if (callbacks.onCompactionBoundary) {
+            callbacks.onCompactionBoundary(
+              compactMsg.compact_metadata.trigger,
+              compactMsg.compact_metadata.pre_tokens
+            );
+          }
+        } else if (message.subtype === 'status') {
+          // Handle status changes (compacting)
+          const statusMsg = message as SDKStatusMessage;
+          log.debug('Status update', { status: statusMsg.status });
+          if (callbacks.onCompactionStatus) {
+            callbacks.onCompactionStatus(statusMsg.status);
+          }
         }
         break;
 
@@ -675,13 +887,36 @@ export class SDKAgentBackend implements AgentBackend {
         if (message.subtype !== 'success' && 'errors' in message) {
           result.errors = message.errors;
         }
+        // Handle structured output if present
+        if (message.subtype === 'success') {
+          const successMsg = message as SDKResultSuccess;
+          if (successMsg.structured_output !== undefined) {
+            result.structuredOutput = successMsg.structured_output;
+            log.info('Structured output received', {
+              type: typeof successMsg.structured_output,
+              preview: JSON.stringify(successMsg.structured_output).slice(0, 100),
+            });
+            callbacks.onStructuredOutput?.(successMsg.structured_output);
+          }
+        }
         log.info('SDK conversation completed', {
           success: result.success,
           inputTokens: result.inputTokens,
           outputTokens: result.outputTokens,
           totalCost: result.totalCost,
+          hasStructuredOutput: !!result.structuredOutput,
         });
         callbacks.onComplete(result);
+        break;
+      }
+
+      case 'tool_use_summary': {
+        // Human-readable summary of tool operations
+        const summaryMessage = message as { summary?: string };
+        if (summaryMessage.summary && callbacks.onToolSummary) {
+          log.debug('Tool use summary', { summary: summaryMessage.summary });
+          callbacks.onToolSummary(assistantMsgId, summaryMessage.summary);
+        }
         break;
       }
     }

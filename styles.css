@@ -602,6 +602,79 @@ pre:hover .code-copy-btn {
   min-width: 0;
 }
 
+/* Tool use summary banner */
+.tool-summary-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.5rem;
+  background: linear-gradient(135deg, var(--background-modifier-hover), var(--background-secondary));
+  border-radius: 6px;
+  border-left: 3px solid var(--interactive-accent);
+}
+
+.tool-summary-icon {
+  display: flex;
+  align-items: center;
+  color: var(--interactive-accent);
+  flex-shrink: 0;
+}
+
+.tool-summary-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.tool-summary-text {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+/* Task notification banner (subagent status) */
+.task-notification-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  margin-bottom: 0.5rem;
+  background: var(--background-secondary);
+  border-radius: 6px;
+  font-size: 0.8rem;
+}
+
+.task-notification-banner.task-status-completed {
+  border-left: 3px solid var(--text-success, #10b981);
+}
+
+.task-notification-banner.task-status-failed {
+  border-left: 3px solid var(--text-error, #ef4444);
+}
+
+.task-notification-banner.task-status-stopped {
+  border-left: 3px solid var(--text-warning, #f59e0b);
+}
+
+.task-notification-icon {
+  font-size: 1rem;
+}
+
+.task-notification-text {
+  color: var(--text-muted);
+  flex: 1;
+}
+
+.task-output-link {
+  color: var(--interactive-accent);
+  cursor: pointer;
+  font-size: 0.75rem;
+}
+
+.task-output-link:hover {
+  text-decoration: underline;
+}
+
 /* Status bar */
 .chat-status {
   padding: 0.5rem 1rem;

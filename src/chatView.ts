@@ -168,7 +168,43 @@ export class ChatView extends ItemView {
     // Load saved conversation
     await this.loadConversation();
     this.renderAllMessages();
+
+    // Set up SDK hook callbacks
+    this.setupHookCallbacks();
+
     log.debug('Chat view opened', { conversationId: this.conversation.id });
+  }
+
+  /**
+   * Set up callbacks for SDK hooks (vault refresh, notifications, etc.).
+   */
+  private setupHookCallbacks(): void {
+    this.plugin.backendFactory?.setHookCallbacks({
+      onVaultRefresh: () => {
+        log.debug('Hook triggered vault refresh');
+        // Force Obsidian to refresh the vault
+        this.plugin.app.vault.trigger('modify', null as unknown as import('obsidian').TFile);
+      },
+      onNotification: (title: string, message: string, type: 'info' | 'warning' | 'error') => {
+        log.debug('Hook notification', { title, message, type });
+        if (type === 'error') {
+          new Notice(`${title}: ${message}`, 5000);
+        } else {
+          new Notice(`${title}: ${message}`, 3000);
+        }
+      },
+      onToolBlocked: (toolName: string, reason: string) => {
+        log.warn('Hook blocked tool', { toolName, reason });
+        new Notice(`Blocked: ${toolName} - ${reason}`, 3000);
+      },
+      onAuditLog: (toolName: string, input: unknown, output: unknown) => {
+        log.info('Tool audit', {
+          tool: toolName,
+          inputPreview: JSON.stringify(input).slice(0, 100),
+          outputPreview: JSON.stringify(output).slice(0, 100),
+        });
+      },
+    });
   }
 
   private registerKeyboardShortcuts(container: HTMLElement): void {
@@ -1851,6 +1887,91 @@ export class ChatView extends ItemView {
     }
   }
 
+  private updateToolSummary(messageId: string, summary: string): void {
+    const msgEl = this.messageElements.get(messageId);
+    if (!msgEl) return;
+
+    // Find or create the summary container
+    let summaryEl = msgEl.querySelector('.tool-summary-banner') as HTMLElement;
+    if (!summaryEl) {
+      const toolsContainer = msgEl.querySelector('.message-tools');
+      if (toolsContainer) {
+        summaryEl = toolsContainer.createDiv('tool-summary-banner');
+        // Insert at the beginning of tools container
+        toolsContainer.insertBefore(summaryEl, toolsContainer.firstChild);
+      } else {
+        // Create tools container if it doesn't exist
+        const contentDiv = msgEl.querySelector('.message-content');
+        if (contentDiv) {
+          const toolsDiv = contentDiv.createDiv('message-tools');
+          summaryEl = toolsDiv.createDiv('tool-summary-banner');
+        }
+      }
+    }
+
+    if (summaryEl) {
+      summaryEl.empty();
+      const icon = summaryEl.createSpan('tool-summary-icon');
+      setIcon(icon, 'sparkles');
+      summaryEl.createSpan('tool-summary-text').setText(summary);
+    }
+  }
+
+  /**
+   * Handle background task (subagent) notification from SDK.
+   */
+  private handleTaskNotification(
+    taskId: string,
+    status: 'completed' | 'failed' | 'stopped',
+    summary: string,
+    outputFile: string,
+    assistantMsgId: string | null
+  ): void {
+    const statusIcons: Record<string, string> = {
+      completed: '✅',
+      failed: '❌',
+      stopped: '⏹️',
+    };
+
+    const statusIcon = statusIcons[status] || '📋';
+    const shortTaskId = taskId.slice(0, 8);
+
+    // Show notification
+    const noticeText = `${statusIcon} Task ${shortTaskId}: ${summary.slice(0, 50)}${summary.length > 50 ? '...' : ''}`;
+    new Notice(noticeText, status === 'failed' ? 5000 : 3000);
+
+    // If we have an assistant message, add a task notification banner
+    if (assistantMsgId) {
+      const msgEl = this.messageElements.get(assistantMsgId);
+      if (msgEl) {
+        const toolsContainer = msgEl.querySelector('.message-tools') || msgEl.querySelector('.message-content')?.createDiv('message-tools');
+        if (toolsContainer) {
+          const notifEl = (toolsContainer as HTMLElement).createDiv('task-notification-banner');
+          notifEl.addClass(`task-status-${status}`);
+
+          const icon = notifEl.createSpan('task-notification-icon');
+          icon.setText(statusIcon);
+
+          const textEl = notifEl.createSpan('task-notification-text');
+          textEl.setText(`Task ${shortTaskId}: ${summary}`);
+
+          // Add link to output file if available
+          if (outputFile && status === 'completed') {
+            const linkEl = notifEl.createEl('a', { cls: 'task-output-link', text: ' (view output)' });
+            linkEl.addEventListener('click', () => {
+              // Try to open the output file
+              log.debug('Opening task output', { outputFile });
+              // Since this is an external file path, show it in a notice
+              new Notice(`Output file: ${outputFile}`, 5000);
+            });
+          }
+        }
+      }
+    }
+
+    log.info('Task notification displayed', { taskId: shortTaskId, status, summary });
+  }
+
   private updateMessageContent(messageId: string, content: string): void {
     const msgEl = this.messageElements.get(messageId);
     if (!msgEl) return;
@@ -2498,6 +2619,18 @@ export class ChatView extends ItemView {
         return true;
       }
 
+      case 'extract':
+      case 'extract-tasks': {
+        await this.handleExtractCommand(args);
+        return true;
+      }
+
+      case 'analyze':
+      case 'analyze-note': {
+        await this.handleAnalyzeNoteCommand(args);
+        return true;
+      }
+
       default:
         // Unknown command - show help hint
         this.showTemporaryStatus(`Unknown command: /${command}. Type /help for available commands.`, 'info');
@@ -2690,6 +2823,10 @@ export class ChatView extends ItemView {
 - \`/mcp reconnect <name>\` - Reconnect failed server
 - \`/mcp toggle <name>\` - Enable/disable server
 
+**Structured Analysis (SDK only):**
+- \`/extract\` - Extract tasks, links, tags, and summary from current note
+- \`/analyze\` - Analyze note for topics, sentiment, readability, and improvements
+
 **Shortcuts:**
 \`Enter\` send · \`Shift+Enter\` newline · \`↑↓\` history
 \`Cmd+F\` search · \`Cmd+N\` new · \`Cmd+H\` history · \`Cmd+E\` export
@@ -2859,6 +2996,377 @@ export class ChatView extends ItemView {
     } else {
       this.showTemporaryStatus('Failed to change permission mode (no active session)', 'error', 3000);
     }
+  }
+
+  /**
+   * Handle /extract command to extract structured data from notes using JSON Schema.
+   * Requires SDK backend for structured output support.
+   */
+  private async handleExtractCommand(args: string): Promise<void> {
+    const backend = this.getBackend();
+    if (backend.type !== 'sdk') {
+      this.showTemporaryStatus('Structured extraction requires SDK backend', 'info', 3000);
+      return;
+    }
+
+    const activeFile = this.plugin.app.workspace.getActiveFile();
+    if (!activeFile) {
+      this.showTemporaryStatus('No active note to extract from', 'info', 2000);
+      return;
+    }
+
+    const content = await this.plugin.app.vault.read(activeFile);
+
+    // Define the extraction schema for tasks, links, and summary
+    const extractionSchema = {
+      type: 'object',
+      properties: {
+        tasks: {
+          type: 'array',
+          description: 'List of tasks extracted from the note',
+          items: {
+            type: 'object',
+            properties: {
+              text: { type: 'string', description: 'The task description' },
+              completed: { type: 'boolean', description: 'Whether the task is marked complete' },
+              priority: { type: 'string', enum: ['high', 'medium', 'low', 'none'], description: 'Task priority if specified' },
+            },
+            required: ['text', 'completed'],
+          },
+        },
+        links: {
+          type: 'array',
+          description: 'Suggested internal links to other notes',
+          items: {
+            type: 'object',
+            properties: {
+              target: { type: 'string', description: 'The note or concept to link to' },
+              reason: { type: 'string', description: 'Why this link would be useful' },
+            },
+            required: ['target', 'reason'],
+          },
+        },
+        summary: {
+          type: 'string',
+          description: 'A brief 1-2 sentence summary of the note content',
+        },
+        tags: {
+          type: 'array',
+          description: 'Suggested tags for the note',
+          items: { type: 'string' },
+        },
+      },
+      required: ['tasks', 'links', 'summary', 'tags'],
+    };
+
+    // Show processing status
+    this.setProcessing(true);
+    this.setStatus('Extracting structured data...', 'info');
+
+    let extractedOutput: unknown = null;
+
+    const callbacks: AgentCallbacks = {
+      onMessage: (msg) => {
+        this.conversation.messages.push(msg);
+        this.renderMessage(msg);
+        this.scrollToBottom();
+      },
+      onStreamingUpdate: (messageId, newContent) => {
+        const msg = this.conversation.messages.find((m) => m.id === messageId);
+        if (msg) {
+          msg.content = newContent;
+        }
+        this.updateMessageContent(messageId, newContent);
+      },
+      onToolCall: (messageId, toolCall) => {
+        this.updateMessageTools(messageId, [toolCall]);
+      },
+      onToolResult: () => {},
+      onSessionInit: (sessionId, tools) => {
+        log.debug('Extract session init', { sessionId, toolCount: tools.length });
+      },
+      onComplete: (result) => {
+        this.setProcessing(false);
+        this.setStatus('', 'info');
+        if (result.structuredOutput) {
+          extractedOutput = result.structuredOutput;
+          this.displayExtractedData(activeFile.basename, extractedOutput);
+        } else {
+          this.showTemporaryStatus('No structured output returned', 'info', 3000);
+        }
+        this.saveConversation();
+      },
+      onError: (error) => {
+        this.setProcessing(false);
+        this.setStatus('', 'error');
+        this.showTemporaryStatus(`Extraction failed: ${error.message}`, 'error', 5000);
+      },
+      onStructuredOutput: (output) => {
+        extractedOutput = output;
+      },
+    };
+
+    const prompt = `Analyze the following note content and extract structured information.
+Extract all tasks (with completion status), suggest relevant internal links, provide a brief summary, and suggest tags.
+
+Note: "${activeFile.basename}"
+---
+${content}
+---`;
+
+    try {
+      await backend.sendMessage(prompt, this.conversation, callbacks, {
+        outputFormat: { type: 'json_schema', schema: extractionSchema },
+        maxTurns: 1,
+        displayContent: `/extract from "${activeFile.basename}"`,
+      });
+    } catch (error) {
+      log.error('Extract command failed', error);
+      this.setProcessing(false);
+    }
+  }
+
+  /**
+   * Display extracted structured data in a readable format.
+   */
+  private displayExtractedData(noteName: string, data: unknown): void {
+    const extracted = data as {
+      tasks?: Array<{ text: string; completed: boolean; priority?: string }>;
+      links?: Array<{ target: string; reason: string }>;
+      summary?: string;
+      tags?: string[];
+    };
+
+    const lines: string[] = [`**Extracted from "${noteName}":**\n`];
+
+    if (extracted.summary) {
+      lines.push(`📝 **Summary:** ${extracted.summary}\n`);
+    }
+
+    if (extracted.tasks && extracted.tasks.length > 0) {
+      lines.push('**Tasks:**');
+      for (const task of extracted.tasks) {
+        const status = task.completed ? '✅' : '⬜';
+        const priority = task.priority && task.priority !== 'none' ? ` [${task.priority}]` : '';
+        lines.push(`- ${status} ${task.text}${priority}`);
+      }
+      lines.push('');
+    }
+
+    if (extracted.links && extracted.links.length > 0) {
+      lines.push('**Suggested Links:**');
+      for (const link of extracted.links) {
+        lines.push(`- [[${link.target}]] - ${link.reason}`);
+      }
+      lines.push('');
+    }
+
+    if (extracted.tags && extracted.tags.length > 0) {
+      lines.push(`**Suggested Tags:** ${extracted.tags.map(t => `#${t}`).join(' ')}`);
+    }
+
+    const extractMsg: ChatMessage = {
+      id: generateId(),
+      role: 'assistant',
+      content: lines.join('\n'),
+      timestamp: Date.now(),
+    };
+    this.renderMessage(extractMsg);
+    this.scrollToBottom(true);
+  }
+
+  /**
+   * Handle /analyze command to get structured analysis of a note.
+   * Requires SDK backend for structured output support.
+   */
+  private async handleAnalyzeNoteCommand(args: string): Promise<void> {
+    const backend = this.getBackend();
+    if (backend.type !== 'sdk') {
+      this.showTemporaryStatus('Structured analysis requires SDK backend', 'info', 3000);
+      return;
+    }
+
+    const activeFile = this.plugin.app.workspace.getActiveFile();
+    if (!activeFile) {
+      this.showTemporaryStatus('No active note to analyze', 'info', 2000);
+      return;
+    }
+
+    const content = await this.plugin.app.vault.read(activeFile);
+
+    // Define analysis schema
+    const analysisSchema = {
+      type: 'object',
+      properties: {
+        topics: {
+          type: 'array',
+          description: 'Main topics covered in the note',
+          items: { type: 'string' },
+        },
+        sentiment: {
+          type: 'string',
+          enum: ['positive', 'neutral', 'negative', 'mixed'],
+          description: 'Overall sentiment of the content',
+        },
+        readability: {
+          type: 'object',
+          properties: {
+            level: { type: 'string', enum: ['simple', 'moderate', 'complex', 'technical'] },
+            score: { type: 'number', minimum: 1, maximum: 10 },
+          },
+          required: ['level', 'score'],
+        },
+        structure: {
+          type: 'object',
+          properties: {
+            hasHeadings: { type: 'boolean' },
+            hasTasks: { type: 'boolean' },
+            hasLinks: { type: 'boolean' },
+            hasCodeBlocks: { type: 'boolean' },
+            wordCount: { type: 'number' },
+          },
+          required: ['hasHeadings', 'hasTasks', 'hasLinks', 'hasCodeBlocks', 'wordCount'],
+        },
+        improvements: {
+          type: 'array',
+          description: 'Suggestions for improving the note',
+          items: {
+            type: 'object',
+            properties: {
+              category: { type: 'string', enum: ['structure', 'clarity', 'completeness', 'linking', 'metadata'] },
+              suggestion: { type: 'string' },
+            },
+            required: ['category', 'suggestion'],
+          },
+        },
+      },
+      required: ['topics', 'sentiment', 'readability', 'structure', 'improvements'],
+    };
+
+    this.setProcessing(true);
+    this.setStatus('Analyzing note...', 'info');
+
+    const callbacks: AgentCallbacks = {
+      onMessage: (msg) => {
+        this.conversation.messages.push(msg);
+        this.renderMessage(msg);
+        this.scrollToBottom();
+      },
+      onStreamingUpdate: (messageId, newContent) => {
+        const msg = this.conversation.messages.find((m) => m.id === messageId);
+        if (msg) {
+          msg.content = newContent;
+        }
+        this.updateMessageContent(messageId, newContent);
+      },
+      onToolCall: (messageId, toolCall) => {
+        this.updateMessageTools(messageId, [toolCall]);
+      },
+      onToolResult: () => {},
+      onSessionInit: () => {},
+      onComplete: (result) => {
+        this.setProcessing(false);
+        this.setStatus('', 'info');
+        if (result.structuredOutput) {
+          this.displayAnalysisData(activeFile.basename, result.structuredOutput);
+        } else {
+          this.showTemporaryStatus('No analysis data returned', 'info', 3000);
+        }
+        this.saveConversation();
+      },
+      onError: (error) => {
+        this.setProcessing(false);
+        this.setStatus('', 'error');
+        this.showTemporaryStatus(`Analysis failed: ${error.message}`, 'error', 5000);
+      },
+      onStructuredOutput: () => {},
+    };
+
+    const prompt = `Analyze this note comprehensively. Identify main topics, assess sentiment and readability, describe the structure, and suggest improvements.
+
+Note: "${activeFile.basename}"
+---
+${content}
+---`;
+
+    try {
+      await backend.sendMessage(prompt, this.conversation, callbacks, {
+        outputFormat: { type: 'json_schema', schema: analysisSchema },
+        maxTurns: 1,
+        displayContent: `/analyze "${activeFile.basename}"`,
+      });
+    } catch (error) {
+      log.error('Analyze command failed', error);
+      this.setProcessing(false);
+    }
+  }
+
+  /**
+   * Display note analysis data in a readable format.
+   */
+  private displayAnalysisData(noteName: string, data: unknown): void {
+    const analysis = data as {
+      topics?: string[];
+      sentiment?: string;
+      readability?: { level: string; score: number };
+      structure?: {
+        hasHeadings: boolean;
+        hasTasks: boolean;
+        hasLinks: boolean;
+        hasCodeBlocks: boolean;
+        wordCount: number;
+      };
+      improvements?: Array<{ category: string; suggestion: string }>;
+    };
+
+    const sentimentEmoji: Record<string, string> = {
+      positive: '😊',
+      neutral: '😐',
+      negative: '😟',
+      mixed: '🤔',
+    };
+
+    const lines: string[] = [`**Analysis of "${noteName}":**\n`];
+
+    if (analysis.topics && analysis.topics.length > 0) {
+      lines.push(`🏷️ **Topics:** ${analysis.topics.join(', ')}\n`);
+    }
+
+    if (analysis.sentiment) {
+      const emoji = sentimentEmoji[analysis.sentiment] || '';
+      lines.push(`${emoji} **Sentiment:** ${analysis.sentiment}\n`);
+    }
+
+    if (analysis.readability) {
+      const score = '⭐'.repeat(Math.round(analysis.readability.score / 2));
+      lines.push(`📖 **Readability:** ${analysis.readability.level} (${score} ${analysis.readability.score}/10)\n`);
+    }
+
+    if (analysis.structure) {
+      const s = analysis.structure;
+      const features = [];
+      if (s.hasHeadings) features.push('headings');
+      if (s.hasTasks) features.push('tasks');
+      if (s.hasLinks) features.push('links');
+      if (s.hasCodeBlocks) features.push('code');
+      lines.push(`📊 **Structure:** ${s.wordCount} words | Features: ${features.join(', ') || 'basic'}\n`);
+    }
+
+    if (analysis.improvements && analysis.improvements.length > 0) {
+      lines.push('💡 **Suggestions:**');
+      for (const imp of analysis.improvements) {
+        lines.push(`- **${imp.category}:** ${imp.suggestion}`);
+      }
+    }
+
+    const analysisMsg: ChatMessage = {
+      id: generateId(),
+      role: 'assistant',
+      content: lines.join('\n'),
+      timestamp: Date.now(),
+    };
+    this.renderMessage(analysisMsg);
+    this.scrollToBottom(true);
   }
 
   /**
@@ -3360,6 +3868,16 @@ export class ChatView extends ItemView {
         }
       },
 
+      onToolSummary: (messageId, summary) => {
+        // Store and display human-readable tool summary
+        const msg = this.conversation.messages.find((m) => m.id === messageId);
+        if (msg) {
+          msg.toolSummary = summary;
+          this.updateToolSummary(messageId, summary);
+          log.debug('Received tool summary', { messageId, summary });
+        }
+      },
+
       onFilesPersisted: (filenames) => {
         // Trigger vault refresh when Claude modifies files
         log.info('Files modified by Claude, refreshing vault', { count: filenames.length });
@@ -3373,6 +3891,47 @@ export class ChatView extends ItemView {
           this.plugin.app.vault.trigger('modify');
           log.debug('Vault refresh triggered');
         }, 500);
+      },
+
+      onTaskNotification: (taskId, status, summary, outputFile) => {
+        // Handle background task (subagent) notifications
+        log.info('Background task notification', { taskId, status, summary });
+        this.handleTaskNotification(taskId, status, summary, outputFile, currentAssistantMsgId);
+      },
+
+      onCompactionStatus: (status) => {
+        // Handle context compaction status changes
+        if (status === 'compacting') {
+          this.setStatus('Compacting context...', 'info');
+          log.info('Context compaction started');
+        } else {
+          // Clear compaction status
+          this.setStatus('', 'info');
+          log.info('Context compaction completed');
+        }
+      },
+
+      onCompactionBoundary: (trigger, preTokens) => {
+        // Handle compaction boundary marker
+        const tokensK = Math.round(preTokens / 1000);
+        log.info('Context compacted', { trigger, preTokens, tokensK });
+
+        // Show notification with token info
+        new Notice(`Context compacted: was ~${tokensK}K tokens (${trigger})`, 3000);
+
+        // Record compaction in conversation metadata
+        if (!this.conversation.metadata) {
+          this.conversation.metadata = {};
+        }
+        if (!this.conversation.metadata.compactions) {
+          this.conversation.metadata.compactions = [];
+        }
+        this.conversation.metadata.compactions.push({
+          timestamp: Date.now(),
+          trigger,
+          preTokens,
+        });
+        this.saveConversation();
       },
     };
 

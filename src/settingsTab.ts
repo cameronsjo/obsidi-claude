@@ -570,6 +570,84 @@ export class SettingsTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         })
       );
+
+    // Hooks settings
+    containerEl.createEl('h4', { text: 'SDK Hooks' });
+
+    new Setting(containerEl)
+      .setName('Enable Hooks')
+      .setDesc('Enable SDK hooks for custom behavior (vault refresh, audit logging, etc.)')
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.hooks.enabled).onChange(async (value) => {
+          this.plugin.settings.hooks.enabled = value;
+          await this.plugin.saveSettings();
+          this.display();
+        })
+      );
+
+    if (this.plugin.settings.hooks.enabled) {
+      new Setting(containerEl)
+        .setName('Auto-refresh Vault')
+        .setDesc('Automatically refresh Obsidian vault after Claude edits files')
+        .addToggle((toggle) =>
+          toggle.setValue(this.plugin.settings.hooks.autoRefreshVault).onChange(async (value) => {
+            this.plugin.settings.hooks.autoRefreshVault = value;
+            await this.plugin.saveSettings();
+          })
+        );
+
+      new Setting(containerEl)
+        .setName('Audit Tool Usage')
+        .setDesc('Log all tool usage for debugging and audit purposes')
+        .addToggle((toggle) =>
+          toggle.setValue(this.plugin.settings.hooks.auditToolUsage).onChange(async (value) => {
+            this.plugin.settings.hooks.auditToolUsage = value;
+            await this.plugin.saveSettings();
+          })
+        );
+
+      new Setting(containerEl)
+        .setName('Show SDK Notifications')
+        .setDesc('Display SDK notifications in Obsidian (may be verbose)')
+        .addToggle((toggle) =>
+          toggle.setValue(this.plugin.settings.hooks.showNotifications).onChange(async (value) => {
+            this.plugin.settings.hooks.showNotifications = value;
+            await this.plugin.saveSettings();
+          })
+        );
+
+      new Setting(containerEl)
+        .setName('Blocked Tools')
+        .setDesc('Comma-separated list of tool names to always block (e.g., Bash,Write)')
+        .addText((text) =>
+          text
+            .setPlaceholder('Tool1,Tool2')
+            .setValue(this.plugin.settings.hooks.blockedTools.join(','))
+            .onChange(async (value) => {
+              this.plugin.settings.hooks.blockedTools = value
+                .split(',')
+                .map((t) => t.trim())
+                .filter((t) => t.length > 0);
+              await this.plugin.saveSettings();
+            })
+        );
+    }
+
+    // Compaction settings
+    containerEl.createEl('h4', { text: 'Context Compaction' });
+
+    new Setting(containerEl)
+      .setName('Compaction Instructions')
+      .setDesc('Custom instructions to preserve important information during context compaction')
+      .addTextArea((text) =>
+        text
+          .setPlaceholder('Preserve vault structure, important note names, and user preferences...')
+          .setValue(this.plugin.settings.compactionInstructions || '')
+          .onChange(async (value) => {
+            this.plugin.settings.compactionInstructions = value || undefined;
+            await this.plugin.saveSettings();
+          })
+      );
   }
 
   private addEmbeddingSettings(containerEl: HTMLElement): void {

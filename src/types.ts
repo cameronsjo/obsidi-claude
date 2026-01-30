@@ -44,6 +44,8 @@ export interface ChatMessage {
   usage?: MessageUsage;
   /** SDK message UUID for file checkpointing/rewind (SDK backend only) */
   sdkUuid?: string;
+  /** Human-readable summary of tool operations (SDK only) */
+  toolSummary?: string;
   /** Image attachments for multimodal messages */
   images?: ImageAttachment[];
 }
@@ -69,6 +71,12 @@ export interface ConversationMetadata {
   resumeAtUuid?: string;
   /** Timestamp of last sync (for Obsidian Sync) */
   lastSyncAt?: number;
+  /** History of context compactions */
+  compactions?: Array<{
+    timestamp: number;
+    trigger: 'manual' | 'auto';
+    preTokens: number;
+  }>;
 }
 
 /**
@@ -194,6 +202,8 @@ export interface CustomAgent {
   tools?: string[];
   /** Array of tool names to explicitly disallow */
   disallowedTools?: string[];
+  /** Array of skill names to preload into agent context */
+  skills?: string[];
   /** Maximum agentic turns before stopping */
   maxTurns?: number;
   /** Whether this agent is enabled */
@@ -322,6 +332,26 @@ export interface ObsidiClaudeSettings {
   sandboxEnabled: boolean;
   /** Auto-allow Bash commands when sandbox is enabled (SDK only) */
   autoAllowBashIfSandboxed: boolean;
+  /** SDK hooks configuration */
+  hooks: HookSettings;
+  /** Custom instructions for context compaction (SDK only) */
+  compactionInstructions?: string;
+}
+
+/**
+ * SDK hooks configuration for custom event handling.
+ */
+export interface HookSettings {
+  /** Enable hooks system (SDK only) */
+  enabled: boolean;
+  /** Auto-refresh vault after file edit operations */
+  autoRefreshVault: boolean;
+  /** Log all tool usage for audit purposes */
+  auditToolUsage: boolean;
+  /** Show notifications in Obsidian for SDK events */
+  showNotifications: boolean;
+  /** Tools to always block (deny permission) */
+  blockedTools: string[];
 }
 
 /**
@@ -477,6 +507,13 @@ When the user asks about their notes, always search first to ground your respons
   ephemeralMode: false, // Persist sessions by default
   sandboxEnabled: false, // Sandbox disabled by default
   autoAllowBashIfSandboxed: true, // Auto-allow bash when sandboxed
+  hooks: {
+    enabled: true, // Hooks enabled by default for vault integration
+    autoRefreshVault: true, // Auto-refresh vault after edit operations
+    auditToolUsage: false, // Don't audit by default
+    showNotifications: false, // Don't show extra notifications by default
+    blockedTools: [], // No blocked tools by default
+  },
 };
 
 export function generateId(): string {
