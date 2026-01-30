@@ -6,6 +6,9 @@ import {
   type McpServerConfig,
   type AgentDefinition,
   type ModelInfo,
+  type Query,
+  type AccountInfo,
+  type RewindFilesResult,
 } from '@anthropic-ai/claude-agent-sdk';
 import type { ObsidiClaudeSettings, Conversation, ToolCallInfo } from '../types';
 import { BUILTIN_AGENTS } from '../types';
@@ -46,6 +49,8 @@ export class SDKAgentBackend implements AgentBackend {
   private obsidianMcpServer: McpSdkServerConfigWithInstance | null = null;
   private initialized = false;
   private cachedModels: ModelInfo[] | null = null;
+  private activeQuery: Query | null = null;
+  private cachedAccountInfo: AccountInfo | null = null;
 
   constructor(settings: ObsidiClaudeSettings, obsidianTools: ObsidianTools) {
     this.settings = settings;
@@ -58,6 +63,68 @@ export class SDKAgentBackend implements AgentBackend {
    */
   getAvailableModels(): AvailableModel[] | null {
     return this.cachedModels;
+  }
+
+  /**
+   * Get account info from the SDK.
+   */
+  getAccountInfo(): AccountInfo | null {
+    return this.cachedAccountInfo;
+  }
+
+  /**
+   * Rewind files to a previous state (requires file checkpointing enabled).
+   * @param userMessageId - UUID of the user message to rewind to
+   * @param dryRun - If true, preview changes without modifying files
+   */
+  async rewindFiles(userMessageId: string, dryRun = false): Promise<RewindFilesResult | null> {
+    if (!this.activeQuery) {
+      log.warn('Cannot rewind: no active query');
+      return null;
+    }
+    if (!this.settings.enableFileCheckpointing) {
+      log.warn('Cannot rewind: file checkpointing is disabled');
+      return null;
+    }
+    try {
+      const result = await this.activeQuery.rewindFiles(userMessageId, { dryRun });
+      log.info('Rewind files result', { userMessageId, dryRun, result });
+      return result;
+    } catch (error) {
+      log.error('Failed to rewind files', error);
+      return null;
+    }
+  }
+
+  /**
+   * Gracefully interrupt the current query (better than abort).
+   */
+  async interrupt(): Promise<void> {
+    if (this.activeQuery) {
+      try {
+        await this.activeQuery.interrupt();
+        log.info('Query interrupted gracefully');
+      } catch (error) {
+        log.warn('Interrupt failed, falling back to abort', error);
+        this.abort();
+      }
+    }
+  }
+
+  /**
+   * Dynamically switch the model during a conversation.
+   */
+  async setModel(model: string): Promise<void> {
+    if (!this.activeQuery) {
+      log.warn('Cannot set model: no active query');
+      return;
+    }
+    try {
+      await this.activeQuery.setModel(model);
+      log.info('Model switched', { model });
+    } catch (error) {
+      log.error('Failed to switch model', error);
+    }
   }
 
   /**
@@ -233,6 +300,16 @@ export class SDKAgentBackend implements AgentBackend {
       // Build agents configuration
       const agents = this.buildAgents();
 
+      // Build additional directories (include vault path)
+      const additionalDirectories = [...(this.settings.additionalDirectories || [])];
+
+      // Build betas array for extended context
+      const betas: Options['betas'] = [];
+      if (this.settings.extendedContext) {
+        betas.push('context-1m-2025-08-07');
+        log.info('Extended context (1M tokens) enabled');
+      }
+
       const queryOptions: Options = {
         model: options?.model ?? this.settings.model,
         cwd,
@@ -244,6 +321,12 @@ export class SDKAgentBackend implements AgentBackend {
         includePartialMessages: true,
         pathToClaudeCodeExecutable: cachedCliPath,
         agents,
+        // Advanced SDK features
+        enableFileCheckpointing: this.settings.enableFileCheckpointing,
+        maxBudgetUsd: this.settings.maxBudgetUsd,
+        maxThinkingTokens: this.settings.maxThinkingTokens,
+        additionalDirectories: additionalDirectories.length > 0 ? additionalDirectories : undefined,
+        betas: betas.length > 0 ? betas : undefined,
       };
 
       // Build MCP servers config
@@ -281,6 +364,9 @@ export class SDKAgentBackend implements AgentBackend {
         options: queryOptions,
       });
 
+      // Store active query for control methods (interrupt, rewindFiles, etc.)
+      this.activeQuery = response;
+
       log.debug('SDK query initiated', { cwd, permissionMode: this.settings.permissionMode });
 
       // Fetch available models on first query (non-blocking)
@@ -290,6 +376,16 @@ export class SDKAgentBackend implements AgentBackend {
           log.info('Fetched available models', { count: models.length, models: models.map(m => m.value) });
         }).catch((err) => {
           log.warn('Failed to fetch models', err);
+        });
+      }
+
+      // Fetch account info on first query (non-blocking)
+      if (!this.cachedAccountInfo) {
+        response.accountInfo().then((info) => {
+          this.cachedAccountInfo = info;
+          log.info('Fetched account info', { email: info.email, org: info.organization });
+        }).catch((err) => {
+          log.warn('Failed to fetch account info', err);
         });
       }
 
@@ -320,6 +416,9 @@ export class SDKAgentBackend implements AgentBackend {
     } catch (error) {
       log.error('SDK request failed', error, { resumeSession: !!resumeSessionId });
       callbacks.onError(error instanceof Error ? error : new Error(String(error)));
+    } finally {
+      // Clear active query reference
+      this.activeQuery = null;
     }
   }
 
@@ -442,9 +541,18 @@ export class SDKAgentBackend implements AgentBackend {
   }
 
   abort(): void {
-    if (this.abortController) {
+    // Try graceful interrupt first, fall back to abort
+    if (this.activeQuery) {
+      this.activeQuery.interrupt().catch(() => {
+        // If interrupt fails, force abort
+        if (this.abortController) {
+          this.abortController.abort();
+        }
+      });
+    } else if (this.abortController) {
       this.abortController.abort();
-      this.abortController = null;
     }
+    this.abortController = null;
+    this.activeQuery = null;
   }
 }

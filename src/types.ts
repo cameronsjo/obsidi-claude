@@ -265,6 +265,18 @@ export interface ObsidiClaudeSettings {
   agents: AgentSettings;
   /** Automatically include active note as context */
   activeNoteContext: boolean;
+
+  // SDK-specific advanced settings
+  /** Maximum budget in USD per conversation (SDK only) */
+  maxBudgetUsd?: number;
+  /** Enable file checkpointing for undo/rewind (SDK only) */
+  enableFileCheckpointing: boolean;
+  /** Enable 1M token context window for large vaults (SDK only, Sonnet 4/4.5) */
+  extendedContext: boolean;
+  /** Maximum thinking tokens to control costs (SDK only) */
+  maxThinkingTokens?: number;
+  /** Additional directories Claude can access beyond working directory */
+  additionalDirectories: string[];
 }
 
 /**
@@ -365,6 +377,12 @@ When the user asks about their notes, always search first to ground your respons
   skills: DEFAULT_SKILL_SETTINGS,
   agents: DEFAULT_AGENT_SETTINGS,
   activeNoteContext: true,
+  // SDK advanced settings
+  maxBudgetUsd: undefined, // No limit by default
+  enableFileCheckpointing: true, // Enable undo/rewind by default
+  extendedContext: false, // Opt-in for 1M context
+  maxThinkingTokens: undefined, // No limit by default
+  additionalDirectories: [], // Vault path added dynamically
 };
 
 export function generateId(): string {
