@@ -1262,9 +1262,8 @@ export class SDKAgentBackend implements AgentBackend {
                 callbacks.onToolResult(assistantMsgId, toolCall.name, toolCall.result);
               }
 
-              if (context.assistantContent.trim()) {
-                context.setNeedsParagraphBreak(true);
-              }
+              // Always add paragraph break after tool results for visual separation
+              context.setNeedsParagraphBreak(true);
             }
           }
         }

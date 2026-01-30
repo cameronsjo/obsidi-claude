@@ -106,6 +106,9 @@ export class ChatView extends ItemView {
   // Input wrapper for processing state styling
   private inputWrapper!: HTMLElement;
 
+  // Scroll to bottom button
+  private scrollToBottomBtn: HTMLElement | null = null;
+
   constructor(leaf: WorkspaceLeaf, plugin: ObsidiClaudePlugin) {
     super(leaf);
     this.plugin = plugin;
@@ -831,11 +834,24 @@ export class ChatView extends ItemView {
   }
 
   private setupScrollTracking(): void {
+    // Create scroll-to-bottom button
+    this.scrollToBottomBtn = this.messagesContainer.createEl('button', {
+      cls: 'scroll-to-bottom-btn',
+      attr: { 'aria-label': 'Scroll to bottom' },
+    });
+    setIcon(this.scrollToBottomBtn, 'arrow-down');
+    this.scrollToBottomBtn.onclick = () => this.scrollToBottom(true);
+
     this.messagesContainer.addEventListener('scroll', () => {
       const { scrollTop, scrollHeight, clientHeight } = this.messagesContainer;
       const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
       // User is "near bottom" if within threshold of the bottom
       this.userScrolledUp = distanceFromBottom > SCROLL_THRESHOLD_PX;
+
+      // Show/hide scroll-to-bottom button
+      if (this.scrollToBottomBtn) {
+        this.scrollToBottomBtn.toggleClass('visible', this.userScrolledUp);
+      }
     });
   }
 
@@ -1644,8 +1660,11 @@ export class ChatView extends ItemView {
       contentDiv.createDiv('typing-indicator');
     }
 
-    // Message action buttons (shown on hover)
+    // Message action buttons (shown on hover, hidden during streaming)
     const actionsDiv = msgDiv.createDiv('message-actions');
+    if (msg.isStreaming) {
+      actionsDiv.style.display = 'none';
+    }
     this.createMessageActions(actionsDiv, msg);
 
     this.messageElements.set(msg.id, msgDiv);
@@ -2039,6 +2058,12 @@ export class ChatView extends ItemView {
       this.addCodeBlockCopyButtons(contentDiv as HTMLElement);
     }
 
+    // Show message actions (hidden during streaming)
+    const actionsDiv = msgEl.querySelector('.message-actions') as HTMLElement;
+    if (actionsDiv) {
+      actionsDiv.style.display = '';
+    }
+
     this.scrollToBottom();
   }
 
@@ -2301,7 +2326,8 @@ export class ChatView extends ItemView {
     if (!this.sendButton || !this.stopButton || !this.inputEl) return;
     this.sendButton.style.display = processing ? 'none' : 'inline-flex';
     this.stopButton.style.display = processing ? 'inline-flex' : 'none';
-    this.inputEl.disabled = processing;
+    // Keep input enabled during processing to allow message queuing
+    // The sendMessage method handles queuing when isProcessing is true
 
     // Add/remove processing class for visual feedback
     if (this.inputWrapper) {
