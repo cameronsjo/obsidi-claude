@@ -13,6 +13,22 @@ export interface MessageUsage {
   cost?: number;
 }
 
+/**
+ * Image attachment for multimodal messages
+ */
+export interface ImageAttachment {
+  /** Base64-encoded image data */
+  data: string;
+  /** MIME type (e.g., "image/png", "image/jpeg") */
+  mimeType: string;
+  /** Optional filename */
+  filename?: string;
+  /** Width in pixels (for display) */
+  width?: number;
+  /** Height in pixels (for display) */
+  height?: number;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
@@ -28,6 +44,8 @@ export interface ChatMessage {
   usage?: MessageUsage;
   /** SDK message UUID for file checkpointing/rewind (SDK backend only) */
   sdkUuid?: string;
+  /** Image attachments for multimodal messages */
+  images?: ImageAttachment[];
 }
 
 export interface ToolCallInfo {

@@ -48,6 +48,8 @@ export class ChatView extends ItemView {
   private tokenCounter: HTMLElement;
   private searchInput: HTMLInputElement;
   private searchContainer: HTMLElement;
+  private imagePreviewContainer: HTMLElement;
+  private pendingImages: Array<{ data: string; mimeType: string; filename?: string }> = [];
 
   // State
   private conversation: Conversation;
@@ -1108,6 +1110,51 @@ export class ChatView extends ItemView {
       this.inputEl.style.height = Math.min(this.inputEl.scrollHeight, MAX_TEXTAREA_HEIGHT_PX) + 'px';
     });
 
+    // Handle image paste
+    this.inputEl.addEventListener('paste', (e) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      for (const item of items) {
+        if (item.type.startsWith('image/')) {
+          e.preventDefault();
+          const file = item.getAsFile();
+          if (file) {
+            this.handleImageFile(file);
+          }
+          break;
+        }
+      }
+    });
+
+    // Handle drag and drop
+    this.inputWrapper.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      this.inputWrapper.addClass('drag-over');
+    });
+
+    this.inputWrapper.addEventListener('dragleave', () => {
+      this.inputWrapper.removeClass('drag-over');
+    });
+
+    this.inputWrapper.addEventListener('drop', (e) => {
+      e.preventDefault();
+      this.inputWrapper.removeClass('drag-over');
+
+      const files = e.dataTransfer?.files;
+      if (!files) return;
+
+      for (const file of files) {
+        if (file.type.startsWith('image/')) {
+          this.handleImageFile(file);
+        }
+      }
+    });
+
+    // Image preview container (above input)
+    this.imagePreviewContainer = this.inputWrapper.createDiv('chat-image-preview');
+    this.imagePreviewContainer.style.display = 'none';
+
     // Button container
     const buttonArea = this.inputWrapper.createDiv('chat-buttons');
 
@@ -1254,6 +1301,24 @@ export class ChatView extends ItemView {
 
     // Content inside bubble (after tools)
     const contentDiv = bubbleDiv.createDiv('message-content');
+
+    // Render images if present
+    if (msg.images && msg.images.length > 0) {
+      const imagesDiv = contentDiv.createDiv('message-images');
+      for (const img of msg.images) {
+        const imgEl = imagesDiv.createEl('img', {
+          cls: 'message-image',
+          attr: {
+            src: `data:${img.mimeType};base64,${img.data}`,
+            alt: img.filename || 'Attached image',
+          },
+        });
+        // Click to open larger view
+        imgEl.onclick = () => {
+          window.open(`data:${img.mimeType};base64,${img.data}`, '_blank');
+        };
+      }
+    }
 
     if (msg.content) {
       MarkdownRenderer.render(
@@ -2303,6 +2368,90 @@ export class ChatView extends ItemView {
   }
 
   /**
+   * Handle an image file (from paste or drop)
+   */
+  private async handleImageFile(file: File): Promise<void> {
+    const maxSize = 10 * 1024 * 1024; // 10MB limit
+    if (file.size > maxSize) {
+      new Notice('Image too large (max 10MB)');
+      return;
+    }
+
+    try {
+      const data = await this.fileToBase64(file);
+      const mimeType = file.type;
+      const filename = file.name;
+
+      this.pendingImages.push({ data, mimeType, filename });
+      this.updateImagePreview();
+
+      log.info('Image added', { filename, mimeType, size: file.size });
+    } catch (error) {
+      log.error('Failed to process image', error);
+      new Notice('Failed to process image');
+    }
+  }
+
+  /**
+   * Convert a file to base64
+   */
+  private fileToBase64(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        // Remove the data URL prefix (e.g., "data:image/png;base64,")
+        const base64 = result.split(',')[1];
+        resolve(base64);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  /**
+   * Update the image preview display
+   */
+  private updateImagePreview(): void {
+    this.imagePreviewContainer.empty();
+
+    if (this.pendingImages.length === 0) {
+      this.imagePreviewContainer.style.display = 'none';
+      return;
+    }
+
+    this.imagePreviewContainer.style.display = 'flex';
+
+    for (let i = 0; i < this.pendingImages.length; i++) {
+      const img = this.pendingImages[i];
+      const wrapper = this.imagePreviewContainer.createDiv('chat-image-thumb');
+
+      const imgEl = wrapper.createEl('img', {
+        attr: {
+          src: `data:${img.mimeType};base64,${img.data}`,
+          alt: img.filename || 'Image',
+        },
+      });
+
+      // Remove button
+      const removeBtn = wrapper.createDiv('chat-image-remove');
+      removeBtn.setText('×');
+      removeBtn.onclick = () => {
+        this.pendingImages.splice(i, 1);
+        this.updateImagePreview();
+      };
+    }
+  }
+
+  /**
+   * Clear pending images
+   */
+  private clearPendingImages(): void {
+    this.pendingImages = [];
+    this.updateImagePreview();
+  }
+
+  /**
    * Public method to send a message programmatically.
    * Used by command palette and context menu integrations.
    */
@@ -2565,6 +2714,12 @@ export class ChatView extends ItemView {
         }
       }
 
+      // Collect images and clear preview
+      const images = this.pendingImages.length > 0
+        ? this.pendingImages.map(img => ({ data: img.data, mimeType: img.mimeType, filename: img.filename }))
+        : undefined;
+      this.clearPendingImages();
+
       await backend.sendMessage(
         messageContent,
         this.conversation,
@@ -2574,6 +2729,7 @@ export class ChatView extends ItemView {
           systemPrompt: enhancedPrompt,
           // Show only the user's input in UI, not the injected context
           displayContent: content !== messageContent ? content : undefined,
+          images,
         }
       );
     } catch (error) {

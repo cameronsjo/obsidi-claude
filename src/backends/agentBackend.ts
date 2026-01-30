@@ -1,4 +1,4 @@
-import type { Conversation, ChatMessage, ToolCallInfo, ObsidiClaudeSettings } from '../types';
+import type { Conversation, ChatMessage, ToolCallInfo, ObsidiClaudeSettings, ImageAttachment } from '../types';
 import { generateId } from '../types';
 
 /**
@@ -38,6 +38,8 @@ export interface BackendOptions {
   systemPrompt?: string;
   /** Content to display in UI (if different from API content, e.g., without context wrappers) */
   displayContent?: string;
+  /** Images to attach to the message (multimodal) */
+  images?: ImageAttachment[];
 }
 
 /**
@@ -130,13 +132,17 @@ export interface AgentBackend {
  * Factory functions for consistent message creation across backends
  */
 
-export function createUserMessage(content: string): ChatMessage {
-  return {
+export function createUserMessage(content: string, images?: ImageAttachment[]): ChatMessage {
+  const msg: ChatMessage = {
     id: generateId(),
     role: 'user',
     content,
     timestamp: Date.now(),
   };
+  if (images && images.length > 0) {
+    msg.images = images;
+  }
+  return msg;
 }
 
 export function createStreamingAssistantMessage(): ChatMessage {
