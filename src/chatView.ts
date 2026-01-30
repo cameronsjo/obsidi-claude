@@ -4121,16 +4121,20 @@ ${content}
         this.setProcessing(false);
         log.error('Agent error during message processing', error);
 
+        // Clean up error message - first line only, no stack traces
+        const fullMsg = error.message || 'Unknown error';
+        const firstLine = fullMsg.split('\n')[0].trim();
+        const cleanMsg = firstLine.length > 80 ? firstLine.slice(0, 80) + '...' : firstLine;
+
         // Check for session/model mismatch errors
-        const errorMsg = error.message.toLowerCase();
-        if (errorMsg.includes('exited with code') || errorMsg.includes('session')) {
+        if (fullMsg.toLowerCase().includes('exited with code') || fullMsg.toLowerCase().includes('session')) {
           // Clear session and offer to retry
           delete this.conversation.metadata?.sessionId;
           delete this.conversation.sessionId;
-          this.setStatus('Session error - try sending your message again', 'error');
-          new Notice('Session ended unexpectedly. Your message was not sent - please try again.', 5000);
+          this.setStatus('Session error - try again', 'error');
+          new Notice('Session ended. Please try again.', 3000);
         } else {
-          this.setStatus(`Error: ${error.message}`, 'error');
+          this.setStatus(cleanMsg, 'error');
         }
       },
 
