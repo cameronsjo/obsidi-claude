@@ -95,6 +95,7 @@ export class ObsidianTools {
       this.getReadNoteTool(),
       this.getListTemplatesTool(),
       this.getCreateFromTemplateTool(),
+      this.getCreateCanvasTool(),
       this.getDeleteTool(),
       this.getGraphNeighborsTool(),
       this.getRenameTool(),
@@ -1230,6 +1231,171 @@ export class ObsidianTools {
           path: targetPath,
           template: templateFile.path,
           substitutionsApplied: Object.keys(substitutions),
+        };
+      }),
+    };
+  }
+
+  /**
+   * Create a canvas file
+   */
+  private getCreateCanvasTool(): ToolDefinition {
+    return {
+      name: 'create_canvas',
+      description: 'Create an Obsidian Canvas file with nodes and connections. Canvases are visual workspaces for organizing ideas.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: {
+            type: 'string',
+            description: 'Path for the canvas file (e.g., "Canvases/my-canvas.canvas")',
+          },
+          nodes: {
+            type: 'array',
+            description: 'Array of nodes to add. Each node needs: id, type ("text"|"file"|"link"), content (text/file path/url)',
+            items: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', description: 'Unique node ID' },
+                type: { type: 'string', description: '"text", "file", or "link"' },
+                content: { type: 'string', description: 'Text content, file path, or URL depending on type' },
+                x: { type: 'number', description: 'X position (default: auto-arranged)' },
+                y: { type: 'number', description: 'Y position (default: auto-arranged)' },
+                width: { type: 'number', description: 'Node width (default: 250)' },
+                height: { type: 'number', description: 'Node height (default: 100 for text, 60 for links)' },
+                color: { type: 'string', description: 'Node color: "1"-"6" or hex color' },
+              },
+            },
+          },
+          edges: {
+            type: 'array',
+            description: 'Array of edges connecting nodes. Each edge needs: fromNode, toNode (node IDs)',
+            items: {
+              type: 'object',
+              properties: {
+                fromNode: { type: 'string', description: 'Source node ID' },
+                toNode: { type: 'string', description: 'Target node ID' },
+                fromSide: { type: 'string', description: '"top", "bottom", "left", "right" (default: auto)' },
+                toSide: { type: 'string', description: '"top", "bottom", "left", "right" (default: auto)' },
+                label: { type: 'string', description: 'Edge label' },
+              },
+            },
+          },
+        },
+        required: ['path', 'nodes'],
+      },
+      handler: this.wrapHandler(async (params) => {
+        let filepath = params.path as string;
+        if (!filepath.endsWith('.canvas')) {
+          filepath += '.canvas';
+        }
+
+        const inputNodes = (params.nodes as Array<{
+          id: string;
+          type: string;
+          content: string;
+          x?: number;
+          y?: number;
+          width?: number;
+          height?: number;
+          color?: string;
+        }>) || [];
+
+        const inputEdges = (params.edges as Array<{
+          fromNode: string;
+          toNode: string;
+          fromSide?: string;
+          toSide?: string;
+          label?: string;
+        }>) || [];
+
+        if (this.app.vault.getAbstractFileByPath(filepath)) {
+          return { error: `Canvas already exists: ${filepath}` };
+        }
+
+        // Auto-arrange nodes if positions not specified
+        const spacing = 300;
+        const nodesPerRow = 4;
+
+        interface CanvasNode {
+          id: string;
+          type: 'text' | 'file' | 'link';
+          x: number;
+          y: number;
+          width: number;
+          height: number;
+          text?: string;
+          file?: string;
+          url?: string;
+          color?: string;
+        }
+
+        const canvasNodes: CanvasNode[] = inputNodes.map((node, index) => {
+          const row = Math.floor(index / nodesPerRow);
+          const col = index % nodesPerRow;
+          const defaultWidth = 250;
+          const defaultHeight = node.type === 'text' ? 100 : 60;
+
+          const baseNode: CanvasNode = {
+            id: node.id || `node-${index}`,
+            type: (node.type as 'text' | 'file' | 'link') || 'text',
+            x: node.x ?? col * spacing,
+            y: node.y ?? row * spacing,
+            width: node.width ?? defaultWidth,
+            height: node.height ?? defaultHeight,
+          };
+
+          if (node.color) {
+            baseNode.color = node.color;
+          }
+
+          if (node.type === 'file') {
+            baseNode.file = node.content;
+          } else if (node.type === 'link') {
+            baseNode.url = node.content;
+          } else {
+            baseNode.text = node.content;
+          }
+
+          return baseNode;
+        });
+
+        interface CanvasEdge {
+          id: string;
+          fromNode: string;
+          fromSide: string;
+          toNode: string;
+          toSide: string;
+          label?: string;
+        }
+
+        const canvasEdges: CanvasEdge[] = inputEdges.map((edge, index) => {
+          const edgeObj: CanvasEdge = {
+            id: `edge-${index}`,
+            fromNode: edge.fromNode,
+            fromSide: edge.fromSide || 'right',
+            toNode: edge.toNode,
+            toSide: edge.toSide || 'left',
+          };
+          if (edge.label) {
+            edgeObj.label = edge.label;
+          }
+          return edgeObj;
+        });
+
+        const canvasData = {
+          nodes: canvasNodes,
+          edges: canvasEdges,
+        };
+
+        await this.ensureParentFolder(filepath);
+        await this.app.vault.create(filepath, JSON.stringify(canvasData, null, 2));
+
+        return {
+          success: true,
+          path: filepath,
+          nodeCount: canvasNodes.length,
+          edgeCount: canvasEdges.length,
         };
       }),
     };
