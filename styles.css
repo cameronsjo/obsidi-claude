@@ -872,6 +872,32 @@ pre:hover .code-copy-btn {
   font-weight: 600;
 }
 
+/* History search bar */
+.history-search-bar {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--background-modifier-border);
+  background-color: var(--background-secondary);
+}
+
+.history-search-input {
+  width: 100%;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background-color: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 0.85rem;
+}
+
+.history-search-input:focus {
+  outline: none;
+  border-color: var(--interactive-accent);
+}
+
+.history-search-input::placeholder {
+  color: var(--text-muted);
+}
+
 /* History tag filter bar */
 .history-tags-bar {
   display: flex;

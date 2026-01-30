@@ -60,6 +60,8 @@ export class ChatView extends ItemView {
   private userScrolledUp = false;
   private historyFilterTag: string | null = null; // Filter history by tag
   private historyTagsBar: HTMLElement | null = null;
+  private historySearchInput: HTMLInputElement | null = null;
+  private historySearchQuery: string = '';
 
   // Input history for up/down arrow navigation
   private inputHistory: string[] = [];
@@ -294,6 +296,20 @@ export class ChatView extends ItemView {
     });
     setIcon(closeBtn, 'x');
     closeBtn.onclick = () => this.toggleHistory();
+
+    // Search bar for conversations
+    const searchBar = panel.createDiv('history-search-bar');
+    this.historySearchInput = searchBar.createEl('input', {
+      cls: 'history-search-input',
+      attr: {
+        type: 'text',
+        placeholder: 'Search conversations...',
+      },
+    });
+    this.historySearchInput.addEventListener('input', () => {
+      this.historySearchQuery = this.historySearchInput?.value || '';
+      this.refreshHistoryList();
+    });
 
     // Tag filter bar
     this.historyTagsBar = panel.createDiv('history-tags-bar');
@@ -621,10 +637,21 @@ export class ChatView extends ItemView {
       );
     }
 
+    // Filter by search query (searches title)
+    if (this.historySearchQuery) {
+      const query = this.historySearchQuery.toLowerCase();
+      conversations = conversations.filter(c =>
+        c.title.toLowerCase().includes(query)
+      );
+    }
+
     if (conversations.length === 0) {
-      const emptyMsg = this.historyFilterTag
-        ? `No conversations with tag "${this.historyFilterTag}"`
-        : 'No conversations yet';
+      let emptyMsg = 'No conversations yet';
+      if (this.historySearchQuery) {
+        emptyMsg = `No conversations matching "${this.historySearchQuery}"`;
+      } else if (this.historyFilterTag) {
+        emptyMsg = `No conversations with tag "${this.historyFilterTag}"`;
+      }
       this.historyList.createDiv('history-empty').setText(emptyMsg);
       return;
     }
