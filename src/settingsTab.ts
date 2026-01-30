@@ -257,6 +257,12 @@ export class SettingsTab extends PluginSettingTab {
         text.inputEl.cols = 50;
       });
 
+    // SDK Advanced settings (only shown when SDK is available)
+    const backendFactory = this.plugin.backendFactory;
+    if (backendFactory?.getBackendInfo().sdkAvailable) {
+      this.addSDKAdvancedSettings(containerEl);
+    }
+
     // Skills settings
     containerEl.createEl('h4', { text: 'Skills' });
 
@@ -310,6 +316,193 @@ export class SettingsTab extends PluginSettingTab {
         skillsListEl.style.marginTop = '0.5rem';
         skillsListEl.innerHTML = `<strong>Active skills:</strong> ${skills.map(s => s.name).join(', ')}`;
       }
+    }
+  }
+
+  private addSDKAdvancedSettings(containerEl: HTMLElement): void {
+    containerEl.createEl('h4', { text: 'SDK Advanced Options' });
+
+    const sdkNote = containerEl.createEl('p', {
+      text: 'These options require the SDK backend (Claude Code CLI).',
+      cls: 'setting-item-description',
+    });
+    sdkNote.style.fontStyle = 'italic';
+    sdkNote.style.marginBottom = '0.5rem';
+
+    // System prompt mode
+    new Setting(containerEl)
+      .setName('System Prompt Mode')
+      .setDesc('How to handle your custom system prompt')
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption('append', 'Append (Add to Claude Code defaults)')
+          .addOption('replace', 'Replace (Use only your prompt)')
+          .setValue(this.plugin.settings.systemPromptMode)
+          .onChange(async (value) => {
+            this.plugin.settings.systemPromptMode = value as 'replace' | 'append';
+            await this.plugin.saveSettings();
+          })
+      );
+
+    // Continue session
+    new Setting(containerEl)
+      .setName('Auto-Continue Session')
+      .setDesc('Automatically continue the most recent session in working directory')
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.continueSession)
+          .onChange(async (value) => {
+            this.plugin.settings.continueSession = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    // File checkpointing
+    new Setting(containerEl)
+      .setName('File Checkpointing')
+      .setDesc('Enable undo/rewind for file changes (use /undo command)')
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.enableFileCheckpointing)
+          .onChange(async (value) => {
+            this.plugin.settings.enableFileCheckpointing = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    // Extended context
+    new Setting(containerEl)
+      .setName('Extended Context (1M tokens)')
+      .setDesc('Enable 1M token context window for large vaults (Sonnet 4/4.5 only, requires beta)')
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.extendedContext)
+          .onChange(async (value) => {
+            this.plugin.settings.extendedContext = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    // Load vault CLAUDE.md
+    new Setting(containerEl)
+      .setName('Load Vault CLAUDE.md')
+      .setDesc('Load project instructions from .claude/CLAUDE.md in working directory')
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.loadVaultClaudeMd)
+          .onChange(async (value) => {
+            this.plugin.settings.loadVaultClaudeMd = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    // Max budget
+    new Setting(containerEl)
+      .setName('Max Budget (USD)')
+      .setDesc('Maximum spend per conversation (empty = no limit)')
+      .addText((text) =>
+        text
+          .setPlaceholder('10.00')
+          .setValue(this.plugin.settings.maxBudgetUsd?.toString() ?? '')
+          .onChange(async (value) => {
+            const trimmed = value.trim().replace(/^\$/, '');
+            if (!trimmed) {
+              this.plugin.settings.maxBudgetUsd = undefined;
+            } else {
+              const num = parseFloat(trimmed);
+              if (!isNaN(num) && num > 0) {
+                this.plugin.settings.maxBudgetUsd = num;
+              }
+            }
+            await this.plugin.saveSettings();
+          })
+      );
+
+    // Max thinking tokens
+    new Setting(containerEl)
+      .setName('Max Thinking Tokens')
+      .setDesc('Limit thinking tokens to control costs (empty = no limit)')
+      .addText((text) =>
+        text
+          .setPlaceholder('32000')
+          .setValue(this.plugin.settings.maxThinkingTokens?.toString() ?? '')
+          .onChange(async (value) => {
+            const trimmed = value.trim();
+            if (!trimmed) {
+              this.plugin.settings.maxThinkingTokens = undefined;
+            } else {
+              const num = parseInt(trimmed, 10);
+              if (!isNaN(num) && num > 0) {
+                this.plugin.settings.maxThinkingTokens = num;
+              }
+            }
+            await this.plugin.saveSettings();
+          })
+      );
+
+    // Additional directories
+    new Setting(containerEl)
+      .setName('Additional Directories')
+      .setDesc('Extra directories Claude can access (comma-separated absolute paths)')
+      .addText((text) =>
+        text
+          .setPlaceholder('/path/to/dir1, /path/to/dir2')
+          .setValue(this.plugin.settings.additionalDirectories.join(', '))
+          .onChange(async (value) => {
+            this.plugin.settings.additionalDirectories = value
+              .split(',')
+              .map((s) => s.trim())
+              .filter((s) => s.length > 0);
+            await this.plugin.saveSettings();
+          })
+      );
+
+    // Disallowed tools
+    new Setting(containerEl)
+      .setName('Blocked Tools')
+      .setDesc('Tools to completely disable (comma-separated, e.g., "Bash, WebSearch")')
+      .addText((text) =>
+        text
+          .setPlaceholder('Bash, WebSearch')
+          .setValue(this.plugin.settings.disallowedTools.join(', '))
+          .onChange(async (value) => {
+            this.plugin.settings.disallowedTools = value
+              .split(',')
+              .map((s) => s.trim())
+              .filter((s) => s.length > 0);
+            await this.plugin.saveSettings();
+          })
+      );
+
+    // Main agent
+    const agents = this.plugin.settings.agents;
+    const agentOptions: string[] = [''];
+    if (agents.enabled) {
+      if (agents.useBuiltinAgents) {
+        agentOptions.push('research', 'writer', 'organizer');
+      }
+      for (const agent of agents.customAgents) {
+        if (agent.enabled) {
+          agentOptions.push(agent.name);
+        }
+      }
+    }
+
+    if (agentOptions.length > 1) {
+      new Setting(containerEl)
+        .setName('Main Agent')
+        .setDesc('Use a specific agent for all conversations (empty = normal conversation)')
+        .addDropdown((dropdown) => {
+          for (const opt of agentOptions) {
+            dropdown.addOption(opt, opt || '(None)');
+          }
+          dropdown
+            .setValue(this.plugin.settings.mainAgent ?? '')
+            .onChange(async (value) => {
+              this.plugin.settings.mainAgent = value || undefined;
+              await this.plugin.saveSettings();
+            });
+        });
     }
   }
 
