@@ -327,6 +327,7 @@ export interface ObsidiClaudeSettings {
   allowedTools: string[];
   permissionMode: 'default' | 'acceptEdits' | 'bypassPermissions';
   showToolCalls: boolean;
+  showMessageActions: boolean;
   streamResponses: boolean;
   embedding: EmbeddingSettings;
   mcp: MCPSettings;
@@ -629,6 +630,7 @@ When the user asks about their notes, always search first to ground your respons
   ],
   permissionMode: 'default',
   showToolCalls: true,
+  showMessageActions: true,
   streamResponses: true,
   embedding: DEFAULT_EMBEDDING_SETTINGS,
   mcp: DEFAULT_MCP_SETTINGS,

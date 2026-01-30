@@ -1660,12 +1660,14 @@ export class ChatView extends ItemView {
       contentDiv.createDiv('typing-indicator');
     }
 
-    // Message action buttons (shown on hover, hidden during streaming)
-    const actionsDiv = msgDiv.createDiv('message-actions');
-    if (msg.isStreaming) {
-      actionsDiv.style.display = 'none';
+    // Message action buttons (optional, hidden during streaming)
+    if (this.plugin.settings.showMessageActions) {
+      const actionsDiv = msgDiv.createDiv('message-actions');
+      if (msg.isStreaming) {
+        actionsDiv.style.display = 'none';
+      }
+      this.createMessageActions(actionsDiv, msg);
     }
-    this.createMessageActions(actionsDiv, msg);
 
     this.messageElements.set(msg.id, msgDiv);
     return msgDiv;

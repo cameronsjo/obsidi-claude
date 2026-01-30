@@ -213,6 +213,19 @@ export class SettingsTab extends PluginSettingTab {
           })
       );
 
+    // Show message actions
+    new Setting(containerEl)
+      .setName('Show Message Actions')
+      .setDesc('Display action buttons (copy, bookmark, reactions) below messages')
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.showMessageActions)
+          .onChange(async (value) => {
+            this.plugin.settings.showMessageActions = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
     // Stream responses
     new Setting(containerEl)
       .setName('Stream Responses')
