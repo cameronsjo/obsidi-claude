@@ -60,36 +60,50 @@ export class SettingsTab extends PluginSettingTab {
    * Shows status and provides set/clear buttons without exposing the actual key.
    */
   private async renderApiKeySetting(setting: Setting): Promise<void> {
-    const hasKey = await this.plugin.hasApiKey();
+    const source = await this.plugin.getApiKeySource();
+    const hasKey = source !== null;
     const controlEl = setting.controlEl;
 
     // Clear any existing controls
     controlEl.empty();
 
+    // Source labels for display
+    const sourceLabels: Record<string, string> = {
+      env: 'env var',
+      plugin: 'plugin secret',
+      shared: 'shared secret',
+      legacy: 'settings (legacy)',
+    };
+
     // Status indicator
     const statusEl = controlEl.createSpan({
       cls: `api-key-status ${hasKey ? 'configured' : 'not-configured'}`,
     });
-    statusEl.setText(hasKey ? '✓ Configured' : '✗ Not configured');
+    const statusText = hasKey
+      ? `✓ Using ${sourceLabels[source!]}`
+      : '✗ Not configured';
+    statusEl.setText(statusText);
     statusEl.style.marginRight = '1rem';
     statusEl.style.color = hasKey ? 'var(--text-success)' : 'var(--text-muted)';
 
-    // Set/Update button
-    const setBtn = controlEl.createEl('button', {
-      text: hasKey ? 'Update' : 'Set Key',
-      cls: 'mod-cta',
-    });
-    setBtn.style.marginRight = '0.5rem';
-    setBtn.onclick = () => {
-      new ApiKeyModal(this.app, async (key) => {
-        await this.plugin.setApiKey(key);
-        new Notice('API key saved securely');
-        this.renderApiKeySetting(setting);
-      }).open();
-    };
+    // Set/Update button (not needed if using env var)
+    if (source !== 'env') {
+      const setBtn = controlEl.createEl('button', {
+        text: hasKey ? 'Update' : 'Set Key',
+        cls: 'mod-cta',
+      });
+      setBtn.style.marginRight = '0.5rem';
+      setBtn.onclick = () => {
+        new ApiKeyModal(this.app, async (key) => {
+          await this.plugin.setApiKey(key);
+          new Notice('API key saved securely');
+          this.renderApiKeySetting(setting);
+        }).open();
+      };
+    }
 
-    // Clear button (only if key exists)
-    if (hasKey) {
+    // Clear button (only if key exists and not from env)
+    if (hasKey && source !== 'env') {
       const clearBtn = controlEl.createEl('button', {
         text: 'Clear',
       });

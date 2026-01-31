@@ -663,7 +663,10 @@ export default class ObsidiClaudePlugin extends Plugin {
   // Secret Storage (API Key Management)
   // ─────────────────────────────────────────────────────────────────────────────
 
+  /** Our plugin's secret key name */
   private static readonly API_KEY_SECRET = 'obsidi-claude-api-key';
+  /** Common shared key name (Obsidian's naming convention) */
+  private static readonly SHARED_API_KEY_SECRET = 'anthropic-api-key';
 
   /**
    * Check if SecretStorage API is available (Obsidian 1.11.4+).
@@ -674,17 +677,22 @@ export default class ObsidiClaudePlugin extends Plugin {
 
   /**
    * Get the Anthropic API key from secure storage.
-   * Falls back to environment variable, then legacy settings.
+   * Priority: env var > plugin secret > shared secret > legacy settings
    */
   async getApiKey(): Promise<string | null> {
     // 1. Check environment variable first
     const envKey = process.env.ANTHROPIC_API_KEY;
     if (envKey) return envKey;
 
-    // 2. Check SecretStorage (preferred)
+    // 2. Check SecretStorage
     if (this.hasSecretStorage()) {
-      const secretKey = await this.app.secretStorage!.getSecret(ObsidiClaudePlugin.API_KEY_SECRET);
-      if (secretKey) return secretKey;
+      // Check our plugin-specific key first
+      const pluginKey = await this.app.secretStorage!.getSecret(ObsidiClaudePlugin.API_KEY_SECRET);
+      if (pluginKey) return pluginKey;
+
+      // Fall back to shared key (e.g., set by user or other plugins)
+      const sharedKey = await this.app.secretStorage!.getSecret(ObsidiClaudePlugin.SHARED_API_KEY_SECRET);
+      if (sharedKey) return sharedKey;
     }
 
     // 3. Fall back to legacy settings (for migration)
@@ -739,6 +747,27 @@ export default class ObsidiClaudePlugin extends Plugin {
    */
   async hasApiKey(): Promise<boolean> {
     return (await this.getApiKey()) !== null;
+  }
+
+  /**
+   * Get the source of the configured API key.
+   * Returns null if no key is configured.
+   */
+  async getApiKeySource(): Promise<'env' | 'plugin' | 'shared' | 'legacy' | null> {
+    // Check in same priority order as getApiKey
+    if (process.env.ANTHROPIC_API_KEY) return 'env';
+
+    if (this.hasSecretStorage()) {
+      const pluginKey = await this.app.secretStorage!.getSecret(ObsidiClaudePlugin.API_KEY_SECRET);
+      if (pluginKey) return 'plugin';
+
+      const sharedKey = await this.app.secretStorage!.getSecret(ObsidiClaudePlugin.SHARED_API_KEY_SECRET);
+      if (sharedKey) return 'shared';
+    }
+
+    if (this.settings.anthropicApiKey) return 'legacy';
+
+    return null;
   }
 
   /**
