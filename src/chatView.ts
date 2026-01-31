@@ -1661,8 +1661,13 @@ export class ChatView extends ItemView {
     this.messagesContainer.empty();
     this.messageElements.clear();
 
-    for (const msg of this.conversation.messages) {
-      this.renderMessage(msg);
+    // Show welcome state if no messages
+    if (this.conversation.messages.length === 0) {
+      this.showWelcomeState();
+    } else {
+      for (const msg of this.conversation.messages) {
+        this.renderMessage(msg);
+      }
     }
     // Force scroll when rendering all messages (loading conversation)
     this.userScrolledUp = false;
@@ -1670,6 +1675,32 @@ export class ChatView extends ItemView {
 
     // Update token counter
     this.updateTokenCounter();
+  }
+
+  /**
+   * Show welcome state when conversation is empty.
+   */
+  private showWelcomeState(): void {
+    if (!this.messagesContainer) return;
+
+    if (this.isMobile()) {
+      this.addMobileSwipeHint();
+    } else {
+      // Desktop welcome state
+      const welcomeContainer = this.messagesContainer.createDiv('desktop-welcome');
+      welcomeContainer.style.cssText = 'display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; padding: 2rem; text-align: center; color: var(--text-muted);';
+
+      const title = welcomeContainer.createEl('h3', { text: 'Chat with Claude' });
+      title.style.cssText = 'margin: 0 0 0.5rem 0; color: var(--text-normal);';
+
+      const subtitle = welcomeContainer.createDiv();
+      subtitle.style.cssText = 'margin-bottom: 1rem; font-size: 0.9rem;';
+      subtitle.setText('Ask questions, get help with your notes, and explore your vault.');
+
+      const hint = welcomeContainer.createDiv();
+      hint.style.cssText = 'font-size: 0.85rem; opacity: 0.7;';
+      hint.setText('Type a message below or use /help for commands');
+    }
   }
 
   private renderMessage(msg: ChatMessage): HTMLElement | null {
@@ -5057,12 +5088,36 @@ ${content}
   }
 
   /**
-   * Add swipe gesture hint for mobile users.
+   * Add swipe gesture hint and welcome state for mobile users.
    */
   private addMobileSwipeHint(): void {
     if (!this.isMobile() || this.conversation.messages.length > 0) return;
 
-    const hint = this.messagesContainer.createDiv('swipe-hint');
+    // Mobile welcome state
+    const welcomeContainer = this.messagesContainer.createDiv('mobile-welcome');
+    welcomeContainer.style.cssText = 'display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; padding: 2rem; text-align: center; color: var(--text-muted);';
+
+    const title = welcomeContainer.createEl('h3', { text: 'Chat with Claude' });
+    title.style.cssText = 'margin: 0 0 0.5rem 0; color: var(--text-normal);';
+
+    const subtitle = welcomeContainer.createDiv();
+    subtitle.style.cssText = 'margin-bottom: 1.5rem; font-size: 0.9rem;';
+    subtitle.setText('Ask questions, get help with notes, and explore your vault.');
+
+    // Mobile-specific features list
+    const featuresEl = welcomeContainer.createDiv();
+    featuresEl.style.cssText = 'text-align: left; font-size: 0.85rem; background: var(--background-secondary); padding: 1rem; border-radius: 8px; margin-bottom: 1rem;';
+    featuresEl.innerHTML = `
+      <div style="margin-bottom: 0.5rem;"><strong>Available on mobile:</strong></div>
+      <div style="margin-left: 0.5rem;">• Chat with all Claude models</div>
+      <div style="margin-left: 0.5rem;">• Read and search your notes</div>
+      <div style="margin-left: 0.5rem;">• Create and edit files</div>
+      <div style="margin-left: 0.5rem;">• Semantic search (RAG)</div>
+    `;
+
+    // Swipe hint
+    const hint = welcomeContainer.createDiv('swipe-hint');
+    hint.style.cssText = 'font-size: 0.8rem; opacity: 0.7;';
     hint.setText('Swipe right for history • Tap + for new chat');
   }
 

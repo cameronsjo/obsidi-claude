@@ -1,4 +1,4 @@
-import { App, PluginSettingTab, Setting, Notice, Modal, TextComponent, TextAreaComponent } from 'obsidian';
+import { App, PluginSettingTab, Setting, Notice, Modal, TextComponent, TextAreaComponent, Platform } from 'obsidian';
 import type ObsidiClaudePlugin from '../main';
 import type { EmbeddingProviderType, ExternalMCPServer } from './types';
 import { createLogger } from './logger';
@@ -63,15 +63,27 @@ export class SettingsTab extends PluginSettingTab {
     // Header
     containerEl.createEl('h2', { text: 'Obsidi-Claude Settings' });
 
+    // Mobile notice
+    if (Platform.isMobile) {
+      const mobileNotice = containerEl.createDiv({ cls: 'setting-item-description' });
+      mobileNotice.style.cssText = 'background: var(--background-secondary); padding: 0.75rem; border-radius: 6px; margin-bottom: 1rem; border-left: 3px solid var(--interactive-accent);';
+      mobileNotice.innerHTML = `
+        <strong>Mobile Mode</strong><br>
+        Using the direct Anthropic API. Some desktop features (SDK backend, MCP servers, bash commands) are unavailable on mobile.
+      `;
+    }
+
     // Tab bar
     const tabBar = containerEl.createDiv('settings-tab-bar');
-    const tabs: { id: SettingsTabId; label: string }[] = [
+    const allTabs: { id: SettingsTabId; label: string; desktopOnly?: boolean }[] = [
       { id: 'agent', label: 'Agent' },
       { id: 'embedding', label: 'Embedding' },
-      { id: 'mcp', label: 'MCP Servers' },
+      { id: 'mcp', label: 'MCP Servers', desktopOnly: true },
       { id: 'tools', label: 'Tools' },
       { id: 'about', label: 'About' },
     ];
+    // Filter out desktop-only tabs on mobile
+    const tabs = allTabs.filter(tab => !tab.desktopOnly || !Platform.isMobile);
 
     for (const tab of tabs) {
       const tabEl = tabBar.createEl('button', {
@@ -251,21 +263,28 @@ export class SettingsTab extends PluginSettingTab {
     // ═══════════════════════════════════════════════════════════════════
     const backendSection = this.createCollapsibleSection(containerEl, 'backend', 'Backend Setup');
 
-    new Setting(backendSection)
-      .setName('Backend')
-      .setDesc('Which backend to use for Claude interactions')
-      .addDropdown((dropdown) =>
-        dropdown
-          .addOption('auto', 'Auto (SDK on desktop, API on mobile)')
-          .addOption('sdk', 'SDK (Claude Code CLI - desktop only)')
-          .addOption('api', 'API (Direct Anthropic API)')
-          .setValue(this.plugin.settings.preferredBackend)
-          .onChange(async (value) => {
-            this.plugin.settings.preferredBackend = value as 'auto' | 'sdk' | 'api';
-            await this.plugin.saveSettings();
-            this.display();
-          })
-      );
+    // On mobile, only show API option; on desktop show all options
+    if (Platform.isMobile) {
+      const mobileBackendInfo = backendSection.createDiv({ cls: 'setting-item-description' });
+      mobileBackendInfo.style.marginBottom = '0.5rem';
+      mobileBackendInfo.innerHTML = '<em>Using direct Anthropic API (mobile)</em>';
+    } else {
+      new Setting(backendSection)
+        .setName('Backend')
+        .setDesc('Which backend to use for Claude interactions')
+        .addDropdown((dropdown) =>
+          dropdown
+            .addOption('auto', 'Auto (SDK on desktop, API on mobile)')
+            .addOption('sdk', 'SDK (Claude Code CLI - desktop only)')
+            .addOption('api', 'API (Direct Anthropic API)')
+            .setValue(this.plugin.settings.preferredBackend)
+            .onChange(async (value) => {
+              this.plugin.settings.preferredBackend = value as 'auto' | 'sdk' | 'api';
+              await this.plugin.saveSettings();
+              this.display();
+            })
+        );
+    }
 
     // Show current backend info
     const backendInfo = this.plugin.backendFactory?.getBackendInfo();
@@ -289,31 +308,34 @@ export class SettingsTab extends PluginSettingTab {
           })
       );
 
-    new Setting(backendSection)
-      .setName('Claude Code Path')
-      .setDesc('Path to Claude Code CLI. Run "which claude" in terminal to find it.')
-      .addText((text) =>
-        text
-          .setPlaceholder('/opt/homebrew/bin/claude')
-          .setValue(this.plugin.settings.claudeCodePath)
-          .onChange(async (value) => {
-            this.plugin.settings.claudeCodePath = value;
-            await this.plugin.saveSettings();
-          })
-      );
+    // Desktop-only: Claude Code Path and Working Directory
+    if (!Platform.isMobile) {
+      new Setting(backendSection)
+        .setName('Claude Code Path')
+        .setDesc('Path to Claude Code CLI. Run "which claude" in terminal to find it.')
+        .addText((text) =>
+          text
+            .setPlaceholder('/opt/homebrew/bin/claude')
+            .setValue(this.plugin.settings.claudeCodePath)
+            .onChange(async (value) => {
+              this.plugin.settings.claudeCodePath = value;
+              await this.plugin.saveSettings();
+            })
+        );
 
-    new Setting(backendSection)
-      .setName('Working Directory')
-      .setDesc('Directory where the agent operates. Leave empty for vault root.')
-      .addText((text) =>
-        text
-          .setPlaceholder('/path/to/directory')
-          .setValue(this.plugin.settings.workingDirectory)
-          .onChange(async (value) => {
-            this.plugin.settings.workingDirectory = value;
-            await this.plugin.saveSettings();
-          })
-      );
+      new Setting(backendSection)
+        .setName('Working Directory')
+        .setDesc('Directory where the agent operates. Leave empty for vault root.')
+        .addText((text) =>
+          text
+            .setPlaceholder('/path/to/directory')
+            .setValue(this.plugin.settings.workingDirectory)
+            .onChange(async (value) => {
+              this.plugin.settings.workingDirectory = value;
+              await this.plugin.saveSettings();
+            })
+        );
+    }
 
     // ═══════════════════════════════════════════════════════════════════
     // ADVANCED - Collapsible, collapsed by default
@@ -336,10 +358,12 @@ export class SettingsTab extends PluginSettingTab {
         text.inputEl.cols = 50;
       });
 
-    // SDK-specific advanced settings (only if SDK available)
-    const backendFactory = this.plugin.backendFactory;
-    if (backendFactory?.getBackendInfo().sdkAvailable) {
-      this.addSDKAdvancedSettings(advancedSection);
+    // SDK-specific advanced settings (only on desktop if SDK available)
+    if (!Platform.isMobile) {
+      const backendFactory = this.plugin.backendFactory;
+      if (backendFactory?.getBackendInfo().sdkAvailable) {
+        this.addSDKAdvancedSettings(advancedSection);
+      }
     }
 
     // Skills settings
@@ -774,6 +798,17 @@ export class SettingsTab extends PluginSettingTab {
         cls: 'setting-item-description',
       });
     } else if (embedding.provider === 'ollama') {
+      // Show warning on mobile
+      if (Platform.isMobile) {
+        const warningEl = containerEl.createDiv({ cls: 'setting-warning' });
+        warningEl.innerHTML = `
+          <strong>⚠️ Not Available on Mobile</strong><br>
+          Ollama requires localhost access, which is not available on mobile devices.
+          Please use <strong>Transformers.js</strong> (free, in-browser) or a cloud provider (OpenAI, Voyage).
+        `;
+        warningEl.style.cssText = 'background: var(--background-modifier-error-rgb); padding: 0.75rem; border-radius: 6px; margin-bottom: 0.5rem;';
+      }
+
       new Setting(containerEl)
         .setName('Ollama Host')
         .setDesc('Ollama server URL (requires Ollama running)')
