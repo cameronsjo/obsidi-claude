@@ -122,10 +122,18 @@ export class SDKAgentBackend implements AgentBackend {
   private hookCallbacks: HookCallbacks = {};
   /** V2 API session (unstable) */
   private v2Session: SDKSession | null = null;
+  private apiKeyProvider: (() => Promise<string | null>) | null = null;
 
   constructor(settings: ObsidiClaudeSettings, obsidianTools: ObsidianTools) {
     this.settings = settings;
     this.obsidianTools = obsidianTools;
+  }
+
+  /**
+   * Set the API key provider for secure storage access.
+   */
+  setApiKeyProvider(provider: () => Promise<string | null>): void {
+    this.apiKeyProvider = provider;
   }
 
   /**
@@ -1337,7 +1345,15 @@ export class SDKAgentBackend implements AgentBackend {
    * Uses direct API call to avoid spawning a subprocess.
    */
   async generateTitle(firstUserMessage: string, firstAssistantMessage: string): Promise<string | null> {
-    const apiKey = this.settings.anthropicApiKey || process.env.ANTHROPIC_API_KEY;
+    // Try secure storage first, then env var, then legacy settings
+    let apiKey: string | null = null;
+    if (this.apiKeyProvider) {
+      apiKey = await this.apiKeyProvider();
+    }
+    if (!apiKey) {
+      apiKey = process.env.ANTHROPIC_API_KEY || this.settings.anthropicApiKey || null;
+    }
+
     if (!apiKey) {
       log.debug('No API key for title generation, using fallback');
       return null;

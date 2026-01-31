@@ -21,11 +21,23 @@ export class BackendFactory {
   private sdkBackend: SDKAgentBackend | null = null;
   private apiBackend: APIAgentBackend | null = null;
   private currentBackend: AgentBackend | null = null;
+  private apiKeyProvider: (() => Promise<string | null>) | null = null;
 
   constructor(
     private settings: ObsidiClaudeSettings,
     private obsidianTools: ObsidianTools
   ) {}
+
+  /**
+   * Set the API key provider function.
+   * This allows backends to fetch API keys from secure storage.
+   */
+  setApiKeyProvider(provider: () => Promise<string | null>): void {
+    this.apiKeyProvider = provider;
+    // Update existing backends
+    this.sdkBackend?.setApiKeyProvider(provider);
+    this.apiBackend?.setApiKeyProvider(provider);
+  }
 
   /**
    * Get the appropriate backend for current platform and settings.
@@ -87,6 +99,9 @@ export class BackendFactory {
 
     if (!this.sdkBackend) {
       this.sdkBackend = new SDKAgentBackend(this.settings, this.obsidianTools);
+      if (this.apiKeyProvider) {
+        this.sdkBackend.setApiKeyProvider(this.apiKeyProvider);
+      }
     }
     return this.sdkBackend;
   }
@@ -97,6 +112,9 @@ export class BackendFactory {
   getAPIBackend(): APIAgentBackend {
     if (!this.apiBackend) {
       this.apiBackend = new APIAgentBackend(this.settings, this.obsidianTools);
+      if (this.apiKeyProvider) {
+        this.apiBackend.setApiKeyProvider(this.apiKeyProvider);
+      }
     }
     return this.apiBackend;
   }

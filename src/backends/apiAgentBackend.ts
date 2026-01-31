@@ -38,19 +38,30 @@ export class APIAgentBackend implements AgentBackend {
   private abortController: AbortController | null = null;
   private obsidianTools: ObsidianTools;
   private initialized = false;
+  private apiKeyProvider: (() => Promise<string | null>) | null = null;
 
   constructor(settings: ObsidiClaudeSettings, obsidianTools: ObsidianTools) {
     this.settings = settings;
     this.obsidianTools = obsidianTools;
   }
 
-  isAvailable(): boolean {
-    // Available if we have an API key (from env or settings)
-    return this.getApiKey() !== null;
+  /**
+   * Set the API key provider for secure storage access.
+   */
+  setApiKeyProvider(provider: () => Promise<string | null>): void {
+    this.apiKeyProvider = provider;
   }
 
-  private getApiKey(): string | null {
-    // Check environment variable first, then settings
+  isAvailable(): boolean {
+    // Quick sync check - full async check happens in initialize
+    return this.getApiKeySync() !== null;
+  }
+
+  /**
+   * Synchronous API key check (for isAvailable).
+   * Only checks env var and legacy settings.
+   */
+  private getApiKeySync(): string | null {
     const envKey = process.env.ANTHROPIC_API_KEY;
     if (envKey) return envKey;
 
@@ -60,12 +71,26 @@ export class APIAgentBackend implements AgentBackend {
     return null;
   }
 
+  /**
+   * Get API key from secure storage (async) or fallback to sync sources.
+   */
+  private async getApiKey(): Promise<string | null> {
+    // Check provider first (SecretStorage)
+    if (this.apiKeyProvider) {
+      const key = await this.apiKeyProvider();
+      if (key) return key;
+    }
+
+    // Fall back to sync sources
+    return this.getApiKeySync();
+  }
+
   async initialize(): Promise<void> {
     if (this.initialized) return;
 
     log.info('Initializing API backend');
 
-    const apiKey = this.getApiKey();
+    const apiKey = await this.getApiKey();
     if (!apiKey) {
       throw new Error(
         'Anthropic API key not found. Set ANTHROPIC_API_KEY environment variable or configure in plugin settings.'

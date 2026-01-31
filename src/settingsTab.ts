@@ -55,6 +55,52 @@ export class SettingsTab extends PluginSettingTab {
     return contentEl;
   }
 
+  /**
+   * Render the API key setting with secure storage.
+   * Shows status and provides set/clear buttons without exposing the actual key.
+   */
+  private async renderApiKeySetting(setting: Setting): Promise<void> {
+    const hasKey = await this.plugin.hasApiKey();
+    const controlEl = setting.controlEl;
+
+    // Clear any existing controls
+    controlEl.empty();
+
+    // Status indicator
+    const statusEl = controlEl.createSpan({
+      cls: `api-key-status ${hasKey ? 'configured' : 'not-configured'}`,
+    });
+    statusEl.setText(hasKey ? '✓ Configured' : '✗ Not configured');
+    statusEl.style.marginRight = '1rem';
+    statusEl.style.color = hasKey ? 'var(--text-success)' : 'var(--text-muted)';
+
+    // Set/Update button
+    const setBtn = controlEl.createEl('button', {
+      text: hasKey ? 'Update' : 'Set Key',
+      cls: 'mod-cta',
+    });
+    setBtn.style.marginRight = '0.5rem';
+    setBtn.onclick = () => {
+      new ApiKeyModal(this.app, async (key) => {
+        await this.plugin.setApiKey(key);
+        new Notice('API key saved securely');
+        this.renderApiKeySetting(setting);
+      }).open();
+    };
+
+    // Clear button (only if key exists)
+    if (hasKey) {
+      const clearBtn = controlEl.createEl('button', {
+        text: 'Clear',
+      });
+      clearBtn.onclick = async () => {
+        await this.plugin.clearApiKey();
+        new Notice('API key cleared');
+        this.renderApiKeySetting(setting);
+      };
+    }
+  }
+
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
@@ -276,18 +322,13 @@ export class SettingsTab extends PluginSettingTab {
       infoEl.innerHTML = `<em>Current: ${backendInfo.current.toUpperCase()} backend (${backendInfo.sdkAvailable ? 'SDK available' : 'SDK unavailable'})</em>`;
     }
 
-    new Setting(backendSection)
+    // API Key with secure storage
+    const apiKeySetting = new Setting(backendSection)
       .setName('Anthropic API Key')
-      .setDesc('Required for API backend. Checked after ANTHROPIC_API_KEY env var.')
-      .addText((text) =>
-        text
-          .setPlaceholder('sk-ant-...')
-          .setValue(this.plugin.settings.anthropicApiKey)
-          .onChange(async (value) => {
-            this.plugin.settings.anthropicApiKey = value;
-            await this.plugin.saveSettings();
-          })
-      );
+      .setDesc('Required for API backend. Stored securely. Env var ANTHROPIC_API_KEY takes precedence.');
+
+    // Add status indicator and buttons asynchronously
+    this.renderApiKeySetting(apiKeySetting);
 
     new Setting(backendSection)
       .setName('Claude Code Path')
@@ -1533,6 +1574,87 @@ class AddMCPServerModal extends Modal {
       await this.onSubmit(server);
       this.close();
     };
+  }
+
+  onClose(): void {
+    const { contentEl } = this;
+    contentEl.empty();
+  }
+}
+
+/**
+ * Modal for entering API key securely.
+ */
+class ApiKeyModal extends Modal {
+  private onSubmit: (key: string) => Promise<void>;
+
+  constructor(app: App, onSubmit: (key: string) => Promise<void>) {
+    super(app);
+    this.onSubmit = onSubmit;
+  }
+
+  onOpen(): void {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.createEl('h3', { text: 'Enter Anthropic API Key' });
+
+    const desc = contentEl.createEl('p', {
+      text: 'Your API key will be stored securely and will not appear in plugin settings.',
+    });
+    desc.style.marginBottom = '1rem';
+    desc.style.color = 'var(--text-muted)';
+
+    let keyValue = '';
+
+    const inputContainer = contentEl.createDiv();
+    inputContainer.style.marginBottom = '1rem';
+
+    const input = inputContainer.createEl('input', {
+      type: 'password',
+      placeholder: 'sk-ant-api03-...',
+    });
+    input.style.width = '100%';
+    input.style.padding = '0.5rem';
+    input.oninput = () => {
+      keyValue = input.value;
+    };
+
+    // Show/hide toggle
+    const toggleContainer = inputContainer.createDiv();
+    toggleContainer.style.marginTop = '0.5rem';
+
+    const showToggle = toggleContainer.createEl('label');
+    const checkbox = showToggle.createEl('input', { type: 'checkbox' });
+    checkbox.style.marginRight = '0.5rem';
+    showToggle.appendText('Show key');
+    checkbox.onchange = () => {
+      input.type = checkbox.checked ? 'text' : 'password';
+    };
+
+    // Buttons
+    const buttonContainer = contentEl.createDiv();
+    buttonContainer.style.display = 'flex';
+    buttonContainer.style.justifyContent = 'flex-end';
+    buttonContainer.style.gap = '0.5rem';
+
+    const cancelBtn = buttonContainer.createEl('button', { text: 'Cancel' });
+    cancelBtn.onclick = () => this.close();
+
+    const saveBtn = buttonContainer.createEl('button', {
+      text: 'Save',
+      cls: 'mod-cta',
+    });
+    saveBtn.onclick = async () => {
+      if (!keyValue.trim()) {
+        new Notice('Please enter an API key');
+        return;
+      }
+      await this.onSubmit(keyValue.trim());
+      this.close();
+    };
+
+    // Focus input
+    input.focus();
   }
 
   onClose(): void {

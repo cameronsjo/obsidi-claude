@@ -1,4 +1,4 @@
-import { Plugin, WorkspaceLeaf, TFile, Notice, Editor, MarkdownView, Menu } from 'obsidian';
+import { Plugin, WorkspaceLeaf, TFile, Notice, Editor, MarkdownView, Menu, App } from 'obsidian';
 import { ChatView, CHAT_VIEW_TYPE } from './src/chatView';
 import { SettingsTab } from './src/settingsTab';
 import { DEFAULT_SETTINGS, type ObsidiClaudeSettings } from './src/types';
@@ -11,6 +11,17 @@ import { SkillRegistry } from './src/skills';
 import { createLogger } from './src/logger';
 
 const log = createLogger('Plugin');
+
+// Augment Obsidian types for SecretStorage API (available in Obsidian 1.11.4+)
+declare module 'obsidian' {
+  interface App {
+    secretStorage?: {
+      getSecret(key: string): Promise<string | undefined>;
+      setSecret(key: string, value: string): Promise<void>;
+      removeSecret(key: string): Promise<void>;
+    };
+  }
+}
 
 export default class ObsidiClaudePlugin extends Plugin {
   settings: ObsidiClaudeSettings;
@@ -32,6 +43,9 @@ export default class ObsidiClaudePlugin extends Plugin {
     // Load settings
     this.settings = await this.storage.loadSettings();
 
+    // Migrate API key from plain text settings to SecretStorage
+    await this.migrateApiKeyToSecretStorage();
+
     // Set default working directory to vault root
     if (!this.settings.workingDirectory) {
       const adapter = this.app.vault.adapter as unknown as { basePath?: string };
@@ -51,6 +65,7 @@ export default class ObsidiClaudePlugin extends Plugin {
 
     // Initialize backend factory
     this.backendFactory = new BackendFactory(this.settings, this.obsidianTools);
+    this.backendFactory.setApiKeyProvider(() => this.getApiKey());
     log.info('Backend factory initialized', this.backendFactory.getBackendInfo());
 
     // Initialize skill registry
@@ -642,6 +657,107 @@ export default class ObsidiClaudePlugin extends Plugin {
     if (this.skillRegistry) {
       await this.skillRegistry.updateSettings(this.settings.skills);
     }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Secret Storage (API Key Management)
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  private static readonly API_KEY_SECRET = 'obsidi-claude-api-key';
+
+  /**
+   * Check if SecretStorage API is available (Obsidian 1.11.4+).
+   */
+  private hasSecretStorage(): boolean {
+    return 'secretStorage' in this.app && this.app.secretStorage != null;
+  }
+
+  /**
+   * Get the Anthropic API key from secure storage.
+   * Falls back to environment variable, then legacy settings.
+   */
+  async getApiKey(): Promise<string | null> {
+    // 1. Check environment variable first
+    const envKey = process.env.ANTHROPIC_API_KEY;
+    if (envKey) return envKey;
+
+    // 2. Check SecretStorage (preferred)
+    if (this.hasSecretStorage()) {
+      const secretKey = await this.app.secretStorage!.getSecret(ObsidiClaudePlugin.API_KEY_SECRET);
+      if (secretKey) return secretKey;
+    }
+
+    // 3. Fall back to legacy settings (for migration)
+    if (this.settings.anthropicApiKey) {
+      return this.settings.anthropicApiKey;
+    }
+
+    return null;
+  }
+
+  /**
+   * Store the API key in secure storage.
+   */
+  async setApiKey(key: string): Promise<void> {
+    if (!this.hasSecretStorage()) {
+      // Fall back to settings if SecretStorage unavailable
+      log.warn('SecretStorage not available, storing in settings');
+      this.settings.anthropicApiKey = key;
+      await this.saveSettings();
+      return;
+    }
+
+    await this.app.secretStorage!.setSecret(ObsidiClaudePlugin.API_KEY_SECRET, key);
+    log.info('API key stored in SecretStorage');
+
+    // Clear from legacy settings if present
+    if (this.settings.anthropicApiKey) {
+      this.settings.anthropicApiKey = '';
+      await this.saveSettings();
+    }
+  }
+
+  /**
+   * Remove the API key from secure storage.
+   */
+  async clearApiKey(): Promise<void> {
+    if (this.hasSecretStorage()) {
+      await this.app.secretStorage!.removeSecret(ObsidiClaudePlugin.API_KEY_SECRET);
+    }
+
+    // Also clear legacy settings
+    if (this.settings.anthropicApiKey) {
+      this.settings.anthropicApiKey = '';
+      await this.saveSettings();
+    }
+
+    log.info('API key cleared');
+  }
+
+  /**
+   * Check if an API key is configured (without revealing it).
+   */
+  async hasApiKey(): Promise<boolean> {
+    return (await this.getApiKey()) !== null;
+  }
+
+  /**
+   * Migrate API key from legacy settings to SecretStorage.
+   */
+  async migrateApiKeyToSecretStorage(): Promise<void> {
+    if (!this.hasSecretStorage()) return;
+    if (!this.settings.anthropicApiKey) return;
+
+    log.info('Migrating API key from settings to SecretStorage');
+    await this.app.secretStorage!.setSecret(
+      ObsidiClaudePlugin.API_KEY_SECRET,
+      this.settings.anthropicApiKey
+    );
+
+    // Clear from settings
+    this.settings.anthropicApiKey = '';
+    await this.saveSettings();
+    log.info('API key migration complete');
   }
 
   /**
