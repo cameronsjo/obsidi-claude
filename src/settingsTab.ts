@@ -128,7 +128,7 @@ export class SettingsTab extends PluginSettingTab {
     const tabs: { id: SettingsTabId; label: string }[] = [
       { id: 'agent', label: 'Agent' },
       { id: 'embedding', label: 'Embedding' },
-      { id: 'mcp', label: 'MCP Servers' },
+      { id: 'mcp', label: 'MCP' },
       { id: 'tools', label: 'Tools' },
       { id: 'about', label: 'About' },
     ];
@@ -1031,11 +1031,17 @@ export class SettingsTab extends PluginSettingTab {
   }
 
   private addMCPSettings(containerEl: HTMLElement): void {
-    containerEl.createEl('h3', { text: 'MCP Server' });
+    // Server section - expose vault tools via MCP
+    const serverSection = this.createCollapsibleSection(
+      containerEl,
+      'mcp-server',
+      'Server (Expose Vault)',
+      true
+    );
 
     const mcp = this.plugin.settings.mcp;
 
-    new Setting(containerEl)
+    new Setting(serverSection)
       .setName('Enable MCP Server')
       .setDesc(
         'Expose Obsidian vault tools via Model Context Protocol. Allows external Claude instances to interact with your vault.'
@@ -1060,7 +1066,7 @@ export class SettingsTab extends PluginSettingTab {
 
     if (!mcp.enabled) return;
 
-    new Setting(containerEl)
+    new Setting(serverSection)
       .setName('Server Name')
       .setDesc('Name used to identify this MCP server')
       .addText((text) =>
@@ -1073,7 +1079,7 @@ export class SettingsTab extends PluginSettingTab {
           })
       );
 
-    new Setting(containerEl)
+    new Setting(serverSection)
       .setName('Transport')
       .setDesc('How clients connect to the MCP server')
       .addDropdown((dropdown) =>
@@ -1099,7 +1105,7 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     if (mcp.transport === 'http' || mcp.transport === 'sse' || mcp.transport === 'both') {
-      new Setting(containerEl)
+      new Setting(serverSection)
         .setName('HTTP Port')
         .setDesc('Port for HTTP/SSE transport (default: 3000)')
         .addText((text) =>
@@ -1117,7 +1123,7 @@ export class SettingsTab extends PluginSettingTab {
     }
 
     // Show MCP configuration instructions based on transport
-    const infoEl = containerEl.createDiv({ cls: 'setting-item-description' });
+    const infoEl = serverSection.createDiv({ cls: 'setting-item-description' });
     infoEl.style.marginTop = '10px';
 
     if (mcp.transport === 'http' || mcp.transport === 'both') {
@@ -1171,14 +1177,20 @@ export class SettingsTab extends PluginSettingTab {
   }
 
   private addExternalMCPSettings(containerEl: HTMLElement): void {
-    containerEl.createEl('h3', { text: 'External MCP Servers' });
+    // Client section - connect to external MCP servers
+    const clientSection = this.createCollapsibleSection(
+      containerEl,
+      'mcp-client',
+      'Client (External Servers)',
+      true
+    );
 
     const servers = this.plugin.settings.externalMcpServers;
 
     // Add server button
-    new Setting(containerEl)
+    new Setting(clientSection)
       .setName('Add MCP Server')
-      .setDesc('Connect additional MCP servers (mouse, media, etc.)')
+      .setDesc('Connect to external MCP servers for additional capabilities')
       .addButton((button) =>
         button.setButtonText('Add Server').onClick(() => {
           new AddMCPServerModal(this.app, async (server) => {
@@ -1191,7 +1203,7 @@ export class SettingsTab extends PluginSettingTab {
 
     // List existing servers
     if (servers.length > 0) {
-      const serversContainer = containerEl.createDiv('mcp-servers-list');
+      const serversContainer = clientSection.createDiv('mcp-servers-list');
 
       for (let i = 0; i < servers.length; i++) {
         const server = servers[i];
