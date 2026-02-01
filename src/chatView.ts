@@ -17,6 +17,26 @@ import type { AgentBackend, AgentCallbacks, AgentResult } from './backends';
 import type { PermissionRequestContext, PermissionResponse } from './backends/sdkAgentBackend';
 import { createLogger } from './logger';
 
+// Import extracted UI modules
+import {
+  createSearchBar,
+  createQueuePanel,
+  createStatusBar,
+  createMobileSupport,
+  createTabBar,
+  createMessageRenderer,
+  createInputArea,
+  createHistoryPanel,
+  type SearchBarHandle,
+  type QueuePanelHandle,
+  type StatusBarHandle,
+  type MobileSupportHandle,
+  type TabBarHandle,
+  type MessageRendererHandle,
+  type InputAreaHandle,
+  type HistoryPanelHandle,
+} from './chatView/index';
+
 const log = createLogger('ChatView');
 
 // UI Configuration Constants
@@ -114,6 +134,16 @@ export class ChatView extends ItemView {
   private autocompleteEl: HTMLElement | null = null;
   private autocompleteIndex = -1;
   private autocompleteCommands: Array<{ name: string; description: string }> = [];
+
+  // Extracted UI module handles
+  private searchBarModule: SearchBarHandle | null = null;
+  private queueModule: QueuePanelHandle | null = null;
+  private statusModule: StatusBarHandle | null = null;
+  private mobileModule: MobileSupportHandle | null = null;
+  private tabModule: TabBarHandle | null = null;
+  private messageModule: MessageRendererHandle | null = null;
+  private inputModule: InputAreaHandle | null = null;
+  private historyModule: HistoryPanelHandle | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: ObsidiClaudePlugin) {
     super(leaf);
@@ -5418,6 +5448,17 @@ ${content}
 
   async onClose(): Promise<void> {
     log.info('Closing chat view');
+
+    // Clean up extracted modules
+    this.searchBarModule?.destroy();
+    this.queueModule?.destroy();
+    this.statusModule?.destroy();
+    this.mobileModule?.destroy();
+    this.tabModule?.destroy();
+    this.messageModule?.destroy();
+    this.inputModule?.destroy();
+    this.historyModule?.destroy();
+
     // Save tabs and conversation before closing
     await this.saveTabState();
     await this.saveConversation();
