@@ -73,7 +73,6 @@ export class ChatView extends ItemView {
   private accountBadge: HTMLElement;
   private ephemeralBadge: HTMLElement;
   private tokenCounter: HTMLElement;
-  private searchInput: HTMLInputElement;
   private searchContainer: HTMLElement;
   private imagePreviewContainer: HTMLElement;
   private pendingImages: Array<{ data: string; mimeType: string; filename?: string }> = [];
@@ -84,9 +83,6 @@ export class ChatView extends ItemView {
   private messageElements: Map<string, HTMLElement> = new Map();
   private historyVisible = false;
   private searchVisible = false;
-  private searchQuery = '';
-  private searchMatches: string[] = []; // message IDs that match
-  private currentSearchIndex = -1;
   private userScrolledUp = false;
   private historyFilterTag: string | null = null; // Filter history by tag
   private vaultRefreshTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -113,10 +109,8 @@ export class ChatView extends ItemView {
   private lastSentNotePath: string | null = null;
   private lastSentNoteContent: string | null = null;
 
-  // Message queue for queueing messages while processing
-  private messageQueue: { content: string; timestamp: number }[] = [];
+  // Message queue container (UI created by module)
   private queueContainer: HTMLElement;
-  private queueBadge: HTMLElement;
 
   // Tab management
   private tabs: ChatTab[] = [];
@@ -176,6 +170,9 @@ export class ChatView extends ItemView {
     container.empty();
     container.addClass('obsidi-claude-container');
 
+    // Create module dependencies
+    const deps = { app: this.plugin.app, plugin: this.plugin };
+
     // Header
     const header = container.createDiv('chat-header');
     this.createHeader(header);
@@ -190,15 +187,38 @@ export class ChatView extends ItemView {
     this.historyPanel.style.display = 'none';
     this.createHistoryPanel(this.historyPanel);
 
-    // Search bar (hidden by default)
-    this.searchContainer = container.createDiv('chat-search-bar');
-    this.searchContainer.style.display = 'none';
-    this.createSearchBar(this.searchContainer);
+    // Search bar - use module
+    this.searchContainer = container.createDiv('search-bar-container');
+    this.searchBarModule = createSearchBar(this.searchContainer, deps, {
+      getMessageIds: () => this.conversation?.messages.map(m => m.id) ?? [],
+      getMessageContent: (id) => this.conversation?.messages.find(m => m.id === id)?.content ?? '',
+      scrollToMessage: (id) => {
+        const el = this.messageElements.get(id);
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      },
+      highlightMessage: (id) => {
+        const el = this.messageElements.get(id);
+        if (el) el.addClass('search-current');
+      },
+      clearHighlights: () => {
+        for (const el of this.messageElements.values()) {
+          el.removeClass('search-match');
+          el.removeClass('search-current');
+        }
+      },
+    });
 
-    // Message queue container (hidden by default)
-    this.queueContainer = container.createDiv('chat-queue-container');
-    this.queueContainer.style.display = 'none';
-    this.createQueueUI(this.queueContainer);
+    // Message queue container - use module
+    this.queueContainer = container.createDiv('queue-panel-container');
+    this.queueModule = createQueuePanel(this.queueContainer, deps, {
+      onRemove: (index) => {
+        log.debug('Queue item removed', { index });
+      },
+      onClear: () => {
+        log.debug('Queue cleared');
+        this.showTemporaryStatus('Queue cleared', 'info', 2000);
+      },
+    });
 
     // Messages area
     this.messagesContainer = container.createDiv('chat-messages');
@@ -212,11 +232,18 @@ export class ChatView extends ItemView {
     const inputArea = container.createDiv('chat-input-area');
     this.createInputArea(inputArea);
 
-    // Mobile: Add floating action button for new conversation
-    this.createMobileFAB(container);
-
-    // Mobile: Setup touch gestures
-    this.setupMobileTouchHandling(container);
+    // Mobile support - use module
+    this.mobileModule = createMobileSupport(container, deps, {
+      onNewConversation: () => this._newConversation(),
+      onSwipeLeft: () => {
+        if (this.historyVisible) this._toggleHistory();
+      },
+      onSwipeRight: () => {
+        if (!this.historyVisible) this._toggleHistory();
+      },
+      isMobile: () => this.isMobile(),
+    });
+    this.mobileModule.setupTouchHandling(container);
 
     // Register keyboard shortcuts
     this.registerKeyboardShortcuts(container);
@@ -647,260 +674,45 @@ export class ChatView extends ItemView {
     }
   }
 
-  private createSearchBar(container: HTMLElement): void {
-    const inputWrapper = container.createDiv('search-input-wrapper');
-
-    this.searchInput = inputWrapper.createEl('input', {
-      cls: 'search-input',
-      attr: {
-        type: 'text',
-        placeholder: 'Search messages...',
-      },
-    });
-
-    this.searchInput.addEventListener('input', () => {
-      this.performSearch(this.searchInput.value);
-    });
-
-    this.searchInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        if (e.shiftKey) {
-          this.navigateSearch(-1);
-        } else {
-          this.navigateSearch(1);
-        }
-      } else if (e.key === 'Escape') {
-        this._toggleSearch();
-      }
-    });
-
-    // Navigation buttons
-    const navButtons = container.createDiv('search-nav-buttons');
-
-    const prevBtn = navButtons.createEl('button', {
-      cls: 'chat-action-btn',
-      attr: { 'aria-label': 'Previous match' },
-    });
-    setIcon(prevBtn, 'chevron-up');
-    prevBtn.onclick = () => this.navigateSearch(-1);
-
-    const nextBtn = navButtons.createEl('button', {
-      cls: 'chat-action-btn',
-      attr: { 'aria-label': 'Next match' },
-    });
-    setIcon(nextBtn, 'chevron-down');
-    nextBtn.onclick = () => this.navigateSearch(1);
-
-    // Match count
-    const countEl = container.createSpan('search-match-count');
-    countEl.dataset.searchCount = '';
-
-    // Close button
-    const closeBtn = navButtons.createEl('button', {
-      cls: 'chat-action-btn',
-      attr: { 'aria-label': 'Close search' },
-    });
-    setIcon(closeBtn, 'x');
-    closeBtn.onclick = () => this._toggleSearch();
-  }
-
   private _toggleSearch(): void {
-    this.searchVisible = !this.searchVisible;
-    this.searchContainer.style.display = this.searchVisible ? 'flex' : 'none';
-
-    if (this.searchVisible) {
-      this.searchInput.focus();
-      this.searchInput.select();
+    if (this.searchBarModule) {
+      this.searchBarModule.toggle();
+      this.searchVisible = this.searchBarModule.isVisible();
     } else {
-      this.clearSearchHighlights();
-      this.searchQuery = '';
-      this.searchMatches = [];
-      this.currentSearchIndex = -1;
-      this.searchInput.value = '';
+      // Fallback for legacy behavior
+      this.searchVisible = !this.searchVisible;
+      this.searchContainer.style.display = this.searchVisible ? 'flex' : 'none';
     }
-  }
-
-  private createQueueUI(container: HTMLElement): void {
-    const headerDiv = container.createDiv('queue-header');
-
-    const titleDiv = headerDiv.createDiv('queue-title');
-    titleDiv.createSpan({ text: 'Message Queue' });
-    this.queueBadge = titleDiv.createSpan({ cls: 'queue-badge' });
-
-    const actionsDiv = headerDiv.createDiv('queue-actions');
-
-    const clearBtn = actionsDiv.createEl('button', {
-      cls: 'chat-action-btn',
-      attr: { 'aria-label': 'Clear queue' },
-    });
-    setIcon(clearBtn, 'trash-2');
-    clearBtn.onclick = () => this.clearQueue();
-
-    // Queue list container
-    container.createDiv('queue-list');
-  }
-
-  private updateQueueUI(): void {
-    const queueCount = this.messageQueue.length;
-
-    // Show/hide queue container
-    this.queueContainer.style.display = queueCount > 0 ? 'block' : 'none';
-
-    // Update badge
-    if (this.queueBadge) {
-      this.queueBadge.setText(String(queueCount));
-    }
-
-    // Update list
-    const listEl = this.queueContainer.querySelector('.queue-list') as HTMLElement;
-    if (!listEl) return;
-
-    listEl.empty();
-
-    this.messageQueue.forEach((item, index) => {
-      const itemEl = listEl.createDiv('queue-item');
-
-      const contentDiv = itemEl.createDiv('queue-item-content');
-
-      // Show position number
-      const posSpan = contentDiv.createSpan({ text: `${index + 1}. `, cls: 'queue-item-pos' });
-
-      // Show truncated message
-      const preview = item.content.length > 50 ? item.content.slice(0, 50) + '...' : item.content;
-      contentDiv.createSpan({ text: preview });
-
-      // Remove button
-      const removeBtn = itemEl.createEl('button', {
-        cls: 'queue-remove-btn',
-        attr: { 'aria-label': 'Remove from queue' },
-      });
-      setIcon(removeBtn, 'x');
-      removeBtn.onclick = (e) => {
-        e.stopPropagation();
-        this.removeFromQueue(index);
-      };
-    });
   }
 
   private addToQueue(content: string): void {
-    this.messageQueue.push({
-      content,
-      timestamp: Date.now(),
-    });
-    this.updateQueueUI();
-    this.showTemporaryStatus(`Message queued (${this.messageQueue.length} in queue)`, 'info', 2000);
-    log.debug('Message added to queue', { queueLength: this.messageQueue.length });
+    if (!this.queueModule) return;
+    this.queueModule.add({ content, timestamp: Date.now() });
+    this.showTemporaryStatus(`Message queued (${this.queueModule.getCount()} in queue)`, 'info', 2000);
+    log.debug('Message added to queue', { queueLength: this.queueModule.getCount() });
   }
 
   private removeFromQueue(index: number): void {
-    if (index >= 0 && index < this.messageQueue.length) {
-      this.messageQueue.splice(index, 1);
-      this.updateQueueUI();
-      log.debug('Message removed from queue', { index, queueLength: this.messageQueue.length });
-    }
+    if (!this.queueModule) return;
+    this.queueModule.remove(index);
+    log.debug('Message removed from queue', { index });
   }
 
   private clearQueue(): void {
-    this.messageQueue = [];
-    this.updateQueueUI();
-    this.showTemporaryStatus('Queue cleared', 'info', 2000);
+    if (!this.queueModule) return;
+    this.queueModule.clear();
     log.debug('Queue cleared');
   }
 
   private async processNextInQueue(): Promise<void> {
-    if (this.messageQueue.length === 0 || this.isProcessing) {
-      return;
-    }
+    if (!this.queueModule || this.isProcessing) return;
 
-    const nextMessage = this.messageQueue.shift();
-    this.updateQueueUI();
+    const nextMessage = this.queueModule.getNext();
+    if (!nextMessage) return;
 
-    if (nextMessage) {
-      log.info('Processing next message from queue', { queueRemaining: this.messageQueue.length });
-      // Set the input value and trigger send
-      this.inputEl.value = nextMessage.content;
-      await this.sendMessage();
-    }
-  }
-
-  private performSearch(query: string): void {
-    this.searchQuery = query.toLowerCase().trim();
-    this.clearSearchHighlights();
-    this.searchMatches = [];
-    this.currentSearchIndex = -1;
-
-    if (!this.searchQuery) {
-      this.updateSearchCount();
-      return;
-    }
-
-    // Find matching messages
-    for (const msg of this.conversation.messages) {
-      if (msg.content?.toLowerCase().includes(this.searchQuery)) {
-        this.searchMatches.push(msg.id);
-        const msgEl = this.messageElements.get(msg.id);
-        if (msgEl) {
-          msgEl.addClass('search-match');
-        }
-      }
-    }
-
-    this.updateSearchCount();
-
-    // Navigate to first match
-    if (this.searchMatches.length > 0) {
-      this.navigateSearch(1);
-    }
-  }
-
-  private navigateSearch(direction: number): void {
-    if (this.searchMatches.length === 0) return;
-
-    // Remove current highlight
-    if (this.currentSearchIndex >= 0) {
-      const currentId = this.searchMatches[this.currentSearchIndex];
-      const currentEl = this.messageElements.get(currentId);
-      if (currentEl) {
-        currentEl.removeClass('search-current');
-      }
-    }
-
-    // Move to next/previous
-    this.currentSearchIndex += direction;
-    if (this.currentSearchIndex >= this.searchMatches.length) {
-      this.currentSearchIndex = 0;
-    } else if (this.currentSearchIndex < 0) {
-      this.currentSearchIndex = this.searchMatches.length - 1;
-    }
-
-    // Highlight and scroll to current match
-    const targetId = this.searchMatches[this.currentSearchIndex];
-    const targetEl = this.messageElements.get(targetId);
-    if (targetEl) {
-      targetEl.addClass('search-current');
-      targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
-
-    this.updateSearchCount();
-  }
-
-  private updateSearchCount(): void {
-    const countEl = this.searchContainer.querySelector('.search-match-count');
-    if (!countEl) return;
-
-    if (this.searchMatches.length === 0) {
-      countEl.textContent = this.searchQuery ? 'No matches' : '';
-    } else {
-      countEl.textContent = `${this.currentSearchIndex + 1}/${this.searchMatches.length}`;
-    }
-  }
-
-  private clearSearchHighlights(): void {
-    for (const msgEl of this.messageElements.values()) {
-      msgEl.removeClass('search-match');
-      msgEl.removeClass('search-current');
-    }
+    log.info('Processing next message from queue');
+    this.inputEl.value = nextMessage.content;
+    await this.sendMessage();
   }
 
   private setupScrollTracking(): void {
@@ -1713,8 +1525,8 @@ export class ChatView extends ItemView {
   private showWelcomeState(): void {
     if (!this.messagesContainer) return;
 
-    if (this.isMobile()) {
-      this.addMobileSwipeHint();
+    if (this.mobileModule?.isMobile()) {
+      this.mobileModule.showSwipeHint(this.messagesContainer);
     } else {
       // Desktop welcome state
       const welcomeContainer = this.messagesContainer.createDiv('desktop-welcome');
@@ -2531,10 +2343,9 @@ export class ChatView extends ItemView {
       plugin: this.plugin,
       conversation: this.conversation,
       inputEl: this.inputEl,
-      searchInput: this.searchInput,
       messagesContainer: this.messagesContainer,
 
-      getMessageQueue: () => this.messageQueue,
+      getMessageQueue: () => [],  // Legacy - queue is now handled by module
       isSearchVisible: () => this.searchVisible,
 
       showTemporaryStatus: (msg, type, duration) => this.showTemporaryStatus(msg, type, duration),
@@ -2546,7 +2357,12 @@ export class ChatView extends ItemView {
       newConversation: () => this._newConversation(),
       toggleSearch: () => this._toggleSearch(),
       clearQueue: () => this.clearQueue(),
-      performSearch: (query) => this.performSearch(query),
+      performSearch: (query) => {
+        if (this.searchBarModule) {
+          this.searchBarModule.show();
+          this.searchBarModule.search(query);
+        }
+      },
       addTagToConversation: (tag) => this.addTagToConversation(tag),
       removeTagFromConversation: (tag) => this.removeTagFromConversation(tag),
       saveConversation: () => this.saveConversation(),
@@ -4258,7 +4074,7 @@ ${content}
         await this.saveConversation();
 
         // Process next message in queue if any
-        if (this.messageQueue.length > 0) {
+        if (this.queueModule?.getCount() ?? 0 > 0) {
           // Small delay before processing next to allow UI to update
           setTimeout(() => this.processNextInQueue(), 500);
         }
@@ -5054,101 +4870,6 @@ ${content}
    */
   private isMobile(): boolean {
     return document.body.classList.contains('is-mobile');
-  }
-
-  /**
-   * Create floating action button for mobile.
-   */
-  private createMobileFAB(container: HTMLElement): void {
-    const fab = container.createDiv('chat-fab');
-    setIcon(fab, 'plus');
-    fab.setAttribute('aria-label', 'New conversation');
-    fab.onclick = () => this._newConversation();
-  }
-
-  /**
-   * Set up touch gesture handling for mobile.
-   */
-  private setupMobileTouchHandling(container: HTMLElement): void {
-    if (!this.isMobile()) return;
-
-    let touchStartX = 0;
-    let touchStartY = 0;
-    const swipeThreshold = 50;
-
-    // Track touch start
-    container.addEventListener('touchstart', (e) => {
-      const touch = e.touches[0];
-      touchStartX = touch.clientX;
-      touchStartY = touch.clientY;
-    }, { passive: true });
-
-    // Handle swipe gestures
-    container.addEventListener('touchend', (e) => {
-      const touch = e.changedTouches[0];
-      const deltaX = touch.clientX - touchStartX;
-      const deltaY = touch.clientY - touchStartY;
-
-      // Horizontal swipe detection
-      if (Math.abs(deltaX) > swipeThreshold && Math.abs(deltaX) > Math.abs(deltaY)) {
-        if (deltaX > 0) {
-          // Swipe right: show history
-          if (!this.historyVisible) {
-            this._toggleHistory();
-          }
-        } else {
-          // Swipe left: hide history if open
-          if (this.historyVisible) {
-            this._toggleHistory();
-          }
-        }
-      }
-    }, { passive: true });
-
-    // Long press on messages for actions
-    this.messagesContainer.addEventListener('contextmenu', (e) => {
-      // Prevent default context menu on mobile
-      if (this.isMobile()) {
-        e.preventDefault();
-      }
-    });
-
-    // Add swipe hint to empty state
-    this.addMobileSwipeHint();
-  }
-
-  /**
-   * Add swipe gesture hint and welcome state for mobile users.
-   */
-  private addMobileSwipeHint(): void {
-    if (!this.isMobile() || this.conversation.messages.length > 0) return;
-
-    // Mobile welcome state
-    const welcomeContainer = this.messagesContainer.createDiv('mobile-welcome');
-    welcomeContainer.style.cssText = 'display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; padding: 2rem; text-align: center; color: var(--text-muted);';
-
-    const title = welcomeContainer.createEl('h3', { text: 'Chat with Claude' });
-    title.style.cssText = 'margin: 0 0 0.5rem 0; color: var(--text-normal);';
-
-    const subtitle = welcomeContainer.createDiv();
-    subtitle.style.cssText = 'margin-bottom: 1.5rem; font-size: 0.9rem;';
-    subtitle.setText('Ask questions, get help with notes, and explore your vault.');
-
-    // Mobile-specific features list
-    const featuresEl = welcomeContainer.createDiv();
-    featuresEl.style.cssText = 'text-align: left; font-size: 0.85rem; background: var(--background-secondary); padding: 1rem; border-radius: 8px; margin-bottom: 1rem;';
-    featuresEl.innerHTML = `
-      <div style="margin-bottom: 0.5rem;"><strong>Available on mobile:</strong></div>
-      <div style="margin-left: 0.5rem;">• Chat with all Claude models</div>
-      <div style="margin-left: 0.5rem;">• Read and search your notes</div>
-      <div style="margin-left: 0.5rem;">• Create and edit files</div>
-      <div style="margin-left: 0.5rem;">• Semantic search (RAG)</div>
-    `;
-
-    // Swipe hint
-    const hint = welcomeContainer.createDiv('swipe-hint');
-    hint.style.cssText = 'font-size: 0.8rem; opacity: 0.7;';
-    hint.setText('Swipe right for history • Tap + for new chat');
   }
 
   // ===== TAB MANAGEMENT =====

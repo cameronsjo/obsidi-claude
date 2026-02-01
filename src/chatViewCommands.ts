@@ -22,7 +22,6 @@ export interface ChatViewCommandContext {
 
   // UI elements
   inputEl: HTMLTextAreaElement;
-  searchInput: HTMLInputElement;
   messagesContainer: HTMLElement;
 
   // State accessors
@@ -169,10 +168,8 @@ registerCommand('export', async (args, ctx) => {
 
 registerCommand('search', async (args, ctx) => {
   if (args) {
-    ctx.searchInput.value = args;
     ctx.performSearch(args);
-  }
-  if (!ctx.isSearchVisible()) {
+  } else if (!ctx.isSearchVisible()) {
     ctx.toggleSearch();
   }
   return { handled: true };
