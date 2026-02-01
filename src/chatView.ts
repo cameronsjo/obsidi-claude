@@ -772,7 +772,7 @@ export class ChatView extends ItemView {
       if (newTitle && newTitle !== currentTitle) {
         await this.plugin.storage.renameConversation(id, newTitle);
         this.showTemporaryStatus('Conversation renamed', 'success', 1500);
-        await this.refreshHistoryList();
+        await this.historyModule?.refresh();
 
         // Update current conversation title if it's the one being renamed
         if (this.conversation.id === id) {
@@ -911,7 +911,7 @@ export class ChatView extends ItemView {
 
     const closeModal = async () => {
       modal.remove();
-      await this.refreshHistoryList();
+      await this.historyModule?.refresh();
       // Update current conversation if modified
       if (this.conversation.id === id) {
         this.conversation.tags = currentTags;
@@ -970,7 +970,7 @@ export class ChatView extends ItemView {
     const newConv = await this.plugin.storage.duplicateConversation(id);
     if (newConv) {
       this.showTemporaryStatus('Conversation duplicated', 'success', 1500);
-      await this.refreshHistoryList();
+      await this.historyModule?.refresh();
     } else {
       this.showTemporaryStatus('Failed to duplicate conversation', 'error', 2000);
     }
@@ -993,7 +993,7 @@ export class ChatView extends ItemView {
       }
     }
 
-    await this.refreshHistoryList();
+    await this.historyModule?.refresh();
   }
 
   private updateTitle(): void {
