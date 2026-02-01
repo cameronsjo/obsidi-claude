@@ -16,8 +16,8 @@ const TOOL_STATUS_ICONS: Record<ToolCallInfo['status'], string> = {
 export interface MessageRendererCallbacks {
   onCopy: (messageId: string) => void;
   onRegenerate: (messageId: string) => void;
-  onBookmark: (messageId: string) => void;
-  onReact: (messageId: string, reaction: 'up' | 'down') => void;
+  onEdit: (messageId: string) => void;
+  onReact: (messageId: string, reaction: string) => void;
   scrollToBottom: () => void;
 }
 
@@ -49,13 +49,15 @@ export function createMessageRenderer(
   function renderMessage(message: ChatMessage): HTMLElement {
     const msgDiv = container.createDiv('chat-message');
     msgDiv.addClass(message.role === 'user' ? 'user-message' : 'assistant-message');
-    if (message.bookmarked) {
-      msgDiv.addClass('message-bookmarked');
-    }
     msgDiv.dataset.messageId = message.id;
 
-    // Message header (role + time) - outside the bubble
+    // Message header (avatar + role + time) - outside the bubble
     const headerDiv = msgDiv.createDiv('message-header');
+
+    // Avatar icon
+    const avatar = headerDiv.createSpan('message-avatar');
+    setIcon(avatar, message.role === 'user' ? 'user' : 'bot');
+
     const roleLabel = headerDiv.createSpan('message-role');
     roleLabel.textContent = message.role === 'user' ? 'You' : 'Claude';
     const timeEl = headerDiv.createSpan('message-time');
@@ -217,15 +219,15 @@ export function createMessageRenderer(
   }
 
   function createMessageActions(container: HTMLElement, msg: ChatMessage): void {
-    // Bookmark button
-    const bookmarkBtn = container.createEl('button', {
-      cls: `message-action-btn bookmark-btn ${msg.bookmarked ? 'bookmark-active' : ''}`,
-      attr: { 'aria-label': msg.bookmarked ? 'Remove bookmark' : 'Bookmark message' },
+    // Edit button
+    const editBtn = container.createEl('button', {
+      cls: 'message-action-btn',
+      attr: { 'aria-label': 'Edit message' },
     });
-    setIcon(bookmarkBtn, msg.bookmarked ? 'bookmark-check' : 'bookmark');
-    bookmarkBtn.onclick = (e) => {
+    setIcon(editBtn, 'pencil');
+    editBtn.onclick = (e) => {
       e.stopPropagation();
-      callbacks.onBookmark(msg.id);
+      callbacks.onEdit(msg.id);
     };
 
     // Copy button

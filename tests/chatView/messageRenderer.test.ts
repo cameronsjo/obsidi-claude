@@ -126,7 +126,7 @@ describe('MessageRenderer', () => {
     callbacks = {
       onCopy: vi.fn(),
       onRegenerate: vi.fn(),
-      onBookmark: vi.fn(),
+      onEdit: vi.fn(),
       onReact: vi.fn(),
       scrollToBottom: vi.fn(),
     };
@@ -212,18 +212,17 @@ describe('MessageRenderer', () => {
       expect(header?.querySelector('.message-time')).not.toBeNull();
     });
 
-    it('should add bookmarked class when message is bookmarked', () => {
+    it('should render avatar icon in message header', () => {
       handle = createMessageRenderer(container, deps, callbacks);
       const msg: ChatMessage = {
         id: 'msg-5',
-        role: 'assistant',
-        content: 'Bookmarked content',
+        role: 'user',
+        content: 'Test',
         timestamp: Date.now(),
-        bookmarked: true,
       };
       handle.renderMessage(msg);
-      const msgEl = container.querySelector('[data-message-id="msg-5"]');
-      expect(msgEl?.classList.contains('message-bookmarked')).toBe(true);
+      const avatar = container.querySelector('.message-avatar');
+      expect(avatar).not.toBeNull();
     });
 
     it('should render images when present', () => {
@@ -433,7 +432,7 @@ describe('MessageRenderer', () => {
       expect(callbacks.onCopy).toHaveBeenCalledWith('msg-1');
     });
 
-    it('should call onBookmark when bookmark button clicked', () => {
+    it('should call onEdit when edit button clicked', () => {
       handle = createMessageRenderer(container, deps, callbacks);
       const msg: ChatMessage = {
         id: 'msg-1',
@@ -442,10 +441,10 @@ describe('MessageRenderer', () => {
         timestamp: Date.now(),
       };
       handle.renderMessage(msg);
-      const bookmarkBtn = container.querySelector('.bookmark-btn') as HTMLElement;
-      expect(bookmarkBtn).not.toBeNull();
-      bookmarkBtn?.click();
-      expect(callbacks.onBookmark).toHaveBeenCalledWith('msg-1');
+      const editBtn = container.querySelector('.message-action-btn[aria-label="Edit message"]') as HTMLElement;
+      expect(editBtn).not.toBeNull();
+      editBtn?.click();
+      expect(callbacks.onEdit).toHaveBeenCalledWith('msg-1');
     });
   });
 
