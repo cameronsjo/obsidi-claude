@@ -10,3 +10,4 @@ export * from './statusBar';
 export * from './mobileSupport';
 export * from './tabBar';
 export * from './messageRenderer';
+export * from './inputArea';
