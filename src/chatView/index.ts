@@ -6,3 +6,4 @@
 export * from './types';
 export * from './searchBar';
 export * from './queuePanel';
+export * from './statusBar';
