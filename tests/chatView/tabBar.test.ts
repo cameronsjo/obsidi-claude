@@ -36,7 +36,7 @@ vi.mock('obsidian', () => {
 // Extend HTMLElement with Obsidian's createDiv/createEl/createSpan methods
 declare global {
   interface HTMLElement {
-    createDiv(cls?: string): HTMLDivElement;
+    createDiv(options?: string | { cls?: string }): HTMLDivElement;
     createEl<K extends keyof HTMLElementTagNameMap>(
       tag: K,
       options?: { cls?: string; attr?: Record<string, string> }
@@ -45,9 +45,13 @@ declare global {
   }
 }
 
-HTMLElement.prototype.createDiv = function (cls?: string): HTMLDivElement {
+HTMLElement.prototype.createDiv = function (options?: string | { cls?: string }): HTMLDivElement {
   const div = document.createElement('div');
-  if (cls) div.className = cls;
+  if (typeof options === 'string') {
+    div.className = options;
+  } else if (options?.cls) {
+    div.className = options.cls;
+  }
   this.appendChild(div);
   return div;
 };
@@ -80,6 +84,7 @@ declare global {
     empty(): void;
     setText(text: string): void;
     addClass(cls: string): void;
+    removeClass(cls: string): void;
   }
 }
 
@@ -95,6 +100,10 @@ HTMLElement.prototype.setText = function (text: string): void {
 
 HTMLElement.prototype.addClass = function (cls: string): void {
   this.classList.add(cls);
+};
+
+HTMLElement.prototype.removeClass = function (cls: string): void {
+  this.classList.remove(cls);
 };
 
 describe('TabBar', () => {
@@ -121,9 +130,12 @@ describe('TabBar', () => {
       onTabClose: vi.fn(),
       onNewTab: vi.fn(),
       onTabRename: vi.fn(),
+      onTabPin: vi.fn(),
+      onTabDuplicate: vi.fn(),
+      onCloseOtherTabs: vi.fn(),
       getTabs: vi.fn(() => mockTabs),
       getActiveTabId: vi.fn(() => 'tab-1'),
-      saveState: vi.fn(),
+      getTabCount: vi.fn(() => mockTabs.length),
     };
 
     // Reset mocks
@@ -138,8 +150,8 @@ describe('TabBar', () => {
   describe('creation', () => {
     it('should create tab bar container with correct class', () => {
       handle = createTabBar(container, deps, callbacks);
-      const tabBar = container.querySelector('.chat-tab-bar');
-      expect(tabBar).not.toBeNull();
+      // The container itself gets the chat-tab-bar class
+      expect(container.classList.contains('chat-tab-bar')).toBe(true);
     });
 
     it('should create tabs container', () => {
@@ -150,7 +162,7 @@ describe('TabBar', () => {
 
     it('should create new tab button with correct attributes', () => {
       handle = createTabBar(container, deps, callbacks);
-      const newTabBtn = container.querySelector('.tab-new-btn');
+      const newTabBtn = container.querySelector('.chat-tab-new');
       expect(newTabBtn).not.toBeNull();
       expect(newTabBtn?.getAttribute('aria-label')).toBe('New tab');
     });
@@ -165,11 +177,11 @@ describe('TabBar', () => {
       expect(tabs).toHaveLength(3);
     });
 
-    it('should mark active tab with .active class', () => {
+    it('should mark active tab with .chat-tab-active class', () => {
       handle = createTabBar(container, deps, callbacks);
       handle.render();
 
-      const activeTab = container.querySelector('.chat-tab.active');
+      const activeTab = container.querySelector('.chat-tab.chat-tab-active');
       expect(activeTab).not.toBeNull();
       expect(activeTab?.getAttribute('data-tab-id')).toBe('tab-1');
     });
@@ -178,7 +190,7 @@ describe('TabBar', () => {
       handle = createTabBar(container, deps, callbacks);
       handle.render();
 
-      const labels = container.querySelectorAll('.tab-label');
+      const labels = container.querySelectorAll('.chat-tab-label');
       expect(labels).toHaveLength(3);
       expect(labels[0].textContent).toBe('Chat 1');
       expect(labels[1].textContent).toBe('Chat 2');
@@ -189,7 +201,7 @@ describe('TabBar', () => {
       handle = createTabBar(container, deps, callbacks);
       handle.render();
 
-      const closeBtns = container.querySelectorAll('.tab-close-btn');
+      const closeBtns = container.querySelectorAll('.chat-tab-close');
       expect(closeBtns).toHaveLength(3);
     });
 
@@ -219,7 +231,7 @@ describe('TabBar', () => {
       handle = createTabBar(container, deps, callbacks);
       handle.render();
 
-      const closeBtn = container.querySelector('[data-tab-id="tab-2"] .tab-close-btn') as HTMLElement;
+      const closeBtn = container.querySelector('[data-tab-id="tab-2"] .chat-tab-close') as HTMLElement;
       closeBtn.click();
 
       expect(callbacks.onTabClose).toHaveBeenCalledWith('tab-2');
@@ -229,7 +241,7 @@ describe('TabBar', () => {
       handle = createTabBar(container, deps, callbacks);
       handle.render();
 
-      const closeBtn = container.querySelector('[data-tab-id="tab-2"] .tab-close-btn') as HTMLElement;
+      const closeBtn = container.querySelector('[data-tab-id="tab-2"] .chat-tab-close') as HTMLElement;
       closeBtn.click();
 
       // Close should be called but not select (because propagation was stopped)
@@ -240,7 +252,7 @@ describe('TabBar', () => {
     it('should call onNewTab when new tab button is clicked', () => {
       handle = createTabBar(container, deps, callbacks);
 
-      const newTabBtn = container.querySelector('.tab-new-btn') as HTMLElement;
+      const newTabBtn = container.querySelector('.chat-tab-new') as HTMLElement;
       newTabBtn.click();
 
       expect(callbacks.onNewTab).toHaveBeenCalled();
@@ -281,7 +293,7 @@ describe('TabBar', () => {
 
       handle.updateLabel('tab-1', 'Updated Label');
 
-      const label = container.querySelector('[data-tab-id="tab-1"] .tab-label');
+      const label = container.querySelector('[data-tab-id="tab-1"] .chat-tab-label');
       expect(label?.textContent).toBe('Updated Label');
     });
 
@@ -291,7 +303,7 @@ describe('TabBar', () => {
 
       handle.updateLabel('tab-1', 'Updated Label');
 
-      const label = container.querySelector('[data-tab-id="tab-1"] .tab-label');
+      const label = container.querySelector('[data-tab-id="tab-1"] .chat-tab-label');
       expect(label?.getAttribute('title')).toBe('Updated Label');
     });
 
@@ -313,8 +325,8 @@ describe('TabBar', () => {
 
       const tab1 = container.querySelector('[data-tab-id="tab-1"]');
       const tab2 = container.querySelector('[data-tab-id="tab-2"]');
-      expect(tab1?.classList.contains('active')).toBe(false);
-      expect(tab2?.classList.contains('active')).toBe(true);
+      expect(tab1?.classList.contains('chat-tab-active')).toBe(false);
+      expect(tab2?.classList.contains('chat-tab-active')).toBe(true);
     });
 
     it('should remove active from previous tab when setting new active', () => {
@@ -322,12 +334,12 @@ describe('TabBar', () => {
       handle.render();
 
       // Initially tab-1 is active
-      expect(container.querySelector('[data-tab-id="tab-1"]')?.classList.contains('active')).toBe(true);
+      expect(container.querySelector('[data-tab-id="tab-1"]')?.classList.contains('chat-tab-active')).toBe(true);
 
       handle.setActiveTab('tab-3');
 
-      expect(container.querySelector('[data-tab-id="tab-1"]')?.classList.contains('active')).toBe(false);
-      expect(container.querySelector('[data-tab-id="tab-3"]')?.classList.contains('active')).toBe(true);
+      expect(container.querySelector('[data-tab-id="tab-1"]')?.classList.contains('chat-tab-active')).toBe(false);
+      expect(container.querySelector('[data-tab-id="tab-3"]')?.classList.contains('chat-tab-active')).toBe(true);
     });
 
     it('should handle setActiveTab for non-existent tab gracefully', () => {
@@ -353,17 +365,19 @@ describe('TabBar', () => {
 
       // Verify elements exist before destroy
       expect(container.querySelector('.chat-tabs-container')).not.toBeNull();
-      expect(container.querySelector('.tab-new-btn')).not.toBeNull();
+      expect(container.querySelector('.chat-tab-new')).not.toBeNull();
 
       handle.destroy();
 
-      expect(container.innerHTML).toBe('');
+      // The container should no longer have the chat-tab-bar class
+      expect(container.classList.contains('chat-tab-bar')).toBe(false);
     });
   });
 
   describe('edge cases', () => {
     it('should handle empty tabs list', () => {
       callbacks.getTabs = vi.fn(() => []);
+      callbacks.getTabCount = vi.fn(() => 0);
       handle = createTabBar(container, deps, callbacks);
       handle.render();
 
@@ -376,7 +390,7 @@ describe('TabBar', () => {
       handle = createTabBar(container, deps, callbacks);
       handle.render();
 
-      const activeTabs = container.querySelectorAll('.chat-tab.active');
+      const activeTabs = container.querySelectorAll('.chat-tab.chat-tab-active');
       expect(activeTabs).toHaveLength(0);
     });
 
@@ -385,10 +399,11 @@ describe('TabBar', () => {
         { id: 'tab-1', label: 'This is a very long label that should be truncated', conversationId: 'conv-1' },
       ];
       callbacks.getTabs = vi.fn(() => longLabelTabs);
+      callbacks.getTabCount = vi.fn(() => 1);
       handle = createTabBar(container, deps, callbacks);
       handle.render();
 
-      const label = container.querySelector('.tab-label');
+      const label = container.querySelector('.chat-tab-label');
       // Label should be truncated (max 20 chars + ellipsis)
       expect(label?.textContent?.length).toBeLessThanOrEqual(23);
       // Full label should be in title attribute

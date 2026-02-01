@@ -44,7 +44,6 @@ const log = createLogger('ChatView');
 const SCROLL_THRESHOLD_PX = 100;
 const MAX_TEXTAREA_HEIGHT_PX = 180;
 const CHARS_PER_TOKEN_ESTIMATE = 4;
-const MAX_INPUT_HISTORY_SIZE = 50;
 
 // Tool status to icon mapping
 const TOOL_STATUS_ICONS: Record<ToolCallInfo['status'], string> = {
@@ -61,17 +60,15 @@ export class ChatView extends ItemView {
 
   // UI elements
   private messagesContainer: HTMLElement;
-  private inputEl: HTMLTextAreaElement;
-  private sendButton: HTMLButtonElement;
-  private stopButton: HTMLButtonElement;
-  private voiceButton: HTMLButtonElement;
   private statusEl: HTMLElement;
   private historyPanel: HTMLElement;
   private historyList: HTMLElement;
   private chatTitleEl: HTMLElement;
   private searchContainer: HTMLElement;
-  private imagePreviewContainer: HTMLElement;
-  private pendingImages: Array<{ data: string; mimeType: string; filename?: string }> = [];
+
+  // Backward compat references to input area elements (from module)
+  private inputEl: HTMLTextAreaElement;
+  private inputWrapper: HTMLElement;
 
   // State
   private conversation: Conversation;
@@ -93,14 +90,6 @@ export class ChatView extends ItemView {
   private isRecording = false;
   private speechRecognition: SpeechRecognition | null = null;
 
-  // Input history for up/down arrow navigation
-  private inputHistory: string[] = [];
-  private inputHistoryIndex = -1;
-  private inputDraft = ''; // Saves current input when navigating history
-
-  // Debounce timer for input resize
-  private resizeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-
   // Track last sent note to avoid redundant context injection
   private lastSentNotePath: string | null = null;
   private lastSentNoteContent: string | null = null;
@@ -111,11 +100,7 @@ export class ChatView extends ItemView {
   // Tab management
   private tabs: ChatTab[] = [];
   private activeTabId: string | null = null;
-  private tabBar: HTMLElement | null = null;
   private tabsEnabled = true; // Can be disabled via settings
-
-  // Input wrapper for processing state styling
-  private inputWrapper!: HTMLElement;
 
   // Scroll to bottom button
   private scrollToBottomBtn: HTMLElement | null = null;
@@ -176,10 +161,59 @@ export class ChatView extends ItemView {
     const header = container.createDiv('chat-header');
     this.createHeader(header);
 
-    // Tab bar (below header)
-    this.tabBar = container.createDiv('chat-tab-bar');
+    // Tab bar (below header) - use module
+    const tabBarContainer = container.createDiv();
     this.initializeTabs();
-    this.renderTabBar();
+    this.tabModule = createTabBar(tabBarContainer, deps, {
+      onTabSelect: (tabId) => this.switchToTab(tabId),
+      onTabClose: (tabId) => this.closeTab(tabId),
+      onNewTab: () => this.createNewTab(),
+      onTabRename: (tabId, newLabel) => {
+        const tab = this.tabs.find(t => t.id === tabId);
+        if (tab) {
+          tab.label = newLabel;
+          this.tabModule?.render();
+          this.saveTabState();
+        }
+      },
+      onTabPin: (tabId, pinned) => {
+        const tab = this.tabs.find(t => t.id === tabId);
+        if (tab) {
+          tab.pinned = pinned;
+          this.tabModule?.render();
+          this.saveTabState();
+        }
+      },
+      onTabDuplicate: (tabId) => {
+        const tab = this.tabs.find(t => t.id === tabId);
+        if (tab) {
+          const newTab: ChatTab = {
+            id: generateId(),
+            conversationId: tab.conversationId,
+            label: `${tab.label} (copy)`,
+          };
+          this.tabs.push(newTab);
+          this.tabModule?.render();
+          this.saveTabState();
+        }
+      },
+      onCloseOtherTabs: async (tabId) => {
+        const otherTabs = this.tabs.filter(t => t.id !== tabId && !t.pinned);
+        for (const other of otherTabs) {
+          await this.closeTab(other.id);
+        }
+      },
+      getTabs: () => this.tabs.map(t => ({
+        id: t.id,
+        label: t.label,
+        conversationId: t.conversationId,
+        pinned: t.pinned,
+        linkedPath: t.linkedPath,
+      })),
+      getActiveTabId: () => this.activeTabId,
+      getTabCount: () => this.tabs.length,
+    });
+    this.updateTabBarVisibility();
 
     // History panel (hidden by default)
     this.historyPanel = container.createDiv('chat-history-panel');
@@ -227,9 +261,98 @@ export class ChatView extends ItemView {
     this.statusEl = container.createDiv('chat-status');
     this.statusEl.style.display = 'none';
 
-    // Input area
-    const inputArea = container.createDiv('chat-input-area');
-    this.createInputArea(inputArea);
+    // Input area - use module
+    const inputAreaContainer = container.createDiv('chat-input-area');
+    this.inputModule = createInputArea(inputAreaContainer, deps, {
+      onSend: (content) => this.sendMessage(content),
+      onStop: () => this.stopGeneration(),
+      onVoiceToggle: () => this.toggleVoiceInput(),
+      onImageAdd: (image) => {
+        log.info('Image added', { filename: image.filename, mimeType: image.mimeType });
+      },
+      onImageRemove: (index) => {
+        log.debug('Image removed', { index });
+      },
+      onInputChange: () => {
+        this.updateAutocomplete();
+      },
+      onKeyDown: (e) => this.handleInputKeyDown(e),
+      getCommands: () => getCommandList(),
+      isVoiceAvailable: () => ('webkitSpeechRecognition' in window) || ('SpeechRecognition' in window),
+    });
+
+    // Store references for backward compatibility
+    this.inputEl = this.inputModule.getInputElement();
+    this.inputWrapper = this.inputModule.getWrapper();
+
+    // Initialize status bar module with input area's button container
+    if (this.statusBadgesContainer) {
+      this.statusModule = createStatusBar(
+        {
+          badgesContainer: this.statusBadgesContainer,
+          tokenContainer: this.inputModule.getButtonContainer(),
+        },
+        deps,
+        {
+          onBackendClick: () => {
+            // Could open backend settings
+          },
+          onContextClick: () => {
+            // Toggle active note context
+            this.plugin.settings.activeNoteContext = !this.plugin.settings.activeNoteContext;
+            this.plugin.saveSettings();
+            this.refreshStatusBar();
+          },
+          onAccountClick: () => {
+            // Could show account details
+          },
+          onTokenCounterClick: () => {
+            // Could show detailed token breakdown
+          },
+          getBackendInfo: () => {
+            const backend = this.getBackend();
+            return {
+              type: backend.type,
+              label: backend.type.toUpperCase(),
+            };
+          },
+          getActiveNoteInfo: () => {
+            const enabled = this.plugin.settings.activeNoteContext;
+            const activeFile = this.plugin.app.workspace.getActiveFile();
+            if (enabled && activeFile && activeFile.extension === 'md') {
+              return {
+                path: activeFile.path,
+                title: activeFile.basename,
+              };
+            }
+            return null;
+          },
+          getAccountInfo: () => {
+            const backend = this.getBackend();
+            if (backend.type !== 'sdk' || !('getAccountInfo' in backend)) {
+              return null;
+            }
+            const sdkBackend = backend as {
+              getAccountInfo(): { email?: string; organization?: string; subscriptionType?: string } | null;
+            };
+            const info = sdkBackend.getAccountInfo();
+            if (!info) return null;
+            return {
+              email: info.email,
+              name: info.organization,
+              tier: info.subscriptionType,
+            };
+          },
+          getTokenEstimate: () => {
+            const tokens = this.estimateTokens();
+            const usage = this.conversation?.usage ?? calculateConversationUsage(this.conversation?.messages ?? []);
+            return { tokens, cost: usage.totalCost };
+          },
+        }
+      );
+      // Update ephemeral badge state
+      this.statusModule.updateEphemeral(this.plugin.settings.ephemeralMode);
+    }
 
     // Mobile support - use module
     this.mobileModule = createMobileSupport(container, deps, {
@@ -1260,226 +1383,40 @@ export class ChatView extends ItemView {
     this.updateActiveTabLabel();
   }
 
-  private createInputArea(inputArea: HTMLElement): void {
-    // Wrapper for input and buttons
-    this.inputWrapper = inputArea.createDiv('chat-input-wrapper');
-
-    // Textarea
-    this.inputEl = this.inputWrapper.createEl('textarea', {
-      cls: 'chat-input',
-      attr: {
-        placeholder: 'Ask Claude anything...',
-      },
-    });
-
-    this.inputEl.addEventListener('keydown', (e) => {
-      // Handle autocomplete navigation
-      if (this.autocompleteEl && this.autocompleteCommands.length > 0) {
-        if (e.key === 'ArrowDown') {
-          e.preventDefault();
-          this.autocompleteIndex = Math.min(this.autocompleteIndex + 1, this.autocompleteCommands.length - 1);
-          this.updateAutocompleteSelection();
-          return;
-        } else if (e.key === 'ArrowUp') {
-          e.preventDefault();
-          this.autocompleteIndex = Math.max(this.autocompleteIndex - 1, 0);
-          this.updateAutocompleteSelection();
-          return;
-        } else if (e.key === 'Enter' || e.key === 'Tab') {
-          e.preventDefault();
-          this.selectAutocompleteCommand();
-          return;
-        } else if (e.key === 'Escape') {
-          e.preventDefault();
-          this.hideAutocomplete();
-          return;
-        }
-      }
-
-      if (e.key === 'Enter' && !e.shiftKey) {
+  /**
+   * Handle keydown events from input area for autocomplete navigation.
+   * Returns true if event was handled.
+   */
+  private handleInputKeyDown(e: KeyboardEvent): boolean {
+    // Handle autocomplete navigation
+    if (this.autocompleteEl && this.autocompleteCommands.length > 0) {
+      if (e.key === 'ArrowDown') {
         e.preventDefault();
-        this.sendMessage();
-      } else if (e.key === 'ArrowUp' && this.inputEl.selectionStart === 0) {
-        // Navigate to previous message when cursor is at start
+        this.autocompleteIndex = Math.min(this.autocompleteIndex + 1, this.autocompleteCommands.length - 1);
+        this.updateAutocompleteSelection();
+        return true;
+      } else if (e.key === 'ArrowUp') {
         e.preventDefault();
-        this.navigateInputHistory(-1);
-      } else if (e.key === 'ArrowDown' && this.inputEl.selectionStart === this.inputEl.value.length) {
-        // Navigate to next message when cursor is at end
+        this.autocompleteIndex = Math.max(this.autocompleteIndex - 1, 0);
+        this.updateAutocompleteSelection();
+        return true;
+      } else if (e.key === 'Enter' || e.key === 'Tab') {
         e.preventDefault();
-        this.navigateInputHistory(1);
+        this.selectAutocompleteCommand();
+        return true;
       } else if (e.key === 'Escape') {
+        e.preventDefault();
         this.hideAutocomplete();
+        return true;
       }
-    });
-
-    // Auto-resize textarea (debounced with RAF for smooth performance)
-    this.inputEl.addEventListener('input', () => {
-      if (this.resizeDebounceTimer) {
-        cancelAnimationFrame(this.resizeDebounceTimer);
-      }
-      this.resizeDebounceTimer = requestAnimationFrame(() => {
-        this.inputEl.style.height = 'auto';
-        this.inputEl.style.height = Math.min(this.inputEl.scrollHeight, MAX_TEXTAREA_HEIGHT_PX) + 'px';
-      });
-
-      // Show slash command autocomplete
-      this.updateAutocomplete();
-    });
-
-    // Handle image paste
-    this.inputEl.addEventListener('paste', (e) => {
-      const items = e.clipboardData?.items;
-      if (!items) return;
-
-      for (const item of items) {
-        if (item.type.startsWith('image/')) {
-          e.preventDefault();
-          const file = item.getAsFile();
-          if (file) {
-            this.handleImageFile(file);
-          }
-          break;
-        }
-      }
-    });
-
-    // Handle drag and drop
-    this.inputWrapper.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      this.inputWrapper.addClass('drag-over');
-    });
-
-    this.inputWrapper.addEventListener('dragleave', () => {
-      this.inputWrapper.removeClass('drag-over');
-    });
-
-    this.inputWrapper.addEventListener('drop', (e) => {
-      e.preventDefault();
-      this.inputWrapper.removeClass('drag-over');
-
-      const files = e.dataTransfer?.files;
-      if (!files) return;
-
-      for (const file of files) {
-        if (file.type.startsWith('image/')) {
-          this.handleImageFile(file);
-        }
-      }
-    });
-
-    // Image preview container (above input)
-    this.imagePreviewContainer = this.inputWrapper.createDiv('chat-image-preview');
-    this.imagePreviewContainer.style.display = 'none';
-
-    // Button container
-    const buttonArea = this.inputWrapper.createDiv('chat-buttons');
-
-    // Left side: hint and token counter
-    const leftArea = buttonArea.createDiv('chat-buttons-left');
-
-    // Keyboard hint
-    const hintEl = leftArea.createSpan('chat-input-hint');
-    hintEl.setText('Enter to send \u00B7 Queue when busy \u00B7 /help');
-
-    // Initialize status bar module with both containers
-    // (badges in header, token counter in input area)
-    if (this.statusBadgesContainer) {
-      const deps = { app: this.plugin.app, plugin: this.plugin };
-      this.statusModule = createStatusBar(
-        {
-          badgesContainer: this.statusBadgesContainer,
-          tokenContainer: leftArea,
-        },
-        deps,
-        {
-          onBackendClick: () => {
-            // Could open backend settings
-          },
-          onContextClick: () => {
-            // Toggle active note context
-            this.plugin.settings.activeNoteContext = !this.plugin.settings.activeNoteContext;
-            this.plugin.saveSettings();
-            this.refreshStatusBar();
-          },
-          onAccountClick: () => {
-            // Could show account details
-          },
-          onTokenCounterClick: () => {
-            // Could show detailed token breakdown
-          },
-          getBackendInfo: () => {
-            const backend = this.getBackend();
-            return {
-              type: backend.type,
-              label: backend.type.toUpperCase(),
-            };
-          },
-          getActiveNoteInfo: () => {
-            const enabled = this.plugin.settings.activeNoteContext;
-            const activeFile = this.plugin.app.workspace.getActiveFile();
-            if (enabled && activeFile && activeFile.extension === 'md') {
-              return {
-                path: activeFile.path,
-                title: activeFile.basename,
-              };
-            }
-            return null;
-          },
-          getAccountInfo: () => {
-            const backend = this.getBackend();
-            if (backend.type !== 'sdk' || !('getAccountInfo' in backend)) {
-              return null;
-            }
-            const sdkBackend = backend as {
-              getAccountInfo(): { email?: string; organization?: string; subscriptionType?: string } | null;
-            };
-            const info = sdkBackend.getAccountInfo();
-            if (!info) return null;
-            return {
-              email: info.email,
-              name: info.organization,
-              tier: info.subscriptionType,
-            };
-          },
-          getTokenEstimate: () => {
-            const tokens = this.estimateTokens();
-            const usage = this.conversation?.usage ?? calculateConversationUsage(this.conversation?.messages ?? []);
-            return { tokens, cost: usage.totalCost };
-          },
-        }
-      );
-      // Update ephemeral badge state
-      this.statusModule.updateEphemeral(this.plugin.settings.ephemeralMode);
     }
 
-    // Stop button (hidden by default)
-    this.stopButton = buttonArea.createEl('button', {
-      cls: 'chat-stop-btn',
-    });
-    setIcon(this.stopButton, 'circle-stop');
-    this.stopButton.createSpan({ text: 'Stop' });
-    this.stopButton.style.display = 'none';
-    this.stopButton.onclick = () => this.stopGeneration();
-
-    // Voice input button (if Web Speech API available)
-    this.voiceButton = buttonArea.createEl('button', {
-      cls: 'chat-voice-btn',
-      attr: { 'aria-label': 'Voice input' },
-    });
-    setIcon(this.voiceButton, 'mic');
-    this.voiceButton.onclick = () => this.toggleVoiceInput();
-    // Hide if Speech API not available
-    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-      this.voiceButton.style.display = 'none';
+    // Escape without autocomplete - still hide it
+    if (e.key === 'Escape') {
+      this.hideAutocomplete();
     }
 
-    // Send button
-    this.sendButton = buttonArea.createEl('button', {
-      cls: 'chat-send-btn mod-cta',
-    });
-    setIcon(this.sendButton, 'send');
-    this.sendButton.createSpan({ text: 'Send' });
-    this.sendButton.onclick = () => this.sendMessage();
+    return false; // Let module handle it
   }
 
   private createNewConversation(): Conversation {
@@ -2283,15 +2220,10 @@ export class ChatView extends ItemView {
 
   private setProcessing(processing: boolean): void {
     this.isProcessing = processing;
-    if (!this.sendButton || !this.stopButton || !this.inputEl) return;
-    this.sendButton.style.display = processing ? 'none' : 'inline-flex';
-    this.stopButton.style.display = processing ? 'inline-flex' : 'none';
-    // Keep input enabled during processing to allow message queuing
-    // The sendMessage method handles queuing when isProcessing is true
 
-    // Add/remove processing class for visual feedback
-    if (this.inputWrapper) {
-      this.inputWrapper.toggleClass('is-processing', processing);
+    // Delegate to input area module
+    if (this.inputModule) {
+      this.inputModule.setProcessing(processing);
     }
 
     // Update status bar
@@ -2334,10 +2266,15 @@ export class ChatView extends ItemView {
       exportToJson: () => this.exportToJson(),
 
       resizeInput: () => {
-        this.inputEl.style.height = 'auto';
-        this.inputEl.style.height = Math.min(this.inputEl.scrollHeight, MAX_TEXTAREA_HEIGHT_PX) + 'px';
+        if (this.inputModule) {
+          this.inputModule.resize();
+        }
       },
-      focusInput: () => this.inputEl.focus(),
+      focusInput: () => {
+        if (this.inputModule) {
+          this.inputModule.focus();
+        }
+      },
     };
   }
 
@@ -3732,127 +3669,6 @@ ${content}
     }
   }
 
-  private navigateInputHistory(direction: number): void {
-    if (this.inputHistory.length === 0) return;
-
-    // Save current input as draft when starting to navigate
-    if (this.inputHistoryIndex === -1) {
-      this.inputDraft = this.inputEl.value;
-    }
-
-    // Calculate new index
-    const newIndex = this.inputHistoryIndex + direction;
-
-    if (newIndex < -1) {
-      // Already at oldest, do nothing
-      return;
-    } else if (newIndex >= this.inputHistory.length) {
-      // Past newest, do nothing
-      return;
-    } else if (newIndex === -1) {
-      // Back to draft
-      this.inputHistoryIndex = -1;
-      this.inputEl.value = this.inputDraft;
-    } else {
-      // Navigate to history entry (newest is at end of array)
-      this.inputHistoryIndex = newIndex;
-      const historyIndex = this.inputHistory.length - 1 - newIndex;
-      this.inputEl.value = this.inputHistory[historyIndex];
-    }
-
-    // Move cursor to end
-    this.inputEl.selectionStart = this.inputEl.value.length;
-    this.inputEl.selectionEnd = this.inputEl.value.length;
-
-    // Trigger resize
-    this.inputEl.style.height = 'auto';
-    this.inputEl.style.height = Math.min(this.inputEl.scrollHeight, MAX_TEXTAREA_HEIGHT_PX) + 'px';
-  }
-
-  /**
-   * Handle an image file (from paste or drop)
-   */
-  private async handleImageFile(file: File): Promise<void> {
-    const maxSize = 10 * 1024 * 1024; // 10MB limit
-    if (file.size > maxSize) {
-      new Notice('Image too large (max 10MB)');
-      return;
-    }
-
-    try {
-      const data = await this.fileToBase64(file);
-      const mimeType = file.type;
-      const filename = file.name;
-
-      this.pendingImages.push({ data, mimeType, filename });
-      this.updateImagePreview();
-
-      log.info('Image added', { filename, mimeType, size: file.size });
-    } catch (error) {
-      log.error('Failed to process image', error);
-      new Notice('Failed to process image');
-    }
-  }
-
-  /**
-   * Convert a file to base64
-   */
-  private fileToBase64(file: File): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const result = reader.result as string;
-        // Remove the data URL prefix (e.g., "data:image/png;base64,")
-        const base64 = result.split(',')[1];
-        resolve(base64);
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-  }
-
-  /**
-   * Update the image preview display
-   */
-  private updateImagePreview(): void {
-    this.imagePreviewContainer.empty();
-
-    if (this.pendingImages.length === 0) {
-      this.imagePreviewContainer.style.display = 'none';
-      return;
-    }
-
-    this.imagePreviewContainer.style.display = 'flex';
-
-    for (let i = 0; i < this.pendingImages.length; i++) {
-      const img = this.pendingImages[i];
-      const wrapper = this.imagePreviewContainer.createDiv('chat-image-thumb');
-
-      const imgEl = wrapper.createEl('img', {
-        attr: {
-          src: `data:${img.mimeType};base64,${img.data}`,
-          alt: img.filename || 'Image',
-        },
-      });
-
-      // Remove button
-      const removeBtn = wrapper.createDiv('chat-image-remove');
-      removeBtn.setText('×');
-      removeBtn.onclick = () => {
-        this.pendingImages.splice(i, 1);
-        this.updateImagePreview();
-      };
-    }
-  }
-
-  /**
-   * Clear pending images
-   */
-  private clearPendingImages(): void {
-    this.pendingImages = [];
-    this.updateImagePreview();
-  }
-
   /**
    * Public method to send a message programmatically.
    * Used by command palette and context menu integrations.
@@ -3884,19 +3700,13 @@ ${content}
 
     log.info('User sending message', { contentLength: content.length });
 
-    // Add to input history (avoid duplicates of last entry)
-    if (this.inputHistory.length === 0 || this.inputHistory[this.inputHistory.length - 1] !== content) {
-      this.inputHistory.push(content);
-      // Keep history manageable
-      if (this.inputHistory.length > MAX_INPUT_HISTORY_SIZE) {
-        this.inputHistory.shift();
-      }
+    // Add to input history via module
+    if (this.inputModule) {
+      this.inputModule.addToHistory(content);
+      this.inputModule.clear();
+    } else {
+      this.inputEl.value = '';
     }
-    // Reset history navigation
-    this.inputHistoryIndex = -1;
-    this.inputDraft = '';
-
-    this.inputEl.value = '';
     this.setProcessing(true);
     this.setStatus('Thinking...', 'info');
 
@@ -4197,11 +4007,14 @@ ${content}
         }
       }
 
-      // Collect images and clear preview
-      const images = this.pendingImages.length > 0
-        ? this.pendingImages.map(img => ({ data: img.data, mimeType: img.mimeType, filename: img.filename }))
+      // Collect images from module and clear preview
+      const moduleImages = this.inputModule?.getImages() ?? [];
+      const images = moduleImages.length > 0
+        ? moduleImages.map(img => ({ data: img.data, mimeType: img.mimeType, filename: img.filename }))
         : undefined;
-      this.clearPendingImages();
+      if (this.inputModule) {
+        this.inputModule.clearImages();
+      }
 
       // Check if we should fork from another session or resume at a specific point
       const forkFromSessionId = this.conversation.metadata?.forkFromSessionId;
@@ -4284,7 +4097,9 @@ ${content}
       }
       // Show final + interim in input
       this.inputEl.value = finalTranscript + (interimTranscript ? ' ' + interimTranscript : '');
-      this.autoResizeInput();
+      if (this.inputModule) {
+        this.inputModule.resize();
+      }
     };
 
     this.speechRecognition.onerror = (event: SpeechRecognitionErrorEvent) => {
@@ -4307,8 +4122,9 @@ ${content}
     try {
       this.speechRecognition.start();
       this.isRecording = true;
-      this.voiceButton.addClass('recording');
-      setIcon(this.voiceButton, 'mic-off');
+      if (this.inputModule) {
+        this.inputModule.setRecording(true);
+      }
       this.showTemporaryStatus('Listening...', 'info', 10000);
       log.info('Voice input started');
     } catch (error) {
@@ -4323,8 +4139,9 @@ ${content}
       this.speechRecognition = null;
     }
     this.isRecording = false;
-    this.voiceButton.removeClass('recording');
-    setIcon(this.voiceButton, 'mic');
+    if (this.inputModule) {
+      this.inputModule.setRecording(false);
+    }
     this.setStatus('');
     log.info('Voice input stopped');
   }
@@ -4821,9 +4638,10 @@ ${content}
     this.inputEl.focus();
     this.hideAutocomplete();
 
-    // Trigger resize
-    this.inputEl.style.height = 'auto';
-    this.inputEl.style.height = Math.min(this.inputEl.scrollHeight, MAX_TEXTAREA_HEIGHT_PX) + 'px';
+    // Trigger resize via module
+    if (this.inputModule) {
+      this.inputModule.resize();
+    }
   }
 
   // ===== MOBILE SUPPORT =====
@@ -4859,70 +4677,6 @@ ${content}
       this.activeTabId = initialTab.id;
     }
     log.debug('Tabs initialized', { count: this.tabs.length, activeTabId: this.activeTabId });
-  }
-
-  /**
-   * Render the tab bar UI.
-   */
-  private renderTabBar(): void {
-    if (!this.tabBar) return;
-    this.tabBar.empty();
-
-    // Only show tab bar if we have multiple tabs or user explicitly enabled
-    if (this.tabs.length <= 1 && !this.tabsEnabled) {
-      this.tabBar.style.display = 'none';
-      return;
-    }
-    this.tabBar.style.display = 'flex';
-
-    // Render each tab
-    for (const tab of this.tabs) {
-      const tabEl = this.tabBar.createDiv({
-        cls: `chat-tab ${tab.id === this.activeTabId ? 'chat-tab-active' : ''}`,
-      });
-
-      // Tab icon for pinned/linked
-      if (tab.pinned) {
-        const pinIcon = tabEl.createSpan('chat-tab-icon');
-        setIcon(pinIcon, 'pin');
-      } else if (tab.linkedPath) {
-        const linkIcon = tabEl.createSpan('chat-tab-icon');
-        setIcon(linkIcon, 'link');
-      }
-
-      // Tab label
-      const labelEl = tabEl.createSpan('chat-tab-label');
-      labelEl.setText(tab.label.slice(0, 20) + (tab.label.length > 20 ? '...' : ''));
-      labelEl.setAttribute('title', tab.label);
-
-      // Click to switch
-      tabEl.onclick = (e) => {
-        e.stopPropagation();
-        this.switchToTab(tab.id);
-      };
-
-      // Close button (unless pinned)
-      if (!tab.pinned && this.tabs.length > 1) {
-        const closeBtn = tabEl.createSpan('chat-tab-close');
-        setIcon(closeBtn, 'x');
-        closeBtn.onclick = (e) => {
-          e.stopPropagation();
-          this.closeTab(tab.id);
-        };
-      }
-
-      // Right-click context menu
-      tabEl.oncontextmenu = (e) => {
-        e.preventDefault();
-        this.showTabContextMenu(e, tab);
-      };
-    }
-
-    // New tab button
-    const newTabBtn = this.tabBar.createDiv('chat-tab-new');
-    setIcon(newTabBtn, 'plus');
-    newTabBtn.setAttribute('aria-label', 'New tab');
-    newTabBtn.onclick = () => this.createNewTab();
   }
 
   /**
@@ -4963,7 +4717,7 @@ ${content}
     // Update UI
     this.renderAllMessages();
     this.updateTitle();
-    this.renderTabBar();
+    this.updateTabBarVisibility();
     await this.saveTabState();
   }
 
@@ -4999,7 +4753,7 @@ ${content}
     // Update UI
     this.renderAllMessages();
     this.updateTitle();
-    this.renderTabBar();
+    this.updateTabBarVisibility();
     await this.saveTabState();
 
     // Focus input
@@ -5025,78 +4779,9 @@ ${content}
       const newIndex = Math.min(tabIndex, this.tabs.length - 1);
       await this.switchToTab(this.tabs[newIndex].id);
     } else {
-      this.renderTabBar();
+      this.updateTabBarVisibility();
       await this.saveTabState();
     }
-  }
-
-  /**
-   * Show context menu for a tab.
-   */
-  private showTabContextMenu(event: MouseEvent, tab: ChatTab): void {
-    const menu = new (require('obsidian').Menu)();
-
-    menu.addItem((item: { setTitle: (arg0: string) => { (): unknown; new(): unknown; setIcon: { (arg0: string): { (): unknown; new(): unknown; onClick: { (arg0: () => void): unknown; new(): unknown } } } } }) => {
-      item.setTitle(tab.pinned ? 'Unpin tab' : 'Pin tab')
-        .setIcon('pin')
-        .onClick(() => {
-          tab.pinned = !tab.pinned;
-          this.renderTabBar();
-          this.saveTabState();
-        });
-    });
-
-    menu.addItem((item: { setTitle: (arg0: string) => { (): unknown; new(): unknown; setIcon: { (arg0: string): { (): unknown; new(): unknown; onClick: { (arg0: () => void): unknown; new(): unknown } } } } }) => {
-      item.setTitle('Rename tab')
-        .setIcon('pencil')
-        .onClick(() => {
-          const newName = prompt('Enter new tab name:', tab.label);
-          if (newName) {
-            tab.label = newName;
-            this.renderTabBar();
-            this.saveTabState();
-          }
-        });
-    });
-
-    menu.addItem((item: { setTitle: (arg0: string) => { (): unknown; new(): unknown; setIcon: { (arg0: string): { (): unknown; new(): unknown; onClick: { (arg0: () => void): unknown; new(): unknown } } } } }) => {
-      item.setTitle('Duplicate tab')
-        .setIcon('copy')
-        .onClick(async () => {
-          const newTab: ChatTab = {
-            id: generateId(),
-            conversationId: tab.conversationId,
-            label: `${tab.label} (copy)`,
-          };
-          this.tabs.push(newTab);
-          this.renderTabBar();
-          await this.saveTabState();
-        });
-    });
-
-    if (!tab.pinned && this.tabs.length > 1) {
-      menu.addSeparator();
-      menu.addItem((item: { setTitle: (arg0: string) => { (): unknown; new(): unknown; setIcon: { (arg0: string): { (): unknown; new(): unknown; onClick: { (arg0: () => Promise<void>): unknown; new(): unknown } } } } }) => {
-        item.setTitle('Close tab')
-          .setIcon('x')
-          .onClick(async () => {
-            await this.closeTab(tab.id);
-          });
-      });
-
-      menu.addItem((item: { setTitle: (arg0: string) => { (): unknown; new(): unknown; setIcon: { (arg0: string): { (): unknown; new(): unknown; onClick: { (arg0: () => Promise<void>): unknown; new(): unknown } } } } }) => {
-        item.setTitle('Close other tabs')
-          .setIcon('x-circle')
-          .onClick(async () => {
-            const otherTabs = this.tabs.filter(t => t.id !== tab.id && !t.pinned);
-            for (const other of otherTabs) {
-              await this.closeTab(other.id);
-            }
-          });
-      });
-    }
-
-    menu.showAtMouseEvent(event);
   }
 
   /**
@@ -5126,8 +4811,18 @@ ${content}
     const activeTab = this.tabs.find(t => t.id === this.activeTabId);
     if (activeTab && this.conversation) {
       activeTab.label = this.conversation.title;
-      this.renderTabBar();
+      this.tabModule?.render();
     }
+  }
+
+  /**
+   * Update tab bar visibility based on tab count and settings.
+   */
+  private updateTabBarVisibility(): void {
+    // Only show tab bar if we have multiple tabs or user explicitly enabled
+    const shouldShow = this.tabs.length > 1 || this.tabsEnabled;
+    this.tabModule?.setVisible(shouldShow);
+    this.tabModule?.render();
   }
 
   async onClose(): Promise<void> {

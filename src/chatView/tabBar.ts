@@ -12,6 +12,8 @@ export interface TabInfo {
   id: string;
   label: string;
   conversationId: string;
+  pinned?: boolean;
+  linkedPath?: string;
 }
 
 /**
@@ -22,9 +24,12 @@ export interface TabBarCallbacks {
   onTabClose: (tabId: string) => void;
   onNewTab: () => void;
   onTabRename: (tabId: string, newLabel: string) => void;
+  onTabPin: (tabId: string, pinned: boolean) => void;
+  onTabDuplicate: (tabId: string) => void;
+  onCloseOtherTabs: (tabId: string) => void;
   getTabs: () => TabInfo[];
   getActiveTabId: () => string | null;
-  saveState: () => void;
+  getTabCount: () => number;
 }
 
 /**
@@ -34,6 +39,7 @@ export interface TabBarHandle extends ModuleHandle {
   render(): void;
   updateLabel(tabId: string, label: string): void;
   setActiveTab(tabId: string): void;
+  setVisible(visible: boolean): void;
 }
 
 const MAX_LABEL_LENGTH = 20;
@@ -49,15 +55,13 @@ export function createTabBar(
   _deps: ModuleDeps,
   callbacks: TabBarCallbacks
 ): TabBarHandle {
-  // DOM elements
-  const tabBar = container.createDiv('chat-tab-bar');
-  const tabsContainer = tabBar.createDiv('chat-tabs-container');
+  // DOM elements - use the container directly as the tab bar
+  container.addClass('chat-tab-bar');
+  const tabsContainer = container.createDiv('chat-tabs-container');
 
-  const newTabBtn = tabBar.createEl('button', {
-    cls: 'tab-new-btn',
-    attr: { 'aria-label': 'New tab' },
-  });
+  const newTabBtn = container.createDiv('chat-tab-new');
   setIcon(newTabBtn, 'plus');
+  newTabBtn.setAttribute('aria-label', 'New tab');
   newTabBtn.onclick = (): void => callbacks.onNewTab();
 
   /**
@@ -71,6 +75,13 @@ export function createTabBar(
   }
 
   /**
+   * Set tab bar visibility.
+   */
+  function setVisible(visible: boolean): void {
+    container.style.display = visible ? 'flex' : 'none';
+  }
+
+  /**
    * Render all tabs in the container.
    */
   function render(): void {
@@ -79,32 +90,43 @@ export function createTabBar(
 
     const tabs = callbacks.getTabs();
     const activeTabId = callbacks.getActiveTabId();
+    const tabCount = callbacks.getTabCount();
 
     for (const tab of tabs) {
-      const tabEl = tabsContainer.createDiv('chat-tab');
+      const tabEl = tabsContainer.createDiv({
+        cls: `chat-tab ${tab.id === activeTabId ? 'chat-tab-active' : ''}`,
+      });
       tabEl.setAttribute('data-tab-id', tab.id);
 
-      if (tab.id === activeTabId) {
-        tabEl.addClass('active');
+      // Tab icon for pinned/linked
+      if (tab.pinned) {
+        const pinIcon = tabEl.createSpan('chat-tab-icon');
+        setIcon(pinIcon, 'pin');
+      } else if (tab.linkedPath) {
+        const linkIcon = tabEl.createSpan('chat-tab-icon');
+        setIcon(linkIcon, 'link');
       }
 
       // Tab label
-      const labelEl = tabEl.createSpan('tab-label');
+      const labelEl = tabEl.createSpan('chat-tab-label');
       labelEl.setText(truncateLabel(tab.label));
       labelEl.setAttribute('title', tab.label);
 
-      // Close button
-      const closeBtn = tabEl.createSpan('tab-close-btn');
-      setIcon(closeBtn, 'x');
-      closeBtn.onclick = (e): void => {
-        e.stopPropagation();
-        callbacks.onTabClose(tab.id);
-      };
-
       // Click to select tab
-      tabEl.onclick = (): void => {
+      tabEl.onclick = (e): void => {
+        e.stopPropagation();
         callbacks.onTabSelect(tab.id);
       };
+
+      // Close button (unless pinned or only one tab)
+      if (!tab.pinned && tabCount > 1) {
+        const closeBtn = tabEl.createSpan('chat-tab-close');
+        setIcon(closeBtn, 'x');
+        closeBtn.onclick = (e): void => {
+          e.stopPropagation();
+          callbacks.onTabClose(tab.id);
+        };
+      }
 
       // Right-click context menu
       tabEl.oncontextmenu = (e): void => {
@@ -119,10 +141,20 @@ export function createTabBar(
    */
   function showContextMenu(event: MouseEvent, tab: TabInfo): void {
     const menu = new Menu();
+    const tabCount = callbacks.getTabCount();
 
     menu.addItem((item) => {
       item
-        .setTitle('Rename')
+        .setTitle(tab.pinned ? 'Unpin tab' : 'Pin tab')
+        .setIcon('pin')
+        .onClick(() => {
+          callbacks.onTabPin(tab.id, !tab.pinned);
+        });
+    });
+
+    menu.addItem((item) => {
+      item
+        .setTitle('Rename tab')
         .setIcon('pencil')
         .onClick(() => {
           const newName = prompt('Enter new tab name:', tab.label);
@@ -134,12 +166,33 @@ export function createTabBar(
 
     menu.addItem((item) => {
       item
-        .setTitle('Close')
-        .setIcon('x')
+        .setTitle('Duplicate tab')
+        .setIcon('copy')
         .onClick(() => {
-          callbacks.onTabClose(tab.id);
+          callbacks.onTabDuplicate(tab.id);
         });
     });
+
+    if (!tab.pinned && tabCount > 1) {
+      menu.addSeparator();
+      menu.addItem((item) => {
+        item
+          .setTitle('Close tab')
+          .setIcon('x')
+          .onClick(() => {
+            callbacks.onTabClose(tab.id);
+          });
+      });
+
+      menu.addItem((item) => {
+        item
+          .setTitle('Close other tabs')
+          .setIcon('x-circle')
+          .onClick(() => {
+            callbacks.onCloseOtherTabs(tab.id);
+          });
+      });
+    }
 
     menu.showAtMouseEvent(event);
   }
@@ -151,7 +204,7 @@ export function createTabBar(
     const tabEl = tabsContainer.querySelector(`[data-tab-id="${tabId}"]`);
     if (!tabEl) return;
 
-    const labelEl = tabEl.querySelector('.tab-label');
+    const labelEl = tabEl.querySelector('.chat-tab-label');
     if (labelEl) {
       labelEl.textContent = truncateLabel(label);
       labelEl.setAttribute('title', label);
@@ -164,12 +217,12 @@ export function createTabBar(
   function setActiveTab(tabId: string): void {
     // Remove active from all tabs
     const allTabs = tabsContainer.querySelectorAll('.chat-tab');
-    allTabs.forEach((tab) => tab.classList.remove('active'));
+    allTabs.forEach((tab) => tab.classList.remove('chat-tab-active'));
 
     // Add active to specified tab
     const targetTab = tabsContainer.querySelector(`[data-tab-id="${tabId}"]`);
     if (targetTab) {
-      targetTab.classList.add('active');
+      targetTab.classList.add('chat-tab-active');
     }
   }
 
@@ -177,13 +230,16 @@ export function createTabBar(
    * Clean up the tab bar.
    */
   function destroy(): void {
-    tabBar.remove();
+    tabsContainer.remove();
+    newTabBtn.remove();
+    container.removeClass('chat-tab-bar');
   }
 
   return {
     render,
     updateLabel,
     setActiveTab,
+    setVisible,
     destroy,
   };
 }
