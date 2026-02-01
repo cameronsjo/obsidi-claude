@@ -11,3 +11,4 @@ export * from './mobileSupport';
 export * from './tabBar';
 export * from './messageRenderer';
 export * from './inputArea';
+export * from './historyPanel';
