@@ -5,3 +5,4 @@
 
 export * from './types';
 export * from './searchBar';
+export * from './queuePanel';
