@@ -135,6 +135,25 @@ export interface EmbeddingSettings {
   batchDelayMs?: number;     // Delay between batches in ms (default: 100)
 }
 
+/**
+ * Settings for vault-based conversation storage.
+ * Enables cross-device sync via Obsidian Sync.
+ */
+export interface ConversationStorageSettings {
+  /** Store conversations in vault instead of plugin folder */
+  enabled: boolean;
+  /** Folder path within vault for conversation files */
+  folderPath: string;
+  /** Auto-resume most recent conversation on startup */
+  autoResume: boolean;
+}
+
+export const DEFAULT_CONVERSATION_STORAGE_SETTINGS: ConversationStorageSettings = {
+  enabled: false,
+  folderPath: '.claude/conversations',
+  autoResume: false,
+};
+
 export interface MCPSettings {
   enabled: boolean;
   serverName: string;
@@ -340,6 +359,8 @@ export interface ObsidiClaudeSettings {
   skills: SkillSettings;
   /** Custom agents configuration */
   agents: AgentSettings;
+  /** Conversation storage configuration */
+  conversationStorage: ConversationStorageSettings;
   /** Automatically include active note as context */
   activeNoteContext: boolean;
 
@@ -641,6 +662,7 @@ When the user asks about their notes, always search first to ground your respons
   preferredBackend: 'auto',
   skills: DEFAULT_SKILL_SETTINGS,
   agents: DEFAULT_AGENT_SETTINGS,
+  conversationStorage: DEFAULT_CONVERSATION_STORAGE_SETTINGS,
   activeNoteContext: true,
   // SDK advanced settings
   maxBudgetUsd: undefined, // No limit by default

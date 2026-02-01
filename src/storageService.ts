@@ -1,11 +1,12 @@
 import type { App } from 'obsidian';
-import type { ObsidiClaudeSettings, Conversation } from './types';
+import type { ObsidiClaudeSettings, Conversation, ConversationStorageSettings } from './types';
 import {
   DEFAULT_SETTINGS,
   DEFAULT_EMBEDDING_SETTINGS,
   DEFAULT_MCP_SETTINGS,
   DEFAULT_SKILL_SETTINGS,
   DEFAULT_AGENT_SETTINGS,
+  DEFAULT_CONVERSATION_STORAGE_SETTINGS,
   generateId,
 } from './types';
 import * as fs from 'fs';
@@ -15,34 +16,64 @@ import { createLogger } from './logger';
 const log = createLogger('StorageService');
 
 /**
- * Handles all plugin data persistence in .obsidian/plugins/obsidi-claude/
+ * Handles all plugin data persistence.
  *
- * Directory structure:
- * .obsidian/plugins/obsidi-claude/
- * ├── data.json              (Obsidian's default - we use for settings)
- * ├── conversations/
- * │   ├── index.json         (list of conversations with metadata)
- * │   ├── {id}.json          (individual conversation files)
- * │   └── current.json       (pointer to current conversation)
- * └── vectors/
- *     └── index.json         (vector embeddings index)
+ * Supports two storage modes:
+ * 1. Plugin storage (default): .obsidian/plugins/obsidi-claude/conversations/
+ * 2. Vault storage (opt-in): {configurable folder}/  (enables Obsidian Sync)
+ *
+ * Directory structure (both modes):
+ * {base}/
+ * ├── index.json         (list of conversations with metadata)
+ * ├── {id}.json          (individual conversation files)
+ * └── current.json       (pointer to current conversation)
  */
 export class StorageService {
   private app: App;
   private basePath: string;
-  private conversationsPath: string;
+  private pluginConversationsPath: string;
   private vectorsPath: string;
+  private storageSettings: ConversationStorageSettings = DEFAULT_CONVERSATION_STORAGE_SETTINGS;
 
   constructor(app: App) {
     this.app = app;
 
-    // Get vault path
+    // Get vault path for plugin storage
     const adapter = app.vault.adapter as unknown as { basePath?: string };
     const vaultPath = adapter.basePath || '';
 
     this.basePath = path.join(vaultPath, '.obsidian', 'plugins', 'obsidi-claude');
-    this.conversationsPath = path.join(this.basePath, 'conversations');
+    this.pluginConversationsPath = path.join(this.basePath, 'conversations');
     this.vectorsPath = path.join(this.basePath, 'vectors');
+  }
+
+  /**
+   * Update storage settings (called when settings change).
+   */
+  setStorageSettings(settings: ConversationStorageSettings): void {
+    this.storageSettings = settings;
+    log.debug('Storage settings updated', {
+      enabled: settings.enabled,
+      folderPath: settings.folderPath,
+    });
+  }
+
+  /**
+   * Check if vault storage is enabled.
+   */
+  isVaultStorageEnabled(): boolean {
+    return this.storageSettings.enabled;
+  }
+
+  /**
+   * Get the conversations folder path based on current settings.
+   * Returns vault-relative path for vault storage, absolute path for plugin storage.
+   */
+  private getConversationsPath(): string {
+    if (this.storageSettings.enabled) {
+      return this.storageSettings.folderPath;
+    }
+    return this.pluginConversationsPath;
   }
 
   /**
@@ -50,15 +81,103 @@ export class StorageService {
    */
   async initialize(): Promise<void> {
     log.info('Initializing storage directories', { basePath: this.basePath });
-    await this.ensureDir(this.basePath);
-    await this.ensureDir(this.conversationsPath);
-    await this.ensureDir(this.vectorsPath);
+    await this.ensureDirFs(this.basePath);
+    await this.ensureDirFs(this.pluginConversationsPath);
+    await this.ensureDirFs(this.vectorsPath);
     log.debug('Storage directories initialized');
   }
 
-  private async ensureDir(dirPath: string): Promise<void> {
+  /**
+   * Ensure vault storage directory exists.
+   */
+  async ensureVaultStorageDir(): Promise<void> {
+    if (!this.storageSettings.enabled) return;
+
+    const folderPath = this.storageSettings.folderPath;
+    if (!(await this.app.vault.adapter.exists(folderPath))) {
+      await this.app.vault.adapter.mkdir(folderPath);
+      log.info('Created vault storage directory', { folderPath });
+    }
+  }
+
+  private async ensureDirFs(dirPath: string): Promise<void> {
     if (!fs.existsSync(dirPath)) {
       fs.mkdirSync(dirPath, { recursive: true });
+    }
+  }
+
+  // ==================== Abstracted File I/O ====================
+
+  /**
+   * Read a file from the appropriate storage location.
+   */
+  private async readConversationFile(filename: string): Promise<string | null> {
+    if (this.storageSettings.enabled) {
+      // Vault storage - use Obsidian adapter
+      const filePath = `${this.storageSettings.folderPath}/${filename}`;
+      try {
+        if (await this.app.vault.adapter.exists(filePath)) {
+          return await this.app.vault.adapter.read(filePath);
+        }
+      } catch (error) {
+        log.error('Failed to read vault file', error, { filePath });
+      }
+      return null;
+    } else {
+      // Plugin storage - use Node.js fs
+      const filePath = path.join(this.pluginConversationsPath, filename);
+      try {
+        if (fs.existsSync(filePath)) {
+          return fs.readFileSync(filePath, 'utf-8');
+        }
+      } catch (error) {
+        log.error('Failed to read plugin file', error, { filePath });
+      }
+      return null;
+    }
+  }
+
+  /**
+   * Write a file to the appropriate storage location.
+   */
+  private async writeConversationFile(filename: string, content: string): Promise<void> {
+    if (this.storageSettings.enabled) {
+      // Vault storage - use Obsidian adapter
+      await this.ensureVaultStorageDir();
+      const filePath = `${this.storageSettings.folderPath}/${filename}`;
+      await this.app.vault.adapter.write(filePath, content);
+    } else {
+      // Plugin storage - use Node.js fs
+      await this.ensureDirFs(this.pluginConversationsPath);
+      const filePath = path.join(this.pluginConversationsPath, filename);
+      fs.writeFileSync(filePath, content);
+    }
+  }
+
+  /**
+   * Delete a file from the appropriate storage location.
+   */
+  private async deleteConversationFile(filename: string): Promise<void> {
+    if (this.storageSettings.enabled) {
+      // Vault storage
+      const filePath = `${this.storageSettings.folderPath}/${filename}`;
+      try {
+        if (await this.app.vault.adapter.exists(filePath)) {
+          await this.app.vault.adapter.remove(filePath);
+        }
+      } catch (error) {
+        log.error('Failed to delete vault file', error, { filePath });
+      }
+    } else {
+      // Plugin storage
+      const filePath = path.join(this.pluginConversationsPath, filename);
+      try {
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
+      } catch (error) {
+        log.error('Failed to delete plugin file', error, { filePath });
+      }
     }
   }
 
@@ -83,7 +202,7 @@ export class StorageService {
   async saveSettings(settings: ObsidiClaudeSettings): Promise<void> {
     const filePath = path.join(this.basePath, 'settings.json');
     try {
-      await this.ensureDir(this.basePath);
+      await this.ensureDirFs(this.basePath);
       fs.writeFileSync(filePath, JSON.stringify(settings, null, 2));
       log.debug('Settings saved');
     } catch (error) {
@@ -100,6 +219,7 @@ export class StorageService {
       mcp: { ...DEFAULT_MCP_SETTINGS, ...(saved.mcp || {}) },
       skills: { ...DEFAULT_SKILL_SETTINGS, ...(saved.skills || {}) },
       agents: { ...DEFAULT_AGENT_SETTINGS, ...(saved.agents || {}) },
+      conversationStorage: { ...DEFAULT_CONVERSATION_STORAGE_SETTINGS, ...(saved.conversationStorage || {}) },
     };
   }
 
@@ -118,10 +238,9 @@ export class StorageService {
     pinned?: boolean;
     preview?: string;
   }>> {
-    const indexPath = path.join(this.conversationsPath, 'index.json');
     try {
-      if (fs.existsSync(indexPath)) {
-        const content = fs.readFileSync(indexPath, 'utf-8');
+      const content = await this.readConversationFile('index.json');
+      if (content) {
         const conversations = JSON.parse(content);
         log.debug('Loaded conversation index', { count: conversations.length });
         return conversations;
@@ -144,18 +263,16 @@ export class StorageService {
       preview?: string;
     }>
   ): Promise<void> {
-    const indexPath = path.join(this.conversationsPath, 'index.json');
-    fs.writeFileSync(indexPath, JSON.stringify(conversations, null, 2));
+    await this.writeConversationFile('index.json', JSON.stringify(conversations, null, 2));
   }
 
   /**
    * Get current conversation ID
    */
   async getCurrentConversationId(): Promise<string | null> {
-    const currentPath = path.join(this.conversationsPath, 'current.json');
     try {
-      if (fs.existsSync(currentPath)) {
-        const content = fs.readFileSync(currentPath, 'utf-8');
+      const content = await this.readConversationFile('current.json');
+      if (content) {
         const data = JSON.parse(content);
         return data.id || null;
       }
@@ -169,19 +286,16 @@ export class StorageService {
    * Set current conversation ID
    */
   async setCurrentConversationId(id: string | null): Promise<void> {
-    const currentPath = path.join(this.conversationsPath, 'current.json');
-    await this.ensureDir(this.conversationsPath);
-    fs.writeFileSync(currentPath, JSON.stringify({ id }));
+    await this.writeConversationFile('current.json', JSON.stringify({ id }));
   }
 
   /**
    * Load a specific conversation
    */
   async loadConversation(id: string): Promise<Conversation | null> {
-    const filePath = path.join(this.conversationsPath, `${id}.json`);
     try {
-      if (fs.existsSync(filePath)) {
-        const content = fs.readFileSync(filePath, 'utf-8');
+      const content = await this.readConversationFile(`${id}.json`);
+      if (content) {
         const conversation = JSON.parse(content) as Conversation;
         log.debug('Loaded conversation', { id, messageCount: conversation.messages.length });
         return conversation;
@@ -196,11 +310,8 @@ export class StorageService {
    * Save a conversation
    */
   async saveConversation(conversation: Conversation): Promise<void> {
-    await this.ensureDir(this.conversationsPath);
-
     // Save the conversation file
-    const filePath = path.join(this.conversationsPath, `${conversation.id}.json`);
-    fs.writeFileSync(filePath, JSON.stringify(conversation, null, 2));
+    await this.writeConversationFile(`${conversation.id}.json`, JSON.stringify(conversation, null, 2));
     log.debug('Saved conversation', { id: conversation.id, messageCount: conversation.messages.length });
 
     // Update the index
@@ -248,12 +359,9 @@ export class StorageService {
    */
   async deleteConversation(id: string): Promise<void> {
     log.info('Deleting conversation', { id });
-    const filePath = path.join(this.conversationsPath, `${id}.json`);
 
     // Delete the file
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
-    }
+    await this.deleteConversationFile(`${id}.json`);
 
     // Update the index
     const index = await this.listConversations();
@@ -299,7 +407,22 @@ export class StorageService {
       }
     }
 
-    // No current conversation, create one
+    // No current conversation - check if auto-resume is enabled
+    if (this.storageSettings.autoResume) {
+      const conversations = await this.listConversations();
+      if (conversations.length > 0) {
+        // Load the most recent conversation
+        const mostRecent = conversations[0]; // Already sorted by updatedAt
+        const conversation = await this.loadConversation(mostRecent.id);
+        if (conversation) {
+          await this.setCurrentConversationId(conversation.id);
+          log.info('Auto-resumed conversation', { id: conversation.id, title: conversation.title });
+          return conversation;
+        }
+      }
+    }
+
+    // No conversation to resume, create new one
     return this.createConversation();
   }
 
@@ -397,6 +520,80 @@ export class StorageService {
     await this.saveConversation(duplicate);
     log.info('Duplicated conversation', { originalId: id, newId: duplicate.id });
     return duplicate;
+  }
+
+  // ==================== Migration ====================
+
+  /**
+   * Migrate conversations from plugin storage to vault storage.
+   * Called when vault storage is enabled for the first time.
+   */
+  async migrateToVaultStorage(): Promise<{ migrated: number; failed: number }> {
+    log.info('Starting migration to vault storage');
+
+    // Temporarily disable vault storage to read from plugin storage
+    const targetPath = this.storageSettings.folderPath;
+    this.storageSettings.enabled = false;
+
+    const conversations = await this.listConversations();
+    const currentId = await this.getCurrentConversationId();
+
+    // Re-enable vault storage for writing
+    this.storageSettings.enabled = true;
+
+    let migrated = 0;
+    let failed = 0;
+
+    // Ensure vault directory exists
+    await this.ensureVaultStorageDir();
+
+    // Migrate each conversation
+    for (const meta of conversations) {
+      try {
+        // Read from plugin storage
+        this.storageSettings.enabled = false;
+        const conversation = await this.loadConversation(meta.id);
+        this.storageSettings.enabled = true;
+
+        if (conversation) {
+          // Write to vault storage
+          await this.saveConversation(conversation);
+          migrated++;
+          log.debug('Migrated conversation', { id: meta.id, title: meta.title });
+        } else {
+          failed++;
+          log.warn('Failed to load conversation for migration', { id: meta.id });
+        }
+      } catch (error) {
+        failed++;
+        log.error('Failed to migrate conversation', error, { id: meta.id });
+      }
+    }
+
+    // Migrate current pointer
+    if (currentId) {
+      await this.setCurrentConversationId(currentId);
+    }
+
+    log.info('Migration complete', { migrated, failed, targetPath });
+    return { migrated, failed };
+  }
+
+  /**
+   * Check if plugin storage has conversations that could be migrated.
+   */
+  async hasPluginStorageConversations(): Promise<boolean> {
+    const indexPath = path.join(this.pluginConversationsPath, 'index.json');
+    try {
+      if (fs.existsSync(indexPath)) {
+        const content = fs.readFileSync(indexPath, 'utf-8');
+        const conversations = JSON.parse(content);
+        return conversations.length > 0;
+      }
+    } catch {
+      // Ignore errors
+    }
+    return false;
   }
 
   /**

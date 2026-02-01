@@ -43,6 +43,9 @@ export default class ObsidiClaudePlugin extends Plugin {
     // Load settings
     this.settings = await this.storage.loadSettings();
 
+    // Apply conversation storage settings to the storage service
+    this.storage.setStorageSettings(this.settings.conversationStorage);
+
     // Migrate API key from plain text settings to SecretStorage
     await this.migrateApiKeyToSecretStorage();
 
@@ -642,6 +645,9 @@ export default class ObsidiClaudePlugin extends Plugin {
 
   async saveSettings(): Promise<void> {
     await this.storage.saveSettings(this.settings);
+
+    // Update storage service with conversation storage settings
+    this.storage.setStorageSettings(this.settings.conversationStorage);
 
     // Update RAG service with new settings
     if (this.ragService) {

@@ -371,6 +371,61 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     // ═══════════════════════════════════════════════════════════════════
+    // STORAGE - Vault-based conversation storage for sync
+    // ═══════════════════════════════════════════════════════════════════
+    const storageSection = this.createCollapsibleSection(containerEl, 'storage', 'Conversation Storage');
+
+    const storageSettings = this.plugin.settings.conversationStorage;
+
+    new Setting(storageSection)
+      .setName('Store in Vault')
+      .setDesc('Save conversations to your vault for cross-device sync via Obsidian Sync')
+      .addToggle((toggle) =>
+        toggle
+          .setValue(storageSettings.enabled)
+          .onChange(async (value) => {
+            if (value && !storageSettings.enabled) {
+              // Enabling - check for migration
+              const hasPrevious = await this.plugin.storage.hasPluginStorageConversations();
+              if (hasPrevious) {
+                const result = await this.plugin.storage.migrateToVaultStorage();
+                new Notice(`Migrated ${result.migrated} conversations to vault storage`);
+              } else {
+                await this.plugin.storage.ensureVaultStorageDir();
+                new Notice('Vault storage enabled');
+              }
+            }
+            this.plugin.settings.conversationStorage.enabled = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(storageSection)
+      .setName('Folder Path')
+      .setDesc('Vault folder for conversation files')
+      .addText((text) =>
+        text
+          .setPlaceholder('.claude/conversations')
+          .setValue(storageSettings.folderPath)
+          .onChange(async (value) => {
+            this.plugin.settings.conversationStorage.folderPath = value || '.claude/conversations';
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(storageSection)
+      .setName('Auto-Resume')
+      .setDesc('Automatically resume the last conversation on startup')
+      .addToggle((toggle) =>
+        toggle
+          .setValue(storageSettings.autoResume)
+          .onChange(async (value) => {
+            this.plugin.settings.conversationStorage.autoResume = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    // ═══════════════════════════════════════════════════════════════════
     // ADVANCED - Collapsible, collapsed by default
     // ═══════════════════════════════════════════════════════════════════
     const advancedSection = this.createCollapsibleSection(containerEl, 'advanced', 'Advanced');
