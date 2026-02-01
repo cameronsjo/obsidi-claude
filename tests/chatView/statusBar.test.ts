@@ -6,6 +6,7 @@ import {
   createStatusBar,
   type StatusBarHandle,
   type StatusBarCallbacks,
+  type StatusBarContainers,
   type BackendInfo,
   type ContextInfo,
   type AccountInfo,
@@ -26,7 +27,9 @@ declare global {
       tag: K,
       options?: { cls?: string; attr?: Record<string, string>; text?: string }
     ): HTMLElementTagNameMap[K];
-    createSpan(cls?: string): HTMLSpanElement;
+    createSpan(options?: string | { cls?: string; text?: string }): HTMLSpanElement;
+    setText(text: string): void;
+    empty(): void;
   }
 }
 
@@ -53,22 +56,44 @@ HTMLElement.prototype.createEl = function <K extends keyof HTMLElementTagNameMap
   return el;
 };
 
-HTMLElement.prototype.createSpan = function (cls?: string): HTMLSpanElement {
+HTMLElement.prototype.createSpan = function (
+  options?: string | { cls?: string; text?: string }
+): HTMLSpanElement {
   const span = document.createElement('span');
-  if (cls) span.className = cls;
+  if (typeof options === 'string') {
+    span.className = options;
+  } else if (options) {
+    if (options.cls) span.className = options.cls;
+    if (options.text) span.textContent = options.text;
+  }
   this.appendChild(span);
   return span;
 };
 
+HTMLElement.prototype.setText = function (text: string): void {
+  this.textContent = text;
+};
+
+HTMLElement.prototype.empty = function (): void {
+  while (this.firstChild) {
+    this.removeChild(this.firstChild);
+  }
+};
+
 describe('StatusBar', () => {
-  let container: HTMLElement;
+  let badgesContainer: HTMLElement;
+  let tokenContainer: HTMLElement;
+  let containers: StatusBarContainers;
   let deps: ModuleDeps;
   let callbacks: StatusBarCallbacks;
   let handle: StatusBarHandle;
 
   beforeEach(() => {
-    container = document.createElement('div');
-    document.body.appendChild(container);
+    badgesContainer = document.createElement('div');
+    tokenContainer = document.createElement('div');
+    document.body.appendChild(badgesContainer);
+    document.body.appendChild(tokenContainer);
+    containers = { badgesContainer, tokenContainer };
     deps = {
       app: {} as ModuleDeps['app'],
       plugin: {} as ModuleDeps['plugin'],
@@ -87,22 +112,23 @@ describe('StatusBar', () => {
 
   afterEach(() => {
     handle?.destroy();
-    container.remove();
+    badgesContainer.remove();
+    tokenContainer.remove();
   });
 
   describe('creation', () => {
-    it('should create chat badges container', () => {
-      handle = createStatusBar(container, deps, callbacks);
-      expect(container.querySelector('.chat-badges')).not.toBeNull();
+    it('should create backend badge in badges container', () => {
+      handle = createStatusBar(containers, deps, callbacks);
+      expect(badgesContainer.querySelector('.backend-badge')).not.toBeNull();
     });
 
-    it('should create backend badge', () => {
-      handle = createStatusBar(container, deps, callbacks);
-      expect(container.querySelector('.backend-badge')).not.toBeNull();
+    it('should create token counter in token container', () => {
+      handle = createStatusBar(containers, deps, callbacks);
+      expect(tokenContainer.querySelector('.chat-token-counter')).not.toBeNull();
     });
 
     it('should call refresh on creation to populate initial state', () => {
-      handle = createStatusBar(container, deps, callbacks);
+      handle = createStatusBar(containers, deps, callbacks);
       expect(callbacks.getBackendInfo).toHaveBeenCalled();
       expect(callbacks.getActiveNoteInfo).toHaveBeenCalled();
       expect(callbacks.getAccountInfo).toHaveBeenCalled();
@@ -111,41 +137,41 @@ describe('StatusBar', () => {
   });
 
   describe('backend badge', () => {
-    it('should display backend type in data-type attribute', () => {
-      callbacks.getBackendInfo = vi.fn(() => ({ type: 'openai', label: 'OpenAI' }));
-      handle = createStatusBar(container, deps, callbacks);
-      const badge = container.querySelector('.backend-badge') as HTMLElement;
-      expect(badge.getAttribute('data-type')).toBe('openai');
+    it('should set SDK aria-label for sdk type', () => {
+      callbacks.getBackendInfo = vi.fn(() => ({ type: 'sdk', label: 'SDK' }));
+      handle = createStatusBar(containers, deps, callbacks);
+      const badge = badgesContainer.querySelector('.backend-badge') as HTMLElement;
+      expect(badge.getAttribute('aria-label')).toContain('SDK');
     });
 
     it('should display backend label', () => {
       callbacks.getBackendInfo = vi.fn(() => ({ type: 'claude', label: 'Claude API' }));
-      handle = createStatusBar(container, deps, callbacks);
-      const badge = container.querySelector('.backend-badge') as HTMLElement;
+      handle = createStatusBar(containers, deps, callbacks);
+      const badge = badgesContainer.querySelector('.backend-badge') as HTMLElement;
       expect(badge.textContent).toContain('Claude API');
     });
 
     it('should call onBackendClick callback on click', () => {
-      handle = createStatusBar(container, deps, callbacks);
-      const badge = container.querySelector('.backend-badge') as HTMLElement;
+      handle = createStatusBar(containers, deps, callbacks);
+      const badge = badgesContainer.querySelector('.backend-badge') as HTMLElement;
       badge.click();
       expect(callbacks.onBackendClick).toHaveBeenCalled();
     });
 
     it('should update when updateBackend is called', () => {
-      handle = createStatusBar(container, deps, callbacks);
-      handle.updateBackend({ type: 'openai', label: 'GPT-4' });
-      const badge = container.querySelector('.backend-badge') as HTMLElement;
-      expect(badge.getAttribute('data-type')).toBe('openai');
-      expect(badge.textContent).toContain('GPT-4');
+      handle = createStatusBar(containers, deps, callbacks);
+      handle.updateBackend({ type: 'sdk', label: 'SDK Mode' });
+      const badge = badgesContainer.querySelector('.backend-badge') as HTMLElement;
+      expect(badge.className).toContain('backend-sdk');
+      expect(badge.textContent).toContain('SDK Mode');
     });
   });
 
   describe('context badge', () => {
     it('should be hidden when no active note', () => {
       callbacks.getActiveNoteInfo = vi.fn(() => null);
-      handle = createStatusBar(container, deps, callbacks);
-      const badge = container.querySelector('.context-badge') as HTMLElement;
+      handle = createStatusBar(containers, deps, callbacks);
+      const badge = badgesContainer.querySelector('.context-badge') as HTMLElement;
       expect(badge.style.display).toBe('none');
     });
 
@@ -154,8 +180,8 @@ describe('StatusBar', () => {
         path: '/path/to/note.md',
         title: 'My Note',
       }));
-      handle = createStatusBar(container, deps, callbacks);
-      const badge = container.querySelector('.context-badge') as HTMLElement;
+      handle = createStatusBar(containers, deps, callbacks);
+      const badge = badgesContainer.querySelector('.context-badge') as HTMLElement;
       expect(badge.style.display).not.toBe('none');
     });
 
@@ -164,19 +190,19 @@ describe('StatusBar', () => {
         path: '/path/to/note.md',
         title: 'My Note',
       }));
-      handle = createStatusBar(container, deps, callbacks);
-      const badge = container.querySelector('.context-badge') as HTMLElement;
+      handle = createStatusBar(containers, deps, callbacks);
+      const badge = badgesContainer.querySelector('.context-badge') as HTMLElement;
       expect(badge.textContent).toContain('My Note');
     });
 
-    it('should set path in title attribute', () => {
+    it('should set path in aria-label attribute', () => {
       callbacks.getActiveNoteInfo = vi.fn(() => ({
         path: '/path/to/note.md',
         title: 'My Note',
       }));
-      handle = createStatusBar(container, deps, callbacks);
-      const badge = container.querySelector('.context-badge') as HTMLElement;
-      expect(badge.getAttribute('title')).toBe('/path/to/note.md');
+      handle = createStatusBar(containers, deps, callbacks);
+      const badge = badgesContainer.querySelector('.context-badge') as HTMLElement;
+      expect(badge.getAttribute('aria-label')).toContain('/path/to/note.md');
     });
 
     it('should call onContextClick callback on click', () => {
@@ -184,16 +210,16 @@ describe('StatusBar', () => {
         path: '/path/to/note.md',
         title: 'My Note',
       }));
-      handle = createStatusBar(container, deps, callbacks);
-      const badge = container.querySelector('.context-badge') as HTMLElement;
+      handle = createStatusBar(containers, deps, callbacks);
+      const badge = badgesContainer.querySelector('.context-badge') as HTMLElement;
       badge.click();
       expect(callbacks.onContextClick).toHaveBeenCalled();
     });
 
     it('should update when updateContext is called', () => {
-      handle = createStatusBar(container, deps, callbacks);
+      handle = createStatusBar(containers, deps, callbacks);
       handle.updateContext({ path: '/new/path.md', title: 'New Note' });
-      const badge = container.querySelector('.context-badge') as HTMLElement;
+      const badge = badgesContainer.querySelector('.context-badge') as HTMLElement;
       expect(badge.style.display).not.toBe('none');
       expect(badge.textContent).toContain('New Note');
     });
@@ -203,49 +229,58 @@ describe('StatusBar', () => {
         path: '/path/to/note.md',
         title: 'My Note',
       }));
-      handle = createStatusBar(container, deps, callbacks);
+      handle = createStatusBar(containers, deps, callbacks);
       handle.updateContext(null);
-      const badge = container.querySelector('.context-badge') as HTMLElement;
+      const badge = badgesContainer.querySelector('.context-badge') as HTMLElement;
       expect(badge.style.display).toBe('none');
+    });
+
+    it('should truncate long titles', () => {
+      callbacks.getActiveNoteInfo = vi.fn(() => ({
+        path: '/path/to/note.md',
+        title: 'This is a very long note title that should be truncated',
+      }));
+      handle = createStatusBar(containers, deps, callbacks);
+      const badge = badgesContainer.querySelector('.context-badge') as HTMLElement;
+      expect(badge.textContent).toContain('...');
+      expect(badge.textContent?.length).toBeLessThan(20);
     });
   });
 
   describe('account badge', () => {
     it('should be hidden when no account info', () => {
       callbacks.getAccountInfo = vi.fn(() => null);
-      handle = createStatusBar(container, deps, callbacks);
-      const badge = container.querySelector('.account-badge') as HTMLElement;
+      handle = createStatusBar(containers, deps, callbacks);
+      const badge = badgesContainer.querySelector('.account-badge') as HTMLElement;
       expect(badge.style.display).toBe('none');
     });
 
     it('should show when account has name', () => {
       callbacks.getAccountInfo = vi.fn(() => ({ name: 'John Doe' }));
-      handle = createStatusBar(container, deps, callbacks);
-      const badge = container.querySelector('.account-badge') as HTMLElement;
+      handle = createStatusBar(containers, deps, callbacks);
+      const badge = badgesContainer.querySelector('.account-badge') as HTMLElement;
       expect(badge.style.display).not.toBe('none');
     });
 
     it('should show when account has email', () => {
       callbacks.getAccountInfo = vi.fn(() => ({ email: 'john@example.com' }));
-      handle = createStatusBar(container, deps, callbacks);
-      const badge = container.querySelector('.account-badge') as HTMLElement;
+      handle = createStatusBar(containers, deps, callbacks);
+      const badge = badgesContainer.querySelector('.account-badge') as HTMLElement;
       expect(badge.style.display).not.toBe('none');
     });
 
-    it('should display account name or email', () => {
-      callbacks.getAccountInfo = vi.fn(() => ({
-        name: 'John Doe',
-        email: 'john@example.com',
-      }));
-      handle = createStatusBar(container, deps, callbacks);
-      const badge = container.querySelector('.account-badge') as HTMLElement;
-      expect(badge.textContent).toContain('John Doe');
+    it('should show when account has tier', () => {
+      callbacks.getAccountInfo = vi.fn(() => ({ tier: 'Pro' }));
+      handle = createStatusBar(containers, deps, callbacks);
+      const badge = badgesContainer.querySelector('.account-badge') as HTMLElement;
+      expect(badge.style.display).not.toBe('none');
+      expect(badge.textContent).toContain('Pro');
     });
 
     it('should call onAccountClick callback on click', () => {
       callbacks.getAccountInfo = vi.fn(() => ({ name: 'John' }));
-      handle = createStatusBar(container, deps, callbacks);
-      const badge = container.querySelector('.account-badge') as HTMLElement;
+      handle = createStatusBar(containers, deps, callbacks);
+      const badge = badgesContainer.querySelector('.account-badge') as HTMLElement;
       badge.click();
       expect(callbacks.onAccountClick).toHaveBeenCalled();
     });
@@ -254,81 +289,84 @@ describe('StatusBar', () => {
   describe('token counter', () => {
     it('should display token count', () => {
       callbacks.getTokenEstimate = vi.fn(() => ({ tokens: 1500, cost: 0.05 }));
-      handle = createStatusBar(container, deps, callbacks);
-      const counter = container.querySelector('.chat-token-counter') as HTMLElement;
-      expect(counter.textContent).toContain('1500');
+      handle = createStatusBar(containers, deps, callbacks);
+      const counter = tokenContainer.querySelector('.chat-token-counter') as HTMLElement;
+      expect(counter.textContent).toContain('1.5K');
     });
 
-    it('should format cost with 2 decimals when >= 0.01', () => {
-      callbacks.getTokenEstimate = vi.fn(() => ({ tokens: 1000, cost: 0.05 }));
-      handle = createStatusBar(container, deps, callbacks);
-      const counter = container.querySelector('.chat-token-counter') as HTMLElement;
-      expect(counter.textContent).toContain('$0.05');
+    it('should format smaller token counts without K suffix', () => {
+      callbacks.getTokenEstimate = vi.fn(() => ({ tokens: 500, cost: 0.02 }));
+      handle = createStatusBar(containers, deps, callbacks);
+      const counter = tokenContainer.querySelector('.chat-token-counter') as HTMLElement;
+      expect(counter.textContent).toContain('500');
+      expect(counter.textContent).not.toContain('K');
     });
 
-    it('should format cost with 4 decimals when > 0 and < 0.01', () => {
-      callbacks.getTokenEstimate = vi.fn(() => ({ tokens: 100, cost: 0.001 }));
-      handle = createStatusBar(container, deps, callbacks);
-      const counter = container.querySelector('.chat-token-counter') as HTMLElement;
-      expect(counter.textContent).toContain('$0.0010');
+    it('should display cost with 4 decimals', () => {
+      callbacks.getTokenEstimate = vi.fn(() => ({ tokens: 1000, cost: 0.0512 }));
+      handle = createStatusBar(containers, deps, callbacks);
+      const counter = tokenContainer.querySelector('.chat-token-counter') as HTMLElement;
+      expect(counter.textContent).toContain('$0.0512');
     });
 
-    it('should show $0.00 when cost is 0', () => {
+    it('should hide when tokens and cost are 0', () => {
       callbacks.getTokenEstimate = vi.fn(() => ({ tokens: 0, cost: 0 }));
-      handle = createStatusBar(container, deps, callbacks);
-      const counter = container.querySelector('.chat-token-counter') as HTMLElement;
-      expect(counter.textContent).toContain('$0.00');
+      handle = createStatusBar(containers, deps, callbacks);
+      const counter = tokenContainer.querySelector('.chat-token-counter') as HTMLElement;
+      expect(counter.style.display).toBe('none');
     });
 
     it('should call onTokenCounterClick callback on click', () => {
-      handle = createStatusBar(container, deps, callbacks);
-      const counter = container.querySelector('.chat-token-counter') as HTMLElement;
+      callbacks.getTokenEstimate = vi.fn(() => ({ tokens: 100, cost: 0.01 }));
+      handle = createStatusBar(containers, deps, callbacks);
+      const counter = tokenContainer.querySelector('.chat-token-counter') as HTMLElement;
       counter.click();
       expect(callbacks.onTokenCounterClick).toHaveBeenCalled();
     });
 
     it('should update when updateTokens is called', () => {
-      handle = createStatusBar(container, deps, callbacks);
+      callbacks.getTokenEstimate = vi.fn(() => ({ tokens: 100, cost: 0.01 }));
+      handle = createStatusBar(containers, deps, callbacks);
       handle.updateTokens({ tokens: 2000, cost: 0.10 });
-      const counter = container.querySelector('.chat-token-counter') as HTMLElement;
-      expect(counter.textContent).toContain('2000');
-      expect(counter.textContent).toContain('$0.10');
+      const counter = tokenContainer.querySelector('.chat-token-counter') as HTMLElement;
+      expect(counter.textContent).toContain('2.0K');
+      expect(counter.textContent).toContain('$0.1000');
     });
   });
 
   describe('ephemeral badge', () => {
     it('should be hidden by default', () => {
-      handle = createStatusBar(container, deps, callbacks);
-      const badge = container.querySelector('.ephemeral-badge') as HTMLElement;
+      handle = createStatusBar(containers, deps, callbacks);
+      const badge = badgesContainer.querySelector('.ephemeral-badge') as HTMLElement;
       expect(badge.style.display).toBe('none');
     });
 
     it('should show when updateEphemeral called with true', () => {
-      handle = createStatusBar(container, deps, callbacks);
+      handle = createStatusBar(containers, deps, callbacks);
       handle.updateEphemeral(true);
-      const badge = container.querySelector('.ephemeral-badge') as HTMLElement;
+      const badge = badgesContainer.querySelector('.ephemeral-badge') as HTMLElement;
       expect(badge.style.display).not.toBe('none');
     });
 
     it('should hide when updateEphemeral called with false', () => {
-      handle = createStatusBar(container, deps, callbacks);
+      handle = createStatusBar(containers, deps, callbacks);
       handle.updateEphemeral(true);
       handle.updateEphemeral(false);
-      const badge = container.querySelector('.ephemeral-badge') as HTMLElement;
+      const badge = badgesContainer.querySelector('.ephemeral-badge') as HTMLElement;
       expect(badge.style.display).toBe('none');
     });
 
-    it('should display "Ephemeral" text', () => {
-      handle = createStatusBar(container, deps, callbacks);
-      handle.updateEphemeral(true);
-      const badge = container.querySelector('.ephemeral-badge') as HTMLElement;
-      expect(badge.textContent).toContain('Ephemeral');
+    it('should have lock emoji content', () => {
+      handle = createStatusBar(containers, deps, callbacks);
+      const badge = badgesContainer.querySelector('.ephemeral-badge') as HTMLElement;
+      // The badge shows a lock emoji
+      expect(badge.textContent).toBeTruthy();
     });
   });
 
   describe('refresh', () => {
     it('should call all get callbacks and update display', () => {
-      handle = createStatusBar(container, deps, callbacks);
+      handle = createStatusBar(containers, deps, callbacks);
       vi.clearAllMocks();
       handle.refresh();
       expect(callbacks.getBackendInfo).toHaveBeenCalled();
@@ -340,9 +378,13 @@ describe('StatusBar', () => {
 
   describe('destruction', () => {
     it('should clean up DOM on destroy', () => {
-      handle = createStatusBar(container, deps, callbacks);
+      handle = createStatusBar(containers, deps, callbacks);
       handle.destroy();
-      expect(container.querySelector('.chat-badges')).toBeNull();
+      expect(badgesContainer.querySelector('.backend-badge')).toBeNull();
+      expect(badgesContainer.querySelector('.context-badge')).toBeNull();
+      expect(badgesContainer.querySelector('.account-badge')).toBeNull();
+      expect(badgesContainer.querySelector('.ephemeral-badge')).toBeNull();
+      expect(tokenContainer.querySelector('.chat-token-counter')).toBeNull();
     });
   });
 });

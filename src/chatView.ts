@@ -30,6 +30,7 @@ import {
   type SearchBarHandle,
   type QueuePanelHandle,
   type StatusBarHandle,
+  type StatusBarContainers,
   type MobileSupportHandle,
   type TabBarHandle,
   type MessageRendererHandle,
@@ -68,11 +69,6 @@ export class ChatView extends ItemView {
   private historyPanel: HTMLElement;
   private historyList: HTMLElement;
   private chatTitleEl: HTMLElement;
-  private backendBadge: HTMLElement;
-  private contextBadge: HTMLElement;
-  private accountBadge: HTMLElement;
-  private ephemeralBadge: HTMLElement;
-  private tokenCounter: HTMLElement;
   private searchContainer: HTMLElement;
   private imagePreviewContainer: HTMLElement;
   private pendingImages: Array<{ data: string; mimeType: string; filename?: string }> = [];
@@ -138,6 +134,9 @@ export class ChatView extends ItemView {
   private messageModule: MessageRendererHandle | null = null;
   private inputModule: InputAreaHandle | null = null;
   private historyModule: HistoryPanelHandle | null = null;
+
+  // Container references for deferred module initialization
+  private statusBadgesContainer: HTMLElement | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: ObsidiClaudePlugin) {
     super(leaf);
@@ -399,27 +398,8 @@ export class ChatView extends ItemView {
     this.chatTitleEl.setText('Claude Chat');
     this.chatTitleEl.onclick = () => this._toggleHistory();
 
-    // Status indicators (subtle, inline with title area)
-    const statusIndicators = centerSection.createDiv('header-status');
-
-    // Backend indicator badge (smaller, more subtle)
-    this.backendBadge = statusIndicators.createDiv('backend-badge');
-    this.updateBackendBadge();
-
-    // Ephemeral mode indicator
-    this.ephemeralBadge = statusIndicators.createDiv('ephemeral-badge');
-    this.ephemeralBadge.setText('🔒');
-    this.ephemeralBadge.setAttribute('aria-label', 'Ephemeral mode - sessions not saved');
-    this.updateEphemeralBadge();
-
-    // Context indicator (shows when active note context is on)
-    this.contextBadge = statusIndicators.createDiv('context-badge');
-    this.contextBadge.setAttribute('aria-label', 'Active note included as context');
-    this.updateContextBadge();
-
-    // Account badge (hidden, kept for API compatibility)
-    this.accountBadge = statusIndicators.createDiv('account-badge');
-    this.accountBadge.style.display = 'none';
+    // Status indicators container - badges created by statusBar module
+    this.statusBadgesContainer = centerSection.createDiv('header-status');
 
     // Right section: Primary actions
     const rightSection = header.createDiv('header-right');
@@ -1399,11 +1379,78 @@ export class ChatView extends ItemView {
 
     // Keyboard hint
     const hintEl = leftArea.createSpan('chat-input-hint');
-    hintEl.setText('Enter to send · Queue when busy · /help');
+    hintEl.setText('Enter to send \u00B7 Queue when busy \u00B7 /help');
 
-    // Token counter
-    this.tokenCounter = leftArea.createSpan('chat-token-counter');
-    this.updateTokenCounter();
+    // Initialize status bar module with both containers
+    // (badges in header, token counter in input area)
+    if (this.statusBadgesContainer) {
+      const deps = { app: this.plugin.app, plugin: this.plugin };
+      this.statusModule = createStatusBar(
+        {
+          badgesContainer: this.statusBadgesContainer,
+          tokenContainer: leftArea,
+        },
+        deps,
+        {
+          onBackendClick: () => {
+            // Could open backend settings
+          },
+          onContextClick: () => {
+            // Toggle active note context
+            this.plugin.settings.activeNoteContext = !this.plugin.settings.activeNoteContext;
+            this.plugin.saveSettings();
+            this.refreshStatusBar();
+          },
+          onAccountClick: () => {
+            // Could show account details
+          },
+          onTokenCounterClick: () => {
+            // Could show detailed token breakdown
+          },
+          getBackendInfo: () => {
+            const backend = this.getBackend();
+            return {
+              type: backend.type,
+              label: backend.type.toUpperCase(),
+            };
+          },
+          getActiveNoteInfo: () => {
+            const enabled = this.plugin.settings.activeNoteContext;
+            const activeFile = this.plugin.app.workspace.getActiveFile();
+            if (enabled && activeFile && activeFile.extension === 'md') {
+              return {
+                path: activeFile.path,
+                title: activeFile.basename,
+              };
+            }
+            return null;
+          },
+          getAccountInfo: () => {
+            const backend = this.getBackend();
+            if (backend.type !== 'sdk' || !('getAccountInfo' in backend)) {
+              return null;
+            }
+            const sdkBackend = backend as {
+              getAccountInfo(): { email?: string; organization?: string; subscriptionType?: string } | null;
+            };
+            const info = sdkBackend.getAccountInfo();
+            if (!info) return null;
+            return {
+              email: info.email,
+              name: info.organization,
+              tier: info.subscriptionType,
+            };
+          },
+          getTokenEstimate: () => {
+            const tokens = this.estimateTokens();
+            const usage = this.conversation?.usage ?? calculateConversationUsage(this.conversation?.messages ?? []);
+            return { tokens, cost: usage.totalCost };
+          },
+        }
+      );
+      // Update ephemeral badge state
+      this.statusModule.updateEphemeral(this.plugin.settings.ephemeralMode);
+    }
 
     // Stop button (hidden by default)
     this.stopButton = buttonArea.createEl('button', {
@@ -2148,88 +2195,6 @@ export class ChatView extends ItemView {
     this.scrollToBottom(true);
   }
 
-  private updateBackendBadge(): void {
-    if (!this.backendBadge) return;
-
-    const backend = this.getBackend();
-    const type = backend.type.toUpperCase();
-
-    this.backendBadge.empty();
-    this.backendBadge.setText(type);
-    this.backendBadge.className = `backend-badge backend-${backend.type}`;
-    this.backendBadge.setAttribute('aria-label',
-      backend.type === 'sdk'
-        ? 'Using Claude Code SDK (full features)'
-        : 'Using direct API (mobile compatible)'
-    );
-  }
-
-  private updateEphemeralBadge(): void {
-    if (!this.ephemeralBadge) return;
-    this.ephemeralBadge.style.display = this.plugin.settings.ephemeralMode ? 'inline-flex' : 'none';
-  }
-
-  private updateAccountBadge(): void {
-    if (!this.accountBadge) return;
-
-    const backend = this.getBackend();
-    if (backend.type !== 'sdk' || !('getAccountInfo' in backend)) {
-      this.accountBadge.style.display = 'none';
-      return;
-    }
-
-    // Type assertion for SDK-specific method
-    const sdkBackend = backend as { getAccountInfo(): { email?: string; organization?: string; subscriptionType?: string } | null };
-    const accountInfo = sdkBackend.getAccountInfo();
-
-    if (!accountInfo) {
-      this.accountBadge.style.display = 'none';
-      return;
-    }
-
-    // Display subscription type or "Pro" indicator
-    const displayText = accountInfo.subscriptionType || 'Pro';
-    this.accountBadge.empty();
-    this.accountBadge.setText(displayText);
-    this.accountBadge.className = 'account-badge';
-    this.accountBadge.style.display = 'inline-flex';
-
-    // Build tooltip with available info
-    const tooltipParts: string[] = [];
-    if (accountInfo.email) {
-      tooltipParts.push(`Account: ${accountInfo.email}`);
-    }
-    if (accountInfo.organization) {
-      tooltipParts.push(`Org: ${accountInfo.organization}`);
-    }
-    if (accountInfo.subscriptionType) {
-      tooltipParts.push(`Plan: ${accountInfo.subscriptionType}`);
-    }
-    this.accountBadge.setAttribute('aria-label', tooltipParts.join(' | ') || 'Authenticated');
-  }
-
-  private updateContextBadge(): void {
-    if (!this.contextBadge) return;
-
-    const enabled = this.plugin.settings.activeNoteContext;
-    const activeFile = this.plugin.app.workspace.getActiveFile();
-    const hasActiveNote = activeFile && activeFile.extension === 'md';
-
-    this.contextBadge.empty();
-
-    if (enabled && hasActiveNote) {
-      // Show badge with file icon and truncated name
-      const fileName = activeFile.basename;
-      const displayName = fileName.length > 15 ? fileName.slice(0, 12) + '...' : fileName;
-      setIcon(this.contextBadge, 'file-text');
-      this.contextBadge.createSpan({ text: displayName });
-      this.contextBadge.style.display = 'flex';
-      this.contextBadge.setAttribute('aria-label', `Context: ${activeFile.path}`);
-    } else {
-      this.contextBadge.style.display = 'none';
-    }
-  }
-
   /**
    * Estimate token count for the conversation.
    * Uses a rough approximation of ~4 characters per token.
@@ -2251,41 +2216,39 @@ export class ChatView extends ItemView {
     return Math.ceil(totalChars / CHARS_PER_TOKEN_ESTIMATE);
   }
 
-  private updateTokenCounter(): void {
-    if (!this.tokenCounter) return;
+  /**
+   * Refresh the status bar via the module.
+   * Triggers refresh of all status elements: backend, context, account, tokens.
+   */
+  private refreshStatusBar(): void {
+    this.statusModule?.refresh();
+  }
 
+  /**
+   * Update context badge display.
+   * Convenience wrapper for active file change events.
+   */
+  private updateContextBadge(): void {
+    const activeFile = this.plugin.app.workspace.getActiveFile();
+    const enabled = this.plugin.settings.activeNoteContext;
+    if (enabled && activeFile && activeFile.extension === 'md') {
+      this.statusModule?.updateContext({
+        path: activeFile.path,
+        title: activeFile.basename,
+      });
+    } else {
+      this.statusModule?.updateContext(null);
+    }
+  }
+
+  /**
+   * Update token counter display.
+   * Convenience wrapper for message/usage changes.
+   */
+  private updateTokenCounter(): void {
     const tokens = this.estimateTokens();
     const usage = this.conversation?.usage ?? calculateConversationUsage(this.conversation?.messages ?? []);
-    const totalCost = usage.totalCost;
-
-    // Show nothing if no tokens and no cost
-    if (tokens === 0 && totalCost === 0) {
-      this.tokenCounter.style.display = 'none';
-      return;
-    }
-
-    // Build display string
-    const parts: string[] = [];
-
-    // Token estimate (for current context)
-    if (tokens > 0) {
-      const formatted = tokens >= 1000
-        ? `${(tokens / 1000).toFixed(1)}K`
-        : tokens.toString();
-      parts.push(`~${formatted} tokens`);
-    }
-
-    // Actual cost from usage tracking
-    if (totalCost > 0) {
-      parts.push(`$${totalCost.toFixed(4)}`);
-    }
-
-    this.tokenCounter.setText(parts.join(' · '));
-    this.tokenCounter.style.display = 'inline';
-    this.tokenCounter.setAttribute('aria-label',
-      `Estimated ${tokens.toLocaleString()} tokens in context` +
-      (totalCost > 0 ? `, session cost: $${totalCost.toFixed(4)}` : '')
-    );
+    this.statusModule?.updateTokens({ tokens, cost: usage.totalCost });
   }
 
   /**
@@ -4036,8 +3999,8 @@ ${content}
       onComplete: async (result) => {
         this.setProcessing(false);
 
-        // Update account badge (may have loaded account info during query)
-        this.updateAccountBadge();
+        // Refresh status bar (may have loaded account info during query)
+        this.refreshStatusBar();
 
         // Capture usage data on the assistant message
         if (currentAssistantMsgId && (result.inputTokens || result.outputTokens)) {

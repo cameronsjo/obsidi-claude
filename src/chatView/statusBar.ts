@@ -1,6 +1,10 @@
 /**
  * Status bar module for ChatView.
  * Displays backend, context, account, and token information.
+ *
+ * The module works with two container areas:
+ * - badgesContainer: In the header, holds backend/context/account/ephemeral badges
+ * - tokenContainer: In the input area, holds the token counter
  */
 import { setIcon } from 'obsidian';
 import type { ModuleDeps, ModuleHandle } from './types';
@@ -53,6 +57,16 @@ export interface StatusBarCallbacks {
 }
 
 /**
+ * Container configuration for status bar.
+ */
+export interface StatusBarContainers {
+  /** Container for badges (in header area) */
+  badgesContainer: HTMLElement;
+  /** Container for token counter (in input area) */
+  tokenContainer: HTMLElement;
+}
+
+/**
  * Handle for controlling the status bar.
  */
 export interface StatusBarHandle extends ModuleHandle {
@@ -65,100 +79,134 @@ export interface StatusBarHandle extends ModuleHandle {
 }
 
 /**
- * Format token cost with appropriate decimal places.
- * - cost >= 0.01: 2 decimal places
- * - cost > 0 but < 0.01: 4 decimal places
- * - cost == 0: $0.00
- */
-function formatCost(cost: number): string {
-  if (cost === 0) {
-    return '$0.00';
-  }
-  if (cost >= 0.01) {
-    return `$${cost.toFixed(2)}`;
-  }
-  return `$${cost.toFixed(4)}`;
-}
-
-/**
  * Create a status bar for displaying chat metadata.
- * @param container - Parent element to attach the status bar to
+ * @param containers - Container elements for badges and token counter
  * @param _deps - Module dependencies (reserved for future use)
  * @param callbacks - Callbacks for parent communication
  */
 export function createStatusBar(
-  container: HTMLElement,
+  containers: StatusBarContainers,
   _deps: ModuleDeps,
   callbacks: StatusBarCallbacks
 ): StatusBarHandle {
-  // DOM elements
-  const badgesContainer = container.createDiv('chat-badges');
+  const { badgesContainer, tokenContainer } = containers;
 
   // Backend badge
   const backendBadge = badgesContainer.createDiv('backend-badge');
-  const backendIcon = backendBadge.createSpan('badge-icon');
-  setIcon(backendIcon, 'cpu');
-  const backendLabel = backendBadge.createSpan('badge-label');
   backendBadge.onclick = (): void => callbacks.onBackendClick();
+
+  // Ephemeral badge (hidden by default)
+  const ephemeralBadge = badgesContainer.createDiv('ephemeral-badge');
+  ephemeralBadge.setText('\u{1F512}');
+  ephemeralBadge.setAttribute('aria-label', 'Ephemeral mode - sessions not saved');
+  ephemeralBadge.style.display = 'none';
 
   // Context badge (hidden by default)
   const contextBadge = badgesContainer.createDiv('context-badge');
+  contextBadge.setAttribute('aria-label', 'Active note included as context');
   contextBadge.style.display = 'none';
-  const contextIcon = contextBadge.createSpan('badge-icon');
-  setIcon(contextIcon, 'file-text');
-  const contextLabel = contextBadge.createSpan('badge-label');
   contextBadge.onclick = (): void => callbacks.onContextClick();
 
   // Account badge (hidden by default)
   const accountBadge = badgesContainer.createDiv('account-badge');
   accountBadge.style.display = 'none';
-  const accountIcon = accountBadge.createSpan('badge-icon');
-  setIcon(accountIcon, 'user');
-  const accountLabel = accountBadge.createSpan('badge-label');
   accountBadge.onclick = (): void => callbacks.onAccountClick();
 
-  // Ephemeral badge (hidden by default)
-  const ephemeralBadge = badgesContainer.createDiv('ephemeral-badge');
-  ephemeralBadge.style.display = 'none';
-  const ephemeralIcon = ephemeralBadge.createSpan('badge-icon');
-  setIcon(ephemeralIcon, 'ghost');
-  const ephemeralLabel = ephemeralBadge.createSpan('badge-label');
-  ephemeralLabel.textContent = 'Ephemeral';
-
-  // Token counter
-  const tokenCounter = badgesContainer.createDiv('chat-token-counter');
+  // Token counter (in separate container)
+  const tokenCounter = tokenContainer.createSpan('chat-token-counter');
   tokenCounter.onclick = (): void => callbacks.onTokenCounterClick();
 
   function updateBackend(info: BackendInfo): void {
-    backendBadge.setAttribute('data-type', info.type);
-    backendLabel.textContent = info.label;
+    backendBadge.empty();
+    backendBadge.setText(info.label);
+    backendBadge.className = `backend-badge backend-${info.type}`;
+    backendBadge.setAttribute(
+      'aria-label',
+      info.type === 'sdk'
+        ? 'Using Claude Code SDK (full features)'
+        : 'Using direct API (mobile compatible)'
+    );
   }
 
   function updateContext(info: ContextInfo | null): void {
+    contextBadge.empty();
     if (info) {
-      contextBadge.style.display = '';
-      contextBadge.setAttribute('title', info.path);
-      contextLabel.textContent = info.title;
+      // Show badge with file icon and truncated name
+      const displayName =
+        info.title.length > 15 ? info.title.slice(0, 12) + '...' : info.title;
+      setIcon(contextBadge, 'file-text');
+      contextBadge.createSpan({ text: displayName });
+      contextBadge.style.display = 'flex';
+      contextBadge.setAttribute('aria-label', `Context: ${info.path}`);
     } else {
       contextBadge.style.display = 'none';
     }
   }
 
   function updateAccount(info: AccountInfo | null): void {
-    if (info && (info.name || info.email)) {
-      accountBadge.style.display = '';
-      accountLabel.textContent = info.name || info.email || '';
+    if (info && (info.name || info.email || info.tier)) {
+      // Display subscription type or account name
+      const displayText = info.tier || info.name || 'Pro';
+      accountBadge.empty();
+      accountBadge.setText(displayText);
+      accountBadge.className = 'account-badge';
+      accountBadge.style.display = 'inline-flex';
+
+      // Build tooltip with available info
+      const tooltipParts: string[] = [];
+      if (info.email) {
+        tooltipParts.push(`Account: ${info.email}`);
+      }
+      if (info.name) {
+        tooltipParts.push(`Org: ${info.name}`);
+      }
+      if (info.tier) {
+        tooltipParts.push(`Plan: ${info.tier}`);
+      }
+      accountBadge.setAttribute(
+        'aria-label',
+        tooltipParts.join(' | ') || 'Authenticated'
+      );
     } else {
       accountBadge.style.display = 'none';
     }
   }
 
   function updateTokens(info: TokenInfo): void {
-    tokenCounter.textContent = `~${info.tokens} tokens (${formatCost(info.cost)})`;
+    // Show nothing if no tokens and no cost
+    if (info.tokens === 0 && info.cost === 0) {
+      tokenCounter.style.display = 'none';
+      return;
+    }
+
+    // Build display string
+    const parts: string[] = [];
+
+    // Token estimate (for current context)
+    if (info.tokens > 0) {
+      const formatted =
+        info.tokens >= 1000
+          ? `${(info.tokens / 1000).toFixed(1)}K`
+          : info.tokens.toString();
+      parts.push(`~${formatted} tokens`);
+    }
+
+    // Actual cost from usage tracking
+    if (info.cost > 0) {
+      parts.push(`$${info.cost.toFixed(4)}`);
+    }
+
+    tokenCounter.setText(parts.join(' \u00B7 '));
+    tokenCounter.style.display = 'inline';
+    tokenCounter.setAttribute(
+      'aria-label',
+      `Estimated ${info.tokens.toLocaleString()} tokens in context` +
+        (info.cost > 0 ? `, session cost: $${info.cost.toFixed(4)}` : '')
+    );
   }
 
   function updateEphemeral(active: boolean): void {
-    ephemeralBadge.style.display = active ? '' : 'none';
+    ephemeralBadge.style.display = active ? 'inline-flex' : 'none';
   }
 
   function refresh(): void {
@@ -169,7 +217,12 @@ export function createStatusBar(
   }
 
   function destroy(): void {
-    badgesContainer.remove();
+    // Clean up created elements
+    backendBadge.remove();
+    ephemeralBadge.remove();
+    contextBadge.remove();
+    accountBadge.remove();
+    tokenCounter.remove();
   }
 
   // Initial refresh
