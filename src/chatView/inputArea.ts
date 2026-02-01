@@ -23,6 +23,7 @@ export interface InputAreaCallbacks {
   onImageAdd: (image: ImageAttachment) => void;
   onImageRemove: (index: number) => void;
   onInputChange: (value: string) => void;
+  onKeyDown: (e: KeyboardEvent) => boolean; // Return true if handled (to prevent default)
   getCommands: () => CommandInfo[];
   isVoiceAvailable: () => boolean;
 }
@@ -43,9 +44,13 @@ export interface InputAreaHandle extends ModuleHandle {
   addToHistory(content: string): void;
   navigateHistory(direction: 'up' | 'down'): void;
   resize(): void;
+  getInputElement(): HTMLTextAreaElement;
+  getWrapper(): HTMLElement;
+  getButtonContainer(): HTMLElement;
 }
 
 const MAX_TEXTAREA_HEIGHT = 180;
+const MAX_INPUT_HISTORY_SIZE = 50;
 
 /**
  * Create an input area for chat message composition.
@@ -60,37 +65,48 @@ export function createInputArea(
 ): InputAreaHandle {
   // Internal state
   let processing = false;
-  let recording = false;
   const images: ImageAttachment[] = [];
   const history: string[] = [];
   let historyIndex = -1;
   let savedInput = '';
 
-  // DOM elements
-  const inputArea = container.createDiv('chat-input-area');
-
-  // Image preview container
-  const imagePreview = inputArea.createDiv('image-preview');
-  imagePreview.style.display = 'none';
-
   // Input wrapper for textarea and buttons
-  const inputWrapper = inputArea.createDiv('input-wrapper');
+  const inputWrapper = container.createDiv('chat-input-wrapper');
 
   // Textarea
   const textarea = inputWrapper.createEl('textarea', {
     cls: 'chat-input',
     attr: {
-      placeholder: 'Type a message...',
-      rows: '1',
+      placeholder: 'Ask Claude anything...',
     },
   });
 
+  // Image preview container (above buttons area)
+  const imagePreview = inputWrapper.createDiv('chat-image-preview');
+  imagePreview.style.display = 'none';
+
   // Button container
-  const buttonContainer = inputWrapper.createDiv('input-buttons');
+  const buttonContainer = inputWrapper.createDiv('chat-buttons');
+
+  // Left side: hint and token counter (populated by status bar module)
+  const leftArea = buttonContainer.createDiv('chat-buttons-left');
+
+  // Keyboard hint
+  const hintEl = leftArea.createSpan('chat-input-hint');
+  hintEl.setText('Enter to send · Queue when busy · /help');
+
+  // Stop button (hidden by default)
+  const stopButton = buttonContainer.createEl('button', {
+    cls: 'chat-stop-btn',
+  });
+  setIcon(stopButton, 'circle-stop');
+  stopButton.createSpan({ text: 'Stop' });
+  stopButton.style.display = 'none';
+  stopButton.onclick = (): void => callbacks.onStop();
 
   // Voice button
   const voiceButton = buttonContainer.createEl('button', {
-    cls: 'voice-button',
+    cls: 'chat-voice-btn',
     attr: { 'aria-label': 'Voice input' },
   });
   setIcon(voiceButton, 'mic');
@@ -99,42 +115,45 @@ export function createInputArea(
 
   // Send button
   const sendButton = buttonContainer.createEl('button', {
-    cls: 'send-button',
-    attr: { 'aria-label': 'Send message' },
+    cls: 'chat-send-btn mod-cta',
   });
   setIcon(sendButton, 'send');
+  sendButton.createSpan({ text: 'Send' });
   sendButton.onclick = (): void => handleSend();
 
-  // Stop button (hidden by default)
-  const stopButton = buttonContainer.createEl('button', {
-    cls: 'stop-button',
-    attr: { 'aria-label': 'Stop generation' },
-  });
-  setIcon(stopButton, 'square');
-  stopButton.style.display = 'none';
-  stopButton.onclick = (): void => callbacks.onStop();
+  // Debounce timer for input resize
+  let resizeDebounceTimer: ReturnType<typeof requestAnimationFrame> | null = null;
 
   // Event handlers
   textarea.addEventListener('input', () => {
     callbacks.onInputChange(textarea.value);
-    resize();
+
+    // Debounced resize with RAF for smooth performance
+    if (resizeDebounceTimer) {
+      cancelAnimationFrame(resizeDebounceTimer);
+    }
+    resizeDebounceTimer = requestAnimationFrame(() => {
+      resize();
+    });
   });
 
   textarea.addEventListener('keydown', (e) => {
+    // Let parent handle autocomplete navigation first
+    if (callbacks.onKeyDown(e)) {
+      return; // Parent handled it
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
-    } else if (e.key === 'ArrowUp') {
-      // Only navigate history if at start of input
-      if (textarea.selectionStart === 0 && textarea.selectionEnd === 0) {
-        navigateHistory('up');
-      }
-    } else if (e.key === 'ArrowDown') {
-      // Only navigate history if at end of input
-      const len = textarea.value.length;
-      if (textarea.selectionStart === len && textarea.selectionEnd === len) {
-        navigateHistory('down');
-      }
+    } else if (e.key === 'ArrowUp' && textarea.selectionStart === 0) {
+      // Navigate to previous message when cursor is at start
+      e.preventDefault();
+      navigateHistory('up');
+    } else if (e.key === 'ArrowDown' && textarea.selectionStart === textarea.value.length) {
+      // Navigate to next message when cursor is at end
+      e.preventDefault();
+      navigateHistory('down');
     }
   });
 
@@ -156,18 +175,18 @@ export function createInputArea(
   });
 
   // Drag and drop for images
-  inputArea.addEventListener('dragover', (e) => {
+  inputWrapper.addEventListener('dragover', (e) => {
     e.preventDefault();
-    inputArea.classList.add('drag-over');
+    inputWrapper.addClass('drag-over');
   });
 
-  inputArea.addEventListener('dragleave', () => {
-    inputArea.classList.remove('drag-over');
+  inputWrapper.addEventListener('dragleave', () => {
+    inputWrapper.removeClass('drag-over');
   });
 
-  inputArea.addEventListener('drop', (e) => {
+  inputWrapper.addEventListener('drop', (e) => {
     e.preventDefault();
-    inputArea.classList.remove('drag-over');
+    inputWrapper.removeClass('drag-over');
 
     const files = e.dataTransfer?.files;
     if (!files) return;
@@ -201,7 +220,6 @@ export function createInputArea(
   function handleSend(): void {
     const content = textarea.value.trim();
     if (!content && images.length === 0) return;
-    if (processing) return;
     callbacks.onSend(content);
   }
 
@@ -227,17 +245,19 @@ export function createInputArea(
 
   function setProcessing(isProcessing: boolean): void {
     processing = isProcessing;
-    textarea.disabled = isProcessing;
-    sendButton.style.display = isProcessing ? 'none' : '';
-    stopButton.style.display = isProcessing ? '' : 'none';
+    // Keep input enabled during processing to allow message queuing
+    sendButton.style.display = isProcessing ? 'none' : 'inline-flex';
+    stopButton.style.display = isProcessing ? 'inline-flex' : 'none';
+    inputWrapper.toggleClass('is-processing', isProcessing);
   }
 
   function setRecording(isRecording: boolean): void {
-    recording = isRecording;
     if (isRecording) {
-      voiceButton.classList.add('recording');
+      voiceButton.addClass('recording');
+      setIcon(voiceButton, 'mic-off');
     } else {
-      voiceButton.classList.remove('recording');
+      voiceButton.removeClass('recording');
+      setIcon(voiceButton, 'mic');
     }
   }
 
@@ -256,33 +276,29 @@ export function createInputArea(
   }
 
   function renderImagePreview(): void {
-    // Clear existing content using DOM API
-    while (imagePreview.firstChild) {
-      imagePreview.removeChild(imagePreview.firstChild);
-    }
+    // Clear existing content
+    imagePreview.empty();
 
     if (images.length === 0) {
       imagePreview.style.display = 'none';
       return;
     }
 
-    imagePreview.style.display = '';
+    imagePreview.style.display = 'flex';
 
     images.forEach((image, index) => {
-      const wrapper = imagePreview.createDiv('image-thumbnail');
+      const wrapper = imagePreview.createDiv('chat-image-thumb');
 
-      const img = wrapper.createEl('img', {
+      wrapper.createEl('img', {
         attr: {
           src: `data:${image.mimeType};base64,${image.data}`,
-          alt: image.filename || 'Image attachment',
+          alt: image.filename || 'Image',
         },
       });
 
-      const removeBtn = wrapper.createEl('button', {
-        cls: 'image-remove-btn',
-        attr: { 'aria-label': 'Remove image' },
-      });
-      setIcon(removeBtn, 'x');
+      // Remove button
+      const removeBtn = wrapper.createDiv('chat-image-remove');
+      removeBtn.setText('×');
       removeBtn.onclick = (): void => {
         images.splice(index, 1);
         callbacks.onImageRemove(index);
@@ -292,37 +308,55 @@ export function createInputArea(
   }
 
   function addToHistory(content: string): void {
-    if (content.trim()) {
+    if (!content.trim()) return;
+
+    // Avoid duplicates of last entry
+    if (history.length === 0 || history[history.length - 1] !== content) {
       history.push(content);
+
+      // Limit history size
+      if (history.length > MAX_INPUT_HISTORY_SIZE) {
+        history.shift();
+      }
     }
+
+    // Reset navigation
+    historyIndex = -1;
   }
 
   function navigateHistory(direction: 'up' | 'down'): void {
     if (history.length === 0) return;
 
-    if (direction === 'up') {
-      if (historyIndex === -1) {
-        // Save current input before navigating
-        savedInput = textarea.value;
-        historyIndex = history.length - 1;
-      } else if (historyIndex > 0) {
-        historyIndex--;
-      } else {
-        return; // Already at oldest
-      }
-      textarea.value = history[historyIndex];
-    } else {
-      if (historyIndex === -1) return; // Not in history
-
-      if (historyIndex < history.length - 1) {
-        historyIndex++;
-        textarea.value = history[historyIndex];
-      } else {
-        // Return to saved input
-        historyIndex = -1;
-        textarea.value = savedInput;
-      }
+    // Save current input as draft when starting to navigate
+    if (historyIndex === -1 && direction === 'up') {
+      savedInput = textarea.value;
     }
+
+    // Calculate new index using reverse direction
+    // (up = -1 direction to go back in time, but index increases)
+    const delta = direction === 'up' ? 1 : -1;
+    const newIndex = historyIndex + delta;
+
+    if (newIndex < -1) {
+      // Already at newest (draft), do nothing
+      return;
+    } else if (newIndex >= history.length) {
+      // Past oldest, do nothing
+      return;
+    } else if (newIndex === -1) {
+      // Back to draft
+      historyIndex = -1;
+      textarea.value = savedInput;
+    } else {
+      // Navigate to history entry (newest is at end of array)
+      historyIndex = newIndex;
+      const arrayIndex = history.length - 1 - newIndex;
+      textarea.value = history[arrayIndex];
+    }
+
+    // Move cursor to end
+    textarea.selectionStart = textarea.value.length;
+    textarea.selectionEnd = textarea.value.length;
 
     resize();
   }
@@ -334,8 +368,23 @@ export function createInputArea(
     textarea.style.height = `${newHeight}px`;
   }
 
+  function getInputElement(): HTMLTextAreaElement {
+    return textarea;
+  }
+
+  function getWrapper(): HTMLElement {
+    return inputWrapper;
+  }
+
+  function getButtonContainer(): HTMLElement {
+    return leftArea;
+  }
+
   function destroy(): void {
-    inputArea.remove();
+    if (resizeDebounceTimer) {
+      cancelAnimationFrame(resizeDebounceTimer);
+    }
+    inputWrapper.remove();
   }
 
   // Initial resize
@@ -354,6 +403,9 @@ export function createInputArea(
     addToHistory,
     navigateHistory,
     resize,
+    getInputElement,
+    getWrapper,
+    getButtonContainer,
     destroy,
   };
 }

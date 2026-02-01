@@ -57,6 +57,43 @@ HTMLElement.prototype.createSpan = function (cls?: string): HTMLSpanElement {
   return span;
 };
 
+// Add Obsidian's additional HTMLElement methods
+declare global {
+  interface HTMLElement {
+    empty(): void;
+    setText(text: string): void;
+    addClass(cls: string): void;
+    removeClass(cls: string): void;
+    toggleClass(cls: string, value: boolean): void;
+  }
+}
+
+HTMLElement.prototype.empty = function (): void {
+  while (this.firstChild) {
+    this.removeChild(this.firstChild);
+  }
+};
+
+HTMLElement.prototype.setText = function (text: string): void {
+  this.textContent = text;
+};
+
+HTMLElement.prototype.addClass = function (cls: string): void {
+  this.classList.add(cls);
+};
+
+HTMLElement.prototype.removeClass = function (cls: string): void {
+  this.classList.remove(cls);
+};
+
+HTMLElement.prototype.toggleClass = function (cls: string, value: boolean): void {
+  if (value) {
+    this.classList.add(cls);
+  } else {
+    this.classList.remove(cls);
+  }
+};
+
 describe('InputArea', () => {
   let container: HTMLElement;
   let deps: ModuleDeps;
@@ -77,6 +114,7 @@ describe('InputArea', () => {
       onImageAdd: vi.fn(),
       onImageRemove: vi.fn(),
       onInputChange: vi.fn(),
+      onKeyDown: vi.fn(() => false),
       getCommands: vi.fn(() => []),
       isVoiceAvailable: vi.fn(() => false),
     };
@@ -90,7 +128,7 @@ describe('InputArea', () => {
   describe('creation', () => {
     it('should create input area container', () => {
       handle = createInputArea(container, deps, callbacks);
-      expect(container.querySelector('.chat-input-area')).not.toBeNull();
+      expect(container.querySelector('.chat-input-wrapper')).not.toBeNull();
     });
 
     it('should create textarea', () => {
@@ -100,12 +138,12 @@ describe('InputArea', () => {
 
     it('should create send button', () => {
       handle = createInputArea(container, deps, callbacks);
-      expect(container.querySelector('.send-button')).not.toBeNull();
+      expect(container.querySelector('.chat-send-btn')).not.toBeNull();
     });
 
     it('should create stop button (hidden)', () => {
       handle = createInputArea(container, deps, callbacks);
-      const stopButton = container.querySelector('.stop-button') as HTMLElement;
+      const stopButton = container.querySelector('.chat-stop-btn') as HTMLElement;
       expect(stopButton).not.toBeNull();
       expect(stopButton.style.display).toBe('none');
     });
@@ -113,14 +151,14 @@ describe('InputArea', () => {
     it('should hide voice button when voice not available', () => {
       callbacks.isVoiceAvailable = vi.fn(() => false);
       handle = createInputArea(container, deps, callbacks);
-      const voiceButton = container.querySelector('.voice-button') as HTMLElement;
+      const voiceButton = container.querySelector('.chat-voice-btn') as HTMLElement;
       expect(voiceButton.style.display).toBe('none');
     });
 
     it('should show voice button when voice is available', () => {
       callbacks.isVoiceAvailable = vi.fn(() => true);
       handle = createInputArea(container, deps, callbacks);
-      const voiceButton = container.querySelector('.voice-button') as HTMLElement;
+      const voiceButton = container.querySelector('.chat-voice-btn') as HTMLElement;
       expect(voiceButton.style.display).not.toBe('none');
     });
   });
@@ -167,7 +205,7 @@ describe('InputArea', () => {
     it('should call onSend when send button clicked', () => {
       handle = createInputArea(container, deps, callbacks);
       handle.setValue('Test message');
-      const sendButton = container.querySelector('.send-button') as HTMLElement;
+      const sendButton = container.querySelector('.chat-send-btn') as HTMLElement;
       sendButton.click();
       expect(callbacks.onSend).toHaveBeenCalledWith('Test message');
     });
@@ -195,7 +233,7 @@ describe('InputArea', () => {
     it('should NOT call onSend when empty', () => {
       handle = createInputArea(container, deps, callbacks);
       handle.setValue('');
-      const sendButton = container.querySelector('.send-button') as HTMLElement;
+      const sendButton = container.querySelector('.chat-send-btn') as HTMLElement;
       sendButton.click();
       expect(callbacks.onSend).not.toHaveBeenCalled();
     });
@@ -203,7 +241,7 @@ describe('InputArea', () => {
     it('should NOT call onSend when whitespace only', () => {
       handle = createInputArea(container, deps, callbacks);
       handle.setValue('   \n\t  ');
-      const sendButton = container.querySelector('.send-button') as HTMLElement;
+      const sendButton = container.querySelector('.chat-send-btn') as HTMLElement;
       sendButton.click();
       expect(callbacks.onSend).not.toHaveBeenCalled();
     });
@@ -213,28 +251,29 @@ describe('InputArea', () => {
     it('should show stop button when processing', () => {
       handle = createInputArea(container, deps, callbacks);
       handle.setProcessing(true);
-      const stopButton = container.querySelector('.stop-button') as HTMLElement;
+      const stopButton = container.querySelector('.chat-stop-btn') as HTMLElement;
       expect(stopButton.style.display).not.toBe('none');
     });
 
     it('should hide send button when processing', () => {
       handle = createInputArea(container, deps, callbacks);
       handle.setProcessing(true);
-      const sendButton = container.querySelector('.send-button') as HTMLElement;
+      const sendButton = container.querySelector('.chat-send-btn') as HTMLElement;
       expect(sendButton.style.display).toBe('none');
     });
 
-    it('should disable textarea when processing', () => {
+    it('should keep textarea enabled during processing (for message queuing)', () => {
       handle = createInputArea(container, deps, callbacks);
       handle.setProcessing(true);
       const textarea = container.querySelector('textarea') as HTMLTextAreaElement;
-      expect(textarea.disabled).toBe(true);
+      // Textarea stays enabled to allow queuing more messages
+      expect(textarea.disabled).toBe(false);
     });
 
     it('should call onStop when stop button clicked', () => {
       handle = createInputArea(container, deps, callbacks);
       handle.setProcessing(true);
-      const stopButton = container.querySelector('.stop-button') as HTMLElement;
+      const stopButton = container.querySelector('.chat-stop-btn') as HTMLElement;
       stopButton.click();
       expect(callbacks.onStop).toHaveBeenCalled();
     });
@@ -243,12 +282,10 @@ describe('InputArea', () => {
       handle = createInputArea(container, deps, callbacks);
       handle.setProcessing(true);
       handle.setProcessing(false);
-      const sendButton = container.querySelector('.send-button') as HTMLElement;
-      const stopButton = container.querySelector('.stop-button') as HTMLElement;
-      const textarea = container.querySelector('textarea') as HTMLTextAreaElement;
+      const sendButton = container.querySelector('.chat-send-btn') as HTMLElement;
+      const stopButton = container.querySelector('.chat-stop-btn') as HTMLElement;
       expect(sendButton.style.display).not.toBe('none');
       expect(stopButton.style.display).toBe('none');
-      expect(textarea.disabled).toBe(false);
     });
   });
 
@@ -256,7 +293,7 @@ describe('InputArea', () => {
     it('should call onVoiceToggle when voice button clicked', () => {
       callbacks.isVoiceAvailable = vi.fn(() => true);
       handle = createInputArea(container, deps, callbacks);
-      const voiceButton = container.querySelector('.voice-button') as HTMLElement;
+      const voiceButton = container.querySelector('.chat-voice-btn') as HTMLElement;
       voiceButton.click();
       expect(callbacks.onVoiceToggle).toHaveBeenCalled();
     });
@@ -265,7 +302,7 @@ describe('InputArea', () => {
       callbacks.isVoiceAvailable = vi.fn(() => true);
       handle = createInputArea(container, deps, callbacks);
       handle.setRecording(true);
-      const voiceButton = container.querySelector('.voice-button') as HTMLElement;
+      const voiceButton = container.querySelector('.chat-voice-btn') as HTMLElement;
       expect(voiceButton.classList.contains('recording')).toBe(true);
     });
 
@@ -274,7 +311,7 @@ describe('InputArea', () => {
       handle = createInputArea(container, deps, callbacks);
       handle.setRecording(true);
       handle.setRecording(false);
-      const voiceButton = container.querySelector('.voice-button') as HTMLElement;
+      const voiceButton = container.querySelector('.chat-voice-btn') as HTMLElement;
       expect(voiceButton.classList.contains('recording')).toBe(false);
     });
   });
@@ -288,7 +325,7 @@ describe('InputArea', () => {
         filename: 'test.png',
       };
       handle.addImage(image);
-      const preview = container.querySelector('.image-preview') as HTMLElement;
+      const preview = container.querySelector('.chat-image-preview') as HTMLElement;
       expect(preview).not.toBeNull();
       expect(preview.style.display).not.toBe('none');
     });
@@ -301,7 +338,7 @@ describe('InputArea', () => {
         filename: 'test.png',
       };
       handle.addImage(image);
-      const img = container.querySelector('.image-preview img') as HTMLImageElement;
+      const img = container.querySelector('.chat-image-preview img') as HTMLImageElement;
       expect(img).not.toBeNull();
       expect(img.src).toContain('base64data');
     });
@@ -313,7 +350,7 @@ describe('InputArea', () => {
         mimeType: 'image/png',
       };
       handle.addImage(image);
-      const removeBtn = container.querySelector('.image-remove-btn') as HTMLElement;
+      const removeBtn = container.querySelector('.chat-image-remove') as HTMLElement;
       removeBtn.click();
       expect(callbacks.onImageRemove).toHaveBeenCalledWith(0);
     });
@@ -341,7 +378,7 @@ describe('InputArea', () => {
 
     it('should hide preview when no images', () => {
       handle = createInputArea(container, deps, callbacks);
-      const preview = container.querySelector('.image-preview') as HTMLElement;
+      const preview = container.querySelector('.chat-image-preview') as HTMLElement;
       expect(preview.style.display).toBe('none');
     });
   });
@@ -435,7 +472,7 @@ describe('InputArea', () => {
     it('should clean up DOM on destroy', () => {
       handle = createInputArea(container, deps, callbacks);
       handle.destroy();
-      expect(container.querySelector('.chat-input-area')).toBeNull();
+      expect(container.querySelector('.chat-input-wrapper')).toBeNull();
     });
   });
 });

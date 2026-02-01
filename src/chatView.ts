@@ -67,8 +67,8 @@ export class ChatView extends ItemView {
   private searchContainer: HTMLElement;
 
   // Backward compat references to input area elements (from module)
-  private inputEl: HTMLTextAreaElement;
-  private inputWrapper: HTMLElement;
+  private inputEl!: HTMLTextAreaElement;
+  private inputWrapper!: HTMLElement;
 
   // State
   private conversation: Conversation;
