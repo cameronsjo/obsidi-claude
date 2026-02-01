@@ -22,10 +22,12 @@
   "license": "MIT",
   "devDependencies": {
     "@types/express": "^5.0.0",
+    "@types/jsdom": "^27.0.0",
     "@types/node": "^22.19.7",
     "@vitest/coverage-v8": "^4.0.16",
     "builtin-modules": "^4.0.0",
     "esbuild": "^0.27.2",
+    "jsdom": "^27.4.0",
     "obsidian": "^1.7.2",
     "typescript": "^5.7.2",
     "vitest": "^4.0.16"
