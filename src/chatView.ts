@@ -61,8 +61,6 @@ export class ChatView extends ItemView {
   // UI elements
   private messagesContainer: HTMLElement;
   private statusEl: HTMLElement;
-  private historyPanel: HTMLElement;
-  private historyList: HTMLElement;
   private chatTitleEl: HTMLElement;
   private searchContainer: HTMLElement;
 
@@ -74,17 +72,9 @@ export class ChatView extends ItemView {
   private conversation: Conversation;
   private isProcessing = false;
   private messageElements: Map<string, HTMLElement> = new Map();
-  private historyVisible = false;
   private searchVisible = false;
   private userScrolledUp = false;
-  private historyFilterTag: string | null = null; // Filter history by tag
   private vaultRefreshTimeout: ReturnType<typeof setTimeout> | null = null;
-  private historyTagsBar: HTMLElement | null = null;
-  private historySearchInput: HTMLInputElement | null = null;
-  private historySearchQuery: string = '';
-  private bulkSelectMode: boolean = false;
-  private selectedConversations: Set<string> = new Set();
-  private bulkActionsBar: HTMLElement | null = null;
 
   // Voice input state
   private isRecording = false;
@@ -215,10 +205,45 @@ export class ChatView extends ItemView {
     });
     this.updateTabBarVisibility();
 
-    // History panel (hidden by default)
-    this.historyPanel = container.createDiv('chat-history-panel');
-    this.historyPanel.style.display = 'none';
-    this.createHistoryPanel(this.historyPanel);
+    // History panel - use module
+    const historyContainer = container.createDiv('chat-history-container');
+    this.historyModule = createHistoryPanel(historyContainer, deps, {
+      onSelect: async (id) => this.loadConversationById(id),
+      onDelete: async (id) => this.deleteConversation(id),
+      onDeleteBulk: async (ids) => {
+        for (const id of ids) {
+          await this.plugin.storage.deleteConversation(id);
+        }
+        this.showTemporaryStatus(`Deleted ${ids.length} conversation${ids.length > 1 ? 's' : ''}`, 'success', 2000);
+        // If current conversation was deleted, create new one
+        if (ids.includes(this.conversation.id)) {
+          this.conversation = this.createNewConversation();
+          this.renderConversation();
+        }
+      },
+      onDuplicate: async (id) => this.duplicateConversation(id),
+      onRename: async (id, title) => {
+        await this.plugin.storage.renameConversation(id, title);
+        this.showTemporaryStatus('Conversation renamed', 'success', 1500);
+        if (this.conversation.id === id) {
+          this.conversation.title = title;
+          this.updateTitle();
+        }
+      },
+      onTogglePin: async (id) => {
+        const isPinned = await this.plugin.storage.togglePin(id);
+        this.showTemporaryStatus(isPinned ? 'Conversation pinned' : 'Conversation unpinned', 'success', 1500);
+        if (this.conversation.id === id) {
+          this.conversation.pinned = isPinned;
+        }
+      },
+      onManageTags: (id, tags) => this.promptManageTags(id, tags),
+      onContinue: async (id) => this.continueConversation(id),
+      getConversations: () => this.plugin.storage.listConversations(),
+      getAllTags: () => this.plugin.storage.getAllTags(),
+      getCurrentId: () => this.conversation.id,
+      showStatus: (msg, type) => this.showTemporaryStatus(msg, type, 2000),
+    });
 
     // Search bar - use module
     this.searchContainer = container.createDiv('search-bar-container');
@@ -256,6 +281,51 @@ export class ChatView extends ItemView {
     // Messages area
     this.messagesContainer = container.createDiv('chat-messages');
     this.setupScrollTracking();
+
+    // Initialize message renderer module
+    this.messageModule = createMessageRenderer(this.messagesContainer, deps, {
+      onCopy: (messageId) => {
+        const msg = this.conversation.messages.find(m => m.id === messageId);
+        if (msg) {
+          navigator.clipboard.writeText(msg.content);
+          this.showTemporaryStatus('Message copied', 'success', 1500);
+        }
+      },
+      onRegenerate: (messageId) => {
+        const msgIndex = this.conversation.messages.findIndex(m => m.id === messageId);
+        if (msgIndex > 0) {
+          const userMsg = this.conversation.messages[msgIndex - 1];
+          if (userMsg.role === 'user') {
+            // Remove this assistant message and resend
+            this.conversation.messages = this.conversation.messages.slice(0, msgIndex);
+            this.renderAllMessages();
+            this.inputEl.value = userMsg.content;
+            // Don't auto-send, let user confirm
+          }
+        }
+      },
+      onEdit: (messageId) => {
+        const msg = this.conversation.messages.find(m => m.id === messageId);
+        if (msg) {
+          this.inputEl.value = msg.content;
+          this.inputEl.focus();
+        }
+      },
+      onReact: (messageId, reaction) => {
+        this.toggleReaction(messageId, reaction as 'up' | 'down');
+      },
+      onBookmark: (messageId) => {
+        this.toggleBookmark(messageId);
+      },
+      onResume: (messageId) => {
+        const msg = this.conversation.messages.find(m => m.id === messageId);
+        if (msg) {
+          this.resumeFromMessage(msg);
+        }
+      },
+      scrollToBottom: () => this.scrollToBottom(),
+      canResume: (msg) => !!(msg.sdkUuid && this.getBackend().type === 'sdk'),
+    });
 
     // Status indicator
     this.statusEl = container.createDiv('chat-status');
@@ -358,10 +428,10 @@ export class ChatView extends ItemView {
     this.mobileModule = createMobileSupport(container, deps, {
       onNewConversation: () => this._newConversation(),
       onSwipeLeft: () => {
-        if (this.historyVisible) this._toggleHistory();
+        if (this.historyModule?.isVisible()) this._toggleHistory();
       },
       onSwipeRight: () => {
-        if (!this.historyVisible) this._toggleHistory();
+        if (!this.historyModule?.isVisible()) this._toggleHistory();
       },
       isMobile: () => this.isMobile(),
     });
@@ -490,7 +560,7 @@ export class ChatView extends ItemView {
       if (e.key === 'Escape') {
         if (this.searchVisible) {
           this._toggleSearch();
-        } else if (this.historyVisible) {
+        } else if (this.historyModule?.isVisible()) {
           this._toggleHistory();
         } else {
           // Focus input if nothing else to close
@@ -587,193 +657,9 @@ export class ChatView extends ItemView {
     menu.showAtMouseEvent(e);
   }
 
-  private createHistoryPanel(panel: HTMLElement): void {
-    const header = panel.createDiv('history-header');
-    header.createEl('h4', { text: 'Conversations' });
-
-    const headerActions = header.createDiv('history-header-actions');
-
-    // Bulk select toggle
-    const bulkSelectBtn = headerActions.createEl('button', {
-      cls: 'chat-action-btn',
-      attr: { 'aria-label': 'Select multiple' },
-    });
-    setIcon(bulkSelectBtn, 'list-checks');
-    bulkSelectBtn.onclick = () => this.toggleBulkSelectMode();
-
-    const closeBtn = headerActions.createEl('button', {
-      cls: 'chat-action-btn',
-      attr: { 'aria-label': 'Close history' },
-    });
-    setIcon(closeBtn, 'x');
-    closeBtn.onclick = () => this._toggleHistory();
-
-    // Bulk actions bar (hidden by default)
-    this.bulkActionsBar = panel.createDiv('history-bulk-actions');
-    this.bulkActionsBar.style.display = 'none';
-    this.createBulkActionsBar(this.bulkActionsBar);
-
-    // Search bar for conversations
-    const searchBar = panel.createDiv('history-search-bar');
-    this.historySearchInput = searchBar.createEl('input', {
-      cls: 'history-search-input',
-      attr: {
-        type: 'text',
-        placeholder: 'Search conversations...',
-      },
-    });
-    this.historySearchInput.addEventListener('input', () => {
-      this.historySearchQuery = this.historySearchInput?.value || '';
-      this.refreshHistoryList();
-    });
-
-    // Tag filter bar
-    this.historyTagsBar = panel.createDiv('history-tags-bar');
-
-    this.historyList = panel.createDiv('history-list');
-  }
-
-  private createBulkActionsBar(container: HTMLElement): void {
-    const selectAllBtn = container.createEl('button', {
-      cls: 'history-bulk-btn',
-      text: 'Select All',
-    });
-    selectAllBtn.onclick = () => this.selectAllConversations();
-
-    const deselectAllBtn = container.createEl('button', {
-      cls: 'history-bulk-btn',
-      text: 'Deselect All',
-    });
-    deselectAllBtn.onclick = () => this.deselectAllConversations();
-
-    const deleteBtn = container.createEl('button', {
-      cls: 'history-bulk-btn history-bulk-delete',
-      text: 'Delete Selected',
-    });
-    deleteBtn.onclick = () => this.deleteSelectedConversations();
-
-    const countEl = container.createSpan('history-bulk-count');
-    countEl.setText('0 selected');
-  }
-
-  private toggleBulkSelectMode(): void {
-    this.bulkSelectMode = !this.bulkSelectMode;
-    this.selectedConversations.clear();
-    if (this.bulkActionsBar) {
-      this.bulkActionsBar.style.display = this.bulkSelectMode ? 'flex' : 'none';
-    }
-    this.updateBulkCount();
-    this.refreshHistoryList();
-  }
-
-  private selectAllConversations(): void {
-    const items = this.historyList.querySelectorAll('.history-item');
-    items.forEach((item) => {
-      const id = (item as HTMLElement).dataset.conversationId;
-      if (id) {
-        this.selectedConversations.add(id);
-        item.addClass('history-item-selected');
-        const checkbox = item.querySelector('input[type="checkbox"]') as HTMLInputElement;
-        if (checkbox) checkbox.checked = true;
-      }
-    });
-    this.updateBulkCount();
-  }
-
-  private deselectAllConversations(): void {
-    this.selectedConversations.clear();
-    const items = this.historyList.querySelectorAll('.history-item');
-    items.forEach((item) => {
-      item.removeClass('history-item-selected');
-      const checkbox = item.querySelector('input[type="checkbox"]') as HTMLInputElement;
-      if (checkbox) checkbox.checked = false;
-    });
-    this.updateBulkCount();
-  }
-
-  private async deleteSelectedConversations(): Promise<void> {
-    if (this.selectedConversations.size === 0) return;
-
-    const count = this.selectedConversations.size;
-    const confirmDelete = confirm(`Delete ${count} conversation${count > 1 ? 's' : ''}? This cannot be undone.`);
-    if (!confirmDelete) return;
-
-    for (const id of this.selectedConversations) {
-      await this.plugin.storage.deleteConversation(id);
-    }
-
-    this.selectedConversations.clear();
-    this.showTemporaryStatus(`Deleted ${count} conversation${count > 1 ? 's' : ''}`, 'success', 2000);
-    await this.refreshHistoryList();
-    this.updateBulkCount();
-
-    // If current conversation was deleted, create new one
-    const currentId = this.conversation.id;
-    const conversations = await this.plugin.storage.listConversations();
-    if (!conversations.find(c => c.id === currentId)) {
-      this.conversation = this.createNewConversation();
-      this.renderConversation();
-    }
-  }
-
-  private updateBulkCount(): void {
-    const countEl = this.bulkActionsBar?.querySelector('.history-bulk-count');
-    if (countEl) {
-      countEl.textContent = `${this.selectedConversations.size} selected`;
-    }
-  }
-
-  private getDateGroup(timestamp: number): string {
-    const now = new Date();
-    const date = new Date(timestamp);
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const yesterday = new Date(today.getTime() - 86400000);
-    const weekAgo = new Date(today.getTime() - 7 * 86400000);
-    const monthAgo = new Date(today.getTime() - 30 * 86400000);
-
-    if (date >= today) return 'Today';
-    if (date >= yesterday) return 'Yesterday';
-    if (date >= weekAgo) return 'This Week';
-    if (date >= monthAgo) return 'This Month';
-    return 'Older';
-  }
-
-  private async refreshTagsBar(): Promise<void> {
-    if (!this.historyTagsBar) return;
-    this.historyTagsBar.empty();
-
-    const allTags = await this.plugin.storage.getAllTags();
-    if (allTags.length === 0) return;
-
-    // "All" button
-    const allBtn = this.historyTagsBar.createSpan({
-      cls: `history-filter-tag ${this.historyFilterTag === null ? 'filter-tag-active' : ''}`,
-    });
-    allBtn.setText('All');
-    allBtn.onclick = () => this.filterHistoryByTag(null);
-
-    // Tag buttons
-    for (const tag of allTags) {
-      const tagBtn = this.historyTagsBar.createSpan({
-        cls: `history-filter-tag ${this.historyFilterTag === tag ? 'filter-tag-active' : ''}`,
-      });
-      tagBtn.setText(tag);
-      tagBtn.onclick = () => this.filterHistoryByTag(tag);
-    }
-  }
-
-  private async filterHistoryByTag(tag: string | null): Promise<void> {
-    this.historyFilterTag = tag;
-    await this.refreshTagsBar();
-    await this.refreshHistoryList();
-  }
-
   private async _toggleHistory(): Promise<void> {
-    this.historyVisible = !this.historyVisible;
-    this.historyPanel.style.display = this.historyVisible ? 'block' : 'none';
-
-    if (this.historyVisible) {
-      await this.refreshHistoryList();
+    if (this.historyModule) {
+      await this.historyModule.toggle();
     }
   }
 
@@ -838,271 +724,6 @@ export class ChatView extends ItemView {
         this.scrollToBottomBtn.toggleClass('visible', this.userScrolledUp);
       }
     });
-  }
-
-  private async refreshHistoryList(): Promise<void> {
-    if (!this.historyList) return;
-    this.historyList.empty();
-
-    // Refresh tags bar first
-    await this.refreshTagsBar();
-
-    let conversations = await this.plugin.storage.listConversations();
-
-    // Filter by tag if one is selected
-    if (this.historyFilterTag) {
-      conversations = conversations.filter(c =>
-        c.tags && c.tags.includes(this.historyFilterTag!)
-      );
-    }
-
-    // Filter by search query (searches title and preview)
-    if (this.historySearchQuery) {
-      const query = this.historySearchQuery.toLowerCase();
-      conversations = conversations.filter(c =>
-        c.title.toLowerCase().includes(query) ||
-        (c.preview && c.preview.toLowerCase().includes(query))
-      );
-    }
-
-    if (conversations.length === 0) {
-      let emptyMsg = 'No conversations yet';
-      if (this.historySearchQuery) {
-        emptyMsg = `No conversations matching "${this.historySearchQuery}"`;
-      } else if (this.historyFilterTag) {
-        emptyMsg = `No conversations with tag "${this.historyFilterTag}"`;
-      }
-      this.historyList.createDiv('history-empty').setText(emptyMsg);
-      return;
-    }
-
-    // Group conversations by date (pinned first, then by date groups)
-    const pinned = conversations.filter(c => c.pinned);
-    const unpinned = conversations.filter(c => !c.pinned);
-
-    // Group unpinned by date
-    const groups = new Map<string, typeof conversations>();
-    for (const conv of unpinned) {
-      const group = this.getDateGroup(conv.updatedAt);
-      if (!groups.has(group)) groups.set(group, []);
-      groups.get(group)!.push(conv);
-    }
-
-    // Render pinned section
-    if (pinned.length > 0) {
-      this.historyList.createDiv('history-group-header').setText('📌 Pinned');
-      for (const conv of pinned) {
-        this.renderHistoryItem(conv);
-      }
-    }
-
-    // Render date groups in order
-    const groupOrder = ['Today', 'Yesterday', 'This Week', 'This Month', 'Older'];
-    for (const groupName of groupOrder) {
-      const groupConvs = groups.get(groupName);
-      if (groupConvs && groupConvs.length > 0) {
-        this.historyList.createDiv('history-group-header').setText(groupName);
-        for (const conv of groupConvs) {
-          this.renderHistoryItem(conv);
-        }
-      }
-    }
-  }
-
-  private renderHistoryItem(conv: {
-    id: string;
-    title: string;
-    messageCount: number;
-    createdAt: number;
-    updatedAt: number;
-    tags?: string[];
-    pinned?: boolean;
-    preview?: string;
-  }): void {
-    const item = this.historyList.createDiv('history-item');
-    item.dataset.conversationId = conv.id;
-
-    if (conv.id === this.conversation.id) {
-      item.addClass('history-item-active');
-    }
-    if (conv.pinned) {
-      item.addClass('history-item-pinned');
-    }
-    if (this.selectedConversations.has(conv.id)) {
-      item.addClass('history-item-selected');
-    }
-
-    // Checkbox for bulk select mode
-    if (this.bulkSelectMode) {
-      const checkbox = item.createEl('input', {
-        cls: 'history-item-checkbox',
-        attr: { type: 'checkbox' },
-      });
-      checkbox.checked = this.selectedConversations.has(conv.id);
-      checkbox.onclick = (e) => {
-        e.stopPropagation();
-        if (checkbox.checked) {
-          this.selectedConversations.add(conv.id);
-          item.addClass('history-item-selected');
-        } else {
-          this.selectedConversations.delete(conv.id);
-          item.removeClass('history-item-selected');
-        }
-        this.updateBulkCount();
-      };
-    }
-
-    const info = item.createDiv('history-item-info');
-
-    // Title row with pin indicator
-    const titleRow = info.createDiv('history-item-title-row');
-    if (conv.pinned) {
-      const pinIcon = titleRow.createSpan('history-pin-indicator');
-      setIcon(pinIcon, 'pin');
-    }
-    const title = titleRow.createSpan('history-item-title');
-    title.setText(conv.title || 'Untitled');
-
-    // Preview (truncated last message)
-    if (conv.preview) {
-      const previewEl = info.createDiv('history-item-preview');
-      previewEl.setText(conv.preview);
-    }
-
-    // Tags row (if any)
-    if (conv.tags && conv.tags.length > 0) {
-      const tagsRow = info.createDiv('history-item-tags');
-      for (const tag of conv.tags.slice(0, 3)) {
-        const tagEl = tagsRow.createSpan('history-tag');
-        tagEl.setText(tag);
-      }
-      if (conv.tags.length > 3) {
-        tagsRow.createSpan('history-tag-more').setText(`+${conv.tags.length - 3}`);
-      }
-    }
-
-    const meta = info.createDiv('history-item-meta');
-    const date = new Date(conv.updatedAt);
-    const dateStr = this.formatRelativeDate(date);
-    meta.setText(`${conv.messageCount} messages · ${dateStr}`);
-
-    // Click to load (unless in bulk select mode)
-    item.onclick = () => {
-      if (this.bulkSelectMode) {
-        const checkbox = item.querySelector('input[type="checkbox"]') as HTMLInputElement;
-        if (checkbox) {
-          checkbox.checked = !checkbox.checked;
-          if (checkbox.checked) {
-            this.selectedConversations.add(conv.id);
-            item.addClass('history-item-selected');
-          } else {
-            this.selectedConversations.delete(conv.id);
-            item.removeClass('history-item-selected');
-          }
-          this.updateBulkCount();
-        }
-      } else {
-        this.loadConversationById(conv.id);
-      }
-    };
-
-    // Actions (hidden in bulk select mode)
-    const actions = item.createDiv('history-item-actions');
-    if (this.bulkSelectMode) {
-      actions.style.display = 'none';
-    }
-
-    // Pin/unpin button
-    const pinBtn = actions.createEl('button', {
-      cls: 'history-action-btn',
-      attr: { 'aria-label': conv.pinned ? 'Unpin conversation' : 'Pin conversation' },
-    });
-    setIcon(pinBtn, conv.pinned ? 'pin-off' : 'pin');
-    pinBtn.onclick = (e) => {
-      e.stopPropagation();
-      this.togglePinConversation(conv.id);
-    };
-
-    // Rename button
-    const renameBtn = actions.createEl('button', {
-      cls: 'history-action-btn',
-      attr: { 'aria-label': 'Rename conversation' },
-    });
-    setIcon(renameBtn, 'pencil');
-    renameBtn.onclick = (e) => {
-      e.stopPropagation();
-      this.promptRenameConversation(conv.id, conv.title);
-    };
-
-    // Tag button
-    const tagBtn = actions.createEl('button', {
-      cls: 'history-action-btn',
-      attr: { 'aria-label': 'Manage tags' },
-    });
-    setIcon(tagBtn, 'tag');
-    tagBtn.onclick = (e) => {
-      e.stopPropagation();
-      this.promptManageTags(conv.id, conv.tags || []);
-    };
-
-    // Continue button (if has session)
-    const continueBtn = actions.createEl('button', {
-      cls: 'history-action-btn',
-      attr: { 'aria-label': 'Continue conversation' },
-    });
-    setIcon(continueBtn, 'play');
-    continueBtn.onclick = (e) => {
-      e.stopPropagation();
-      this.continueConversation(conv.id);
-    };
-
-    // Duplicate button
-    const duplicateBtn = actions.createEl('button', {
-      cls: 'history-action-btn',
-      attr: { 'aria-label': 'Duplicate conversation' },
-    });
-    setIcon(duplicateBtn, 'copy-plus');
-    duplicateBtn.onclick = (e) => {
-      e.stopPropagation();
-      this.duplicateConversation(conv.id);
-    };
-
-    // Delete button
-    const deleteBtn = actions.createEl('button', {
-      cls: 'history-action-btn history-delete-btn',
-      attr: { 'aria-label': 'Delete conversation' },
-    });
-    setIcon(deleteBtn, 'trash-2');
-    deleteBtn.onclick = (e) => {
-      e.stopPropagation();
-      this.deleteConversation(conv.id);
-    };
-  }
-
-  private formatRelativeDate(date: Date): string {
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
-
-    if (diffMins < 1) return 'just now';
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays < 7) return `${diffDays}d ago`;
-
-    return date.toLocaleDateString();
-  }
-
-  private async togglePinConversation(id: string): Promise<void> {
-    const isPinned = await this.plugin.storage.togglePin(id);
-    this.showTemporaryStatus(isPinned ? 'Conversation pinned' : 'Conversation unpinned', 'success', 1500);
-    await this.refreshHistoryList();
-
-    // Update current conversation if it's the one being pinned
-    if (this.conversation.id === id) {
-      this.conversation.pinned = isPinned;
-    }
   }
 
   private async promptRenameConversation(id: string, currentTitle: string): Promise<void> {
@@ -1484,15 +1105,32 @@ export class ChatView extends ItemView {
 
   private renderAllMessages(): void {
     if (!this.messagesContainer) return;
-    this.messagesContainer.empty();
-    this.messageElements.clear();
 
-    // Show welcome state if no messages
-    if (this.conversation.messages.length === 0) {
-      this.showWelcomeState();
+    // Use module if available
+    if (this.messageModule) {
+      this.messageModule.clear();
+      this.messageElements.clear();
+
+      // Show welcome state if no messages
+      if (this.conversation.messages.length === 0) {
+        this.showWelcomeState();
+      } else {
+        for (const msg of this.conversation.messages) {
+          const el = this.messageModule.renderMessage(msg);
+          this.messageElements.set(msg.id, el);
+        }
+      }
     } else {
-      for (const msg of this.conversation.messages) {
-        this.renderMessage(msg);
+      // Fallback: legacy inline rendering
+      this.messagesContainer.empty();
+      this.messageElements.clear();
+
+      if (this.conversation.messages.length === 0) {
+        this.showWelcomeState();
+      } else {
+        for (const msg of this.conversation.messages) {
+          this.renderMessage(msg);
+        }
       }
     }
     // Force scroll when rendering all messages (loading conversation)
@@ -1531,6 +1169,15 @@ export class ChatView extends ItemView {
 
   private renderMessage(msg: ChatMessage): HTMLElement | null {
     if (!this.messagesContainer) return null;
+
+    // Use module if available
+    if (this.messageModule) {
+      const el = this.messageModule.renderMessage(msg);
+      this.messageElements.set(msg.id, el);
+      return el;
+    }
+
+    // Fallback: legacy inline rendering
     const msgDiv = this.messagesContainer.createDiv('chat-message');
     msgDiv.addClass(msg.role === 'user' ? 'user-message' : 'assistant-message');
     if (msg.bookmarked) {
@@ -1738,16 +1385,20 @@ export class ChatView extends ItemView {
 
     msg.bookmarked = !msg.bookmarked;
 
-    // Re-render the message to update button states
-    const msgEl = this.messageElements.get(messageId);
-    if (msgEl) {
-      // Update bookmark class on message wrapper
-      msgEl.toggleClass('message-bookmarked', msg.bookmarked);
-
-      const actionsDiv = msgEl.querySelector('.message-actions') as HTMLElement;
-      if (actionsDiv) {
-        actionsDiv.empty();
-        this.createMessageActions(actionsDiv, msg);
+    // Use module if available
+    if (this.messageModule) {
+      this.messageModule.updateBookmarkState(messageId, msg.bookmarked);
+      this.messageModule.updateActions(messageId, msg);
+    } else {
+      // Fallback: legacy inline update
+      const msgEl = this.messageElements.get(messageId);
+      if (msgEl) {
+        msgEl.toggleClass('message-bookmarked', msg.bookmarked);
+        const actionsDiv = msgEl.querySelector('.message-actions') as HTMLElement;
+        if (actionsDiv) {
+          actionsDiv.empty();
+          this.createMessageActions(actionsDiv, msg);
+        }
       }
     }
 
@@ -1761,13 +1412,18 @@ export class ChatView extends ItemView {
     // Toggle: if same reaction, clear it; otherwise set new reaction
     msg.reaction = msg.reaction === reaction ? null : reaction;
 
-    // Re-render the message to update button states
-    const msgEl = this.messageElements.get(messageId);
-    if (msgEl) {
-      const actionsDiv = msgEl.querySelector('.message-actions') as HTMLElement;
-      if (actionsDiv) {
-        actionsDiv.empty();
-        this.createMessageActions(actionsDiv, msg);
+    // Use module if available
+    if (this.messageModule) {
+      this.messageModule.updateActions(messageId, msg);
+    } else {
+      // Fallback: legacy inline update
+      const msgEl = this.messageElements.get(messageId);
+      if (msgEl) {
+        const actionsDiv = msgEl.querySelector('.message-actions') as HTMLElement;
+        if (actionsDiv) {
+          actionsDiv.empty();
+          this.createMessageActions(actionsDiv, msg);
+        }
       }
     }
 
@@ -1971,6 +1627,13 @@ export class ChatView extends ItemView {
   }
 
   private updateMessageContent(messageId: string, content: string): void {
+    // Use module if available
+    if (this.messageModule) {
+      this.messageModule.updateContent(messageId, content);
+      return;
+    }
+
+    // Fallback: legacy inline update
     const msgEl = this.messageElements.get(messageId);
     if (!msgEl) return;
 
@@ -2027,6 +1690,13 @@ export class ChatView extends ItemView {
   }
 
   private updateMessageTools(messageId: string, toolCalls: ToolCallInfo[]): void {
+    // Use module if available
+    if (this.messageModule) {
+      this.messageModule.updateTools(messageId, toolCalls);
+      return;
+    }
+
+    // Fallback: legacy inline update
     const msgEl = this.messageElements.get(messageId);
     if (!msgEl) return;
 
@@ -4262,9 +3932,8 @@ ${content}
     this.setStatus('');
 
     // Close history panel if open
-    if (this.historyVisible) {
-      this.historyVisible = false;
-      this.historyPanel.style.display = 'none';
+    if (this.historyModule?.isVisible()) {
+      this.historyModule.hide();
     }
 
     this.inputEl.focus();

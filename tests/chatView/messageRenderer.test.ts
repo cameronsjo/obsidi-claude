@@ -128,7 +128,10 @@ describe('MessageRenderer', () => {
       onRegenerate: vi.fn(),
       onEdit: vi.fn(),
       onReact: vi.fn(),
+      onBookmark: vi.fn(),
+      onResume: vi.fn(),
       scrollToBottom: vi.fn(),
+      canResume: vi.fn(() => false),
     };
   });
 
@@ -432,7 +435,7 @@ describe('MessageRenderer', () => {
       expect(callbacks.onCopy).toHaveBeenCalledWith('msg-1');
     });
 
-    it('should call onEdit when edit button clicked', () => {
+    it('should call onBookmark when bookmark button clicked', () => {
       handle = createMessageRenderer(container, deps, callbacks);
       const msg: ChatMessage = {
         id: 'msg-1',
@@ -441,10 +444,10 @@ describe('MessageRenderer', () => {
         timestamp: Date.now(),
       };
       handle.renderMessage(msg);
-      const editBtn = container.querySelector('.message-action-btn[aria-label="Edit message"]') as HTMLElement;
-      expect(editBtn).not.toBeNull();
-      editBtn?.click();
-      expect(callbacks.onEdit).toHaveBeenCalledWith('msg-1');
+      const bookmarkBtn = container.querySelector('.message-action-btn.bookmark-btn') as HTMLElement;
+      expect(bookmarkBtn).not.toBeNull();
+      bookmarkBtn?.click();
+      expect(callbacks.onBookmark).toHaveBeenCalledWith('msg-1');
     });
   });
 

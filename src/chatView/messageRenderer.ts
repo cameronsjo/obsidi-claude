@@ -18,7 +18,11 @@ export interface MessageRendererCallbacks {
   onRegenerate: (messageId: string) => void;
   onEdit: (messageId: string) => void;
   onReact: (messageId: string, reaction: string) => void;
+  onBookmark: (messageId: string) => void;
+  onResume: (messageId: string) => void;
   scrollToBottom: () => void;
+  /** Check if resume button should be shown for a message */
+  canResume: (message: ChatMessage) => boolean;
 }
 
 export interface MessageRendererHandle extends ModuleHandle {
@@ -36,6 +40,10 @@ export interface MessageRendererHandle extends ModuleHandle {
   showWelcome(welcomeEl: HTMLElement): void;
   /** Add copy buttons to code blocks in the container */
   addCodeBlockCopyButtons(): void;
+  /** Update message actions (e.g., after bookmark/reaction toggle) */
+  updateActions(messageId: string, message: ChatMessage): void;
+  /** Update bookmark state on a message */
+  updateBookmarkState(messageId: string, bookmarked: boolean): void;
 }
 
 export function createMessageRenderer(
@@ -49,6 +57,9 @@ export function createMessageRenderer(
   function renderMessage(message: ChatMessage): HTMLElement {
     const msgDiv = container.createDiv('chat-message');
     msgDiv.addClass(message.role === 'user' ? 'user-message' : 'assistant-message');
+    if (message.bookmarked) {
+      msgDiv.addClass('message-bookmarked');
+    }
     msgDiv.dataset.messageId = message.id;
 
     // Message header (avatar + role + time) - outside the bubble
@@ -218,20 +229,20 @@ export function createMessageRenderer(
     }
   }
 
-  function createMessageActions(container: HTMLElement, msg: ChatMessage): void {
-    // Edit button
-    const editBtn = container.createEl('button', {
-      cls: 'message-action-btn',
-      attr: { 'aria-label': 'Edit message' },
+  function createMessageActions(actionsContainer: HTMLElement, msg: ChatMessage): void {
+    // Bookmark button
+    const bookmarkBtn = actionsContainer.createEl('button', {
+      cls: `message-action-btn bookmark-btn ${msg.bookmarked ? 'bookmark-active' : ''}`,
+      attr: { 'aria-label': msg.bookmarked ? 'Remove bookmark' : 'Bookmark message' },
     });
-    setIcon(editBtn, 'pencil');
-    editBtn.onclick = (e) => {
+    setIcon(bookmarkBtn, msg.bookmarked ? 'bookmark-check' : 'bookmark');
+    bookmarkBtn.onclick = (e) => {
       e.stopPropagation();
-      callbacks.onEdit(msg.id);
+      callbacks.onBookmark(msg.id);
     };
 
     // Copy button
-    const copyBtn = container.createEl('button', {
+    const copyBtn = actionsContainer.createEl('button', {
       cls: 'message-action-btn',
       attr: { 'aria-label': 'Copy message' },
     });
@@ -244,7 +255,7 @@ export function createMessageRenderer(
     // Only show regenerate and reactions for assistant messages
     if (msg.role === 'assistant') {
       // Thumbs up reaction
-      const thumbsUpBtn = container.createEl('button', {
+      const thumbsUpBtn = actionsContainer.createEl('button', {
         cls: `message-action-btn reaction-btn ${msg.reaction === 'up' ? 'reaction-active' : ''}`,
         attr: { 'aria-label': 'Good response' },
       });
@@ -255,7 +266,7 @@ export function createMessageRenderer(
       };
 
       // Thumbs down reaction
-      const thumbsDownBtn = container.createEl('button', {
+      const thumbsDownBtn = actionsContainer.createEl('button', {
         cls: `message-action-btn reaction-btn ${msg.reaction === 'down' ? 'reaction-active' : ''}`,
         attr: { 'aria-label': 'Poor response' },
       });
@@ -266,7 +277,7 @@ export function createMessageRenderer(
       };
 
       // Regenerate button
-      const regenBtn = container.createEl('button', {
+      const regenBtn = actionsContainer.createEl('button', {
         cls: 'message-action-btn',
         attr: { 'aria-label': 'Regenerate response' },
       });
@@ -275,6 +286,19 @@ export function createMessageRenderer(
         e.stopPropagation();
         callbacks.onRegenerate(msg.id);
       };
+
+      // Resume from here button (shown for SDK messages with sdkUuid)
+      if (callbacks.canResume(msg)) {
+        const resumeBtn = actionsContainer.createEl('button', {
+          cls: 'message-action-btn',
+          attr: { 'aria-label': 'Resume from this point' },
+        });
+        setIcon(resumeBtn, 'corner-up-left');
+        resumeBtn.onclick = (e) => {
+          e.stopPropagation();
+          callbacks.onResume(msg.id);
+        };
+      }
     }
   }
 
@@ -410,6 +434,27 @@ export function createMessageRenderer(
     addCodeBlockCopyButtonsToElement(container);
   }
 
+  function updateActions(messageId: string, message: ChatMessage): void {
+    const msgEl = messageElements.get(messageId);
+    if (!msgEl) return;
+
+    const actionsDiv = msgEl.querySelector('.message-actions') as HTMLElement;
+    if (actionsDiv) {
+      // Clear and re-render actions
+      while (actionsDiv.firstChild) {
+        actionsDiv.removeChild(actionsDiv.firstChild);
+      }
+      createMessageActions(actionsDiv, message);
+    }
+  }
+
+  function updateBookmarkState(messageId: string, bookmarked: boolean): void {
+    const msgEl = messageElements.get(messageId);
+    if (!msgEl) return;
+
+    msgEl.toggleClass('message-bookmarked', bookmarked);
+  }
+
   function destroy(): void {
     clear();
   }
@@ -422,6 +467,8 @@ export function createMessageRenderer(
     clear,
     showWelcome,
     addCodeBlockCopyButtons,
+    updateActions,
+    updateBookmarkState,
     destroy,
   };
 }
