@@ -8,3 +8,4 @@ export * from './searchBar';
 export * from './queuePanel';
 export * from './statusBar';
 export * from './mobileSupport';
+export * from './tabBar';
