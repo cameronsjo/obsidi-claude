@@ -7,6 +7,7 @@ import {
   setIcon,
   Notice,
   Menu,
+  Platform,
 } from 'obsidian';
 import { PermissionModal } from './chatViewModals';
 import { executeCommand, getCommandList, type ChatViewCommandContext } from './chatViewCommands';
@@ -16,6 +17,14 @@ import { generateId, calculateCost, calculateConversationUsage } from './types';
 import type { AgentBackend, AgentCallbacks, AgentResult } from './backends';
 import type { PermissionRequestContext, PermissionResponse } from './backends/sdkAgentBackend';
 import { createLogger } from './logger';
+
+// Import modular ChatView components
+import {
+  createHistoryPanel,
+  createMobileSupport,
+  type HistoryPanelHandle,
+  type MobileSupportHandle,
+} from './chatView/index';
 
 const log = createLogger('ChatView');
 
@@ -68,14 +77,8 @@ export class ChatView extends ItemView {
   private searchMatches: string[] = []; // message IDs that match
   private currentSearchIndex = -1;
   private userScrolledUp = false;
-  private historyFilterTag: string | null = null; // Filter history by tag
   private vaultRefreshTimeout: ReturnType<typeof setTimeout> | null = null;
-  private historyTagsBar: HTMLElement | null = null;
-  private historySearchInput: HTMLInputElement | null = null;
-  private historySearchQuery: string = '';
-  private bulkSelectMode: boolean = false;
-  private selectedConversations: Set<string> = new Set();
-  private bulkActionsBar: HTMLElement | null = null;
+  // Note: History panel state (filter, search, bulk select) moved to historyPanelModule
 
   // Voice input state
   private isRecording = false;
@@ -114,6 +117,10 @@ export class ChatView extends ItemView {
   private autocompleteEl: HTMLElement | null = null;
   private autocompleteIndex = -1;
   private autocompleteCommands: Array<{ name: string; description: string }> = [];
+
+  // Modular UI components
+  private historyPanelModule: HistoryPanelHandle | null = null;
+  private mobileSupportModule: MobileSupportHandle | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: ObsidiClaudePlugin) {
     super(leaf);
@@ -155,10 +162,37 @@ export class ChatView extends ItemView {
     this.initializeTabs();
     this.renderTabBar();
 
-    // History panel (hidden by default)
-    this.historyPanel = container.createDiv('chat-history-panel');
-    this.historyPanel.style.display = 'none';
-    this.createHistoryPanel(this.historyPanel);
+    // History panel module
+    this.historyPanelModule = createHistoryPanel(
+      container,
+      { app: this.plugin.app, plugin: this.plugin },
+      {
+        onSelect: async (id) => this.loadConversationById(id),
+        onDelete: async (id) => this.deleteConversation(id),
+        onDeleteBulk: async (ids) => {
+          for (const id of ids) {
+            await this.plugin.storage.deleteConversation(id);
+          }
+        },
+        onDuplicate: async (id) => this.duplicateConversation(id),
+        onRename: async (id, title) => {
+          await this.plugin.storage.renameConversation(id, title);
+          if (this.conversation.id === id) {
+            this.conversation.title = title;
+            this.updateTitle();
+          }
+        },
+        onTogglePin: async (id) => this.togglePinConversation(id),
+        onManageTags: (id, tags) => this.promptManageTags(id, tags),
+        onContinue: async (id) => this.continueConversation(id),
+        getConversations: async () => this.plugin.storage.listConversations(),
+        getAllTags: async () => this.plugin.storage.getAllTags(),
+        getCurrentId: () => this.conversation.id,
+        showStatus: (msg, type) => this.showTemporaryStatus(msg, type, 2000),
+      }
+    );
+    // Keep reference to legacy historyPanel for backwards compatibility during migration
+    this.historyPanel = container.querySelector('.chat-history-panel') as HTMLElement;
 
     // Search bar (hidden by default)
     this.searchContainer = container.createDiv('chat-search-bar');
@@ -182,11 +216,22 @@ export class ChatView extends ItemView {
     const inputArea = container.createDiv('chat-input-area');
     this.createInputArea(inputArea);
 
-    // Mobile: Add floating action button for new conversation
-    this.createMobileFAB(container);
-
-    // Mobile: Setup touch gestures
-    this.setupMobileTouchHandling(container);
+    // Mobile support module (FAB, touch gestures)
+    this.mobileSupportModule = createMobileSupport(
+      { app: this.plugin.app, plugin: this.plugin },
+      {
+        onNewConversation: () => this._newConversation(),
+        onToggleHistory: () => this._toggleHistory(),
+        onSwipeRight: () => {
+          if (!this.historyVisible) this._toggleHistory();
+        },
+        onSwipeLeft: () => {
+          if (this.historyVisible) this._toggleHistory();
+        },
+      }
+    );
+    this.mobileSupportModule.createFAB(container);
+    this.mobileSupportModule.setupTouchHandling(container);
 
     // Register keyboard shortcuts
     this.registerKeyboardShortcuts(container);
@@ -427,193 +472,12 @@ export class ChatView extends ItemView {
     menu.showAtMouseEvent(e);
   }
 
-  private createHistoryPanel(panel: HTMLElement): void {
-    const header = panel.createDiv('history-header');
-    header.createEl('h4', { text: 'Conversations' });
-
-    const headerActions = header.createDiv('history-header-actions');
-
-    // Bulk select toggle
-    const bulkSelectBtn = headerActions.createEl('button', {
-      cls: 'chat-action-btn',
-      attr: { 'aria-label': 'Select multiple' },
-    });
-    setIcon(bulkSelectBtn, 'list-checks');
-    bulkSelectBtn.onclick = () => this.toggleBulkSelectMode();
-
-    const closeBtn = headerActions.createEl('button', {
-      cls: 'chat-action-btn',
-      attr: { 'aria-label': 'Close history' },
-    });
-    setIcon(closeBtn, 'x');
-    closeBtn.onclick = () => this._toggleHistory();
-
-    // Bulk actions bar (hidden by default)
-    this.bulkActionsBar = panel.createDiv('history-bulk-actions');
-    this.bulkActionsBar.style.display = 'none';
-    this.createBulkActionsBar(this.bulkActionsBar);
-
-    // Search bar for conversations
-    const searchBar = panel.createDiv('history-search-bar');
-    this.historySearchInput = searchBar.createEl('input', {
-      cls: 'history-search-input',
-      attr: {
-        type: 'text',
-        placeholder: 'Search conversations...',
-      },
-    });
-    this.historySearchInput.addEventListener('input', () => {
-      this.historySearchQuery = this.historySearchInput?.value || '';
-      this.refreshHistoryList();
-    });
-
-    // Tag filter bar
-    this.historyTagsBar = panel.createDiv('history-tags-bar');
-
-    this.historyList = panel.createDiv('history-list');
-  }
-
-  private createBulkActionsBar(container: HTMLElement): void {
-    const selectAllBtn = container.createEl('button', {
-      cls: 'history-bulk-btn',
-      text: 'Select All',
-    });
-    selectAllBtn.onclick = () => this.selectAllConversations();
-
-    const deselectAllBtn = container.createEl('button', {
-      cls: 'history-bulk-btn',
-      text: 'Deselect All',
-    });
-    deselectAllBtn.onclick = () => this.deselectAllConversations();
-
-    const deleteBtn = container.createEl('button', {
-      cls: 'history-bulk-btn history-bulk-delete',
-      text: 'Delete Selected',
-    });
-    deleteBtn.onclick = () => this.deleteSelectedConversations();
-
-    const countEl = container.createSpan('history-bulk-count');
-    countEl.setText('0 selected');
-  }
-
-  private toggleBulkSelectMode(): void {
-    this.bulkSelectMode = !this.bulkSelectMode;
-    this.selectedConversations.clear();
-    if (this.bulkActionsBar) {
-      this.bulkActionsBar.style.display = this.bulkSelectMode ? 'flex' : 'none';
-    }
-    this.updateBulkCount();
-    this.refreshHistoryList();
-  }
-
-  private selectAllConversations(): void {
-    const items = this.historyList.querySelectorAll('.history-item');
-    items.forEach((item) => {
-      const id = (item as HTMLElement).dataset.conversationId;
-      if (id) {
-        this.selectedConversations.add(id);
-        item.addClass('history-item-selected');
-        const checkbox = item.querySelector('input[type="checkbox"]') as HTMLInputElement;
-        if (checkbox) checkbox.checked = true;
-      }
-    });
-    this.updateBulkCount();
-  }
-
-  private deselectAllConversations(): void {
-    this.selectedConversations.clear();
-    const items = this.historyList.querySelectorAll('.history-item');
-    items.forEach((item) => {
-      item.removeClass('history-item-selected');
-      const checkbox = item.querySelector('input[type="checkbox"]') as HTMLInputElement;
-      if (checkbox) checkbox.checked = false;
-    });
-    this.updateBulkCount();
-  }
-
-  private async deleteSelectedConversations(): Promise<void> {
-    if (this.selectedConversations.size === 0) return;
-
-    const count = this.selectedConversations.size;
-    const confirmDelete = confirm(`Delete ${count} conversation${count > 1 ? 's' : ''}? This cannot be undone.`);
-    if (!confirmDelete) return;
-
-    for (const id of this.selectedConversations) {
-      await this.plugin.storage.deleteConversation(id);
-    }
-
-    this.selectedConversations.clear();
-    this.showTemporaryStatus(`Deleted ${count} conversation${count > 1 ? 's' : ''}`, 'success', 2000);
-    await this.refreshHistoryList();
-    this.updateBulkCount();
-
-    // If current conversation was deleted, create new one
-    const currentId = this.conversation.id;
-    const conversations = await this.plugin.storage.listConversations();
-    if (!conversations.find(c => c.id === currentId)) {
-      this.conversation = this.createNewConversation();
-      this.renderConversation();
-    }
-  }
-
-  private updateBulkCount(): void {
-    const countEl = this.bulkActionsBar?.querySelector('.history-bulk-count');
-    if (countEl) {
-      countEl.textContent = `${this.selectedConversations.size} selected`;
-    }
-  }
-
-  private getDateGroup(timestamp: number): string {
-    const now = new Date();
-    const date = new Date(timestamp);
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const yesterday = new Date(today.getTime() - 86400000);
-    const weekAgo = new Date(today.getTime() - 7 * 86400000);
-    const monthAgo = new Date(today.getTime() - 30 * 86400000);
-
-    if (date >= today) return 'Today';
-    if (date >= yesterday) return 'Yesterday';
-    if (date >= weekAgo) return 'This Week';
-    if (date >= monthAgo) return 'This Month';
-    return 'Older';
-  }
-
-  private async refreshTagsBar(): Promise<void> {
-    if (!this.historyTagsBar) return;
-    this.historyTagsBar.empty();
-
-    const allTags = await this.plugin.storage.getAllTags();
-    if (allTags.length === 0) return;
-
-    // "All" button
-    const allBtn = this.historyTagsBar.createSpan({
-      cls: `history-filter-tag ${this.historyFilterTag === null ? 'filter-tag-active' : ''}`,
-    });
-    allBtn.setText('All');
-    allBtn.onclick = () => this.filterHistoryByTag(null);
-
-    // Tag buttons
-    for (const tag of allTags) {
-      const tagBtn = this.historyTagsBar.createSpan({
-        cls: `history-filter-tag ${this.historyFilterTag === tag ? 'filter-tag-active' : ''}`,
-      });
-      tagBtn.setText(tag);
-      tagBtn.onclick = () => this.filterHistoryByTag(tag);
-    }
-  }
-
-  private async filterHistoryByTag(tag: string | null): Promise<void> {
-    this.historyFilterTag = tag;
-    await this.refreshTagsBar();
-    await this.refreshHistoryList();
-  }
+  // Note: History panel UI is now handled by historyPanelModule
 
   private async _toggleHistory(): Promise<void> {
-    this.historyVisible = !this.historyVisible;
-    this.historyPanel.style.display = this.historyVisible ? 'block' : 'none';
-
-    if (this.historyVisible) {
-      await this.refreshHistoryList();
+    if (this.historyPanelModule) {
+      await this.historyPanelModule.toggle();
+      this.historyVisible = this.historyPanelModule.isVisible();
     }
   }
 
@@ -895,264 +759,12 @@ export class ChatView extends ItemView {
     });
   }
 
-  private async refreshHistoryList(): Promise<void> {
-    if (!this.historyList) return;
-    this.historyList.empty();
-
-    // Refresh tags bar first
-    await this.refreshTagsBar();
-
-    let conversations = await this.plugin.storage.listConversations();
-
-    // Filter by tag if one is selected
-    if (this.historyFilterTag) {
-      conversations = conversations.filter(c =>
-        c.tags && c.tags.includes(this.historyFilterTag!)
-      );
-    }
-
-    // Filter by search query (searches title and preview)
-    if (this.historySearchQuery) {
-      const query = this.historySearchQuery.toLowerCase();
-      conversations = conversations.filter(c =>
-        c.title.toLowerCase().includes(query) ||
-        (c.preview && c.preview.toLowerCase().includes(query))
-      );
-    }
-
-    if (conversations.length === 0) {
-      let emptyMsg = 'No conversations yet';
-      if (this.historySearchQuery) {
-        emptyMsg = `No conversations matching "${this.historySearchQuery}"`;
-      } else if (this.historyFilterTag) {
-        emptyMsg = `No conversations with tag "${this.historyFilterTag}"`;
-      }
-      this.historyList.createDiv('history-empty').setText(emptyMsg);
-      return;
-    }
-
-    // Group conversations by date (pinned first, then by date groups)
-    const pinned = conversations.filter(c => c.pinned);
-    const unpinned = conversations.filter(c => !c.pinned);
-
-    // Group unpinned by date
-    const groups = new Map<string, typeof conversations>();
-    for (const conv of unpinned) {
-      const group = this.getDateGroup(conv.updatedAt);
-      if (!groups.has(group)) groups.set(group, []);
-      groups.get(group)!.push(conv);
-    }
-
-    // Render pinned section
-    if (pinned.length > 0) {
-      this.historyList.createDiv('history-group-header').setText('📌 Pinned');
-      for (const conv of pinned) {
-        this.renderHistoryItem(conv);
-      }
-    }
-
-    // Render date groups in order
-    const groupOrder = ['Today', 'Yesterday', 'This Week', 'This Month', 'Older'];
-    for (const groupName of groupOrder) {
-      const groupConvs = groups.get(groupName);
-      if (groupConvs && groupConvs.length > 0) {
-        this.historyList.createDiv('history-group-header').setText(groupName);
-        for (const conv of groupConvs) {
-          this.renderHistoryItem(conv);
-        }
-      }
-    }
-  }
-
-  private renderHistoryItem(conv: {
-    id: string;
-    title: string;
-    messageCount: number;
-    createdAt: number;
-    updatedAt: number;
-    tags?: string[];
-    pinned?: boolean;
-    preview?: string;
-  }): void {
-    const item = this.historyList.createDiv('history-item');
-    item.dataset.conversationId = conv.id;
-
-    if (conv.id === this.conversation.id) {
-      item.addClass('history-item-active');
-    }
-    if (conv.pinned) {
-      item.addClass('history-item-pinned');
-    }
-    if (this.selectedConversations.has(conv.id)) {
-      item.addClass('history-item-selected');
-    }
-
-    // Checkbox for bulk select mode
-    if (this.bulkSelectMode) {
-      const checkbox = item.createEl('input', {
-        cls: 'history-item-checkbox',
-        attr: { type: 'checkbox' },
-      });
-      checkbox.checked = this.selectedConversations.has(conv.id);
-      checkbox.onclick = (e) => {
-        e.stopPropagation();
-        if (checkbox.checked) {
-          this.selectedConversations.add(conv.id);
-          item.addClass('history-item-selected');
-        } else {
-          this.selectedConversations.delete(conv.id);
-          item.removeClass('history-item-selected');
-        }
-        this.updateBulkCount();
-      };
-    }
-
-    const info = item.createDiv('history-item-info');
-
-    // Title row with pin indicator
-    const titleRow = info.createDiv('history-item-title-row');
-    if (conv.pinned) {
-      const pinIcon = titleRow.createSpan('history-pin-indicator');
-      setIcon(pinIcon, 'pin');
-    }
-    const title = titleRow.createSpan('history-item-title');
-    title.setText(conv.title || 'Untitled');
-
-    // Preview (truncated last message)
-    if (conv.preview) {
-      const previewEl = info.createDiv('history-item-preview');
-      previewEl.setText(conv.preview);
-    }
-
-    // Tags row (if any)
-    if (conv.tags && conv.tags.length > 0) {
-      const tagsRow = info.createDiv('history-item-tags');
-      for (const tag of conv.tags.slice(0, 3)) {
-        const tagEl = tagsRow.createSpan('history-tag');
-        tagEl.setText(tag);
-      }
-      if (conv.tags.length > 3) {
-        tagsRow.createSpan('history-tag-more').setText(`+${conv.tags.length - 3}`);
-      }
-    }
-
-    const meta = info.createDiv('history-item-meta');
-    const date = new Date(conv.updatedAt);
-    const dateStr = this.formatRelativeDate(date);
-    meta.setText(`${conv.messageCount} messages · ${dateStr}`);
-
-    // Click to load (unless in bulk select mode)
-    item.onclick = () => {
-      if (this.bulkSelectMode) {
-        const checkbox = item.querySelector('input[type="checkbox"]') as HTMLInputElement;
-        if (checkbox) {
-          checkbox.checked = !checkbox.checked;
-          if (checkbox.checked) {
-            this.selectedConversations.add(conv.id);
-            item.addClass('history-item-selected');
-          } else {
-            this.selectedConversations.delete(conv.id);
-            item.removeClass('history-item-selected');
-          }
-          this.updateBulkCount();
-        }
-      } else {
-        this.loadConversationById(conv.id);
-      }
-    };
-
-    // Actions (hidden in bulk select mode)
-    const actions = item.createDiv('history-item-actions');
-    if (this.bulkSelectMode) {
-      actions.style.display = 'none';
-    }
-
-    // Pin/unpin button
-    const pinBtn = actions.createEl('button', {
-      cls: 'history-action-btn',
-      attr: { 'aria-label': conv.pinned ? 'Unpin conversation' : 'Pin conversation' },
-    });
-    setIcon(pinBtn, conv.pinned ? 'pin-off' : 'pin');
-    pinBtn.onclick = (e) => {
-      e.stopPropagation();
-      this.togglePinConversation(conv.id);
-    };
-
-    // Rename button
-    const renameBtn = actions.createEl('button', {
-      cls: 'history-action-btn',
-      attr: { 'aria-label': 'Rename conversation' },
-    });
-    setIcon(renameBtn, 'pencil');
-    renameBtn.onclick = (e) => {
-      e.stopPropagation();
-      this.promptRenameConversation(conv.id, conv.title);
-    };
-
-    // Tag button
-    const tagBtn = actions.createEl('button', {
-      cls: 'history-action-btn',
-      attr: { 'aria-label': 'Manage tags' },
-    });
-    setIcon(tagBtn, 'tag');
-    tagBtn.onclick = (e) => {
-      e.stopPropagation();
-      this.promptManageTags(conv.id, conv.tags || []);
-    };
-
-    // Continue button (if has session)
-    const continueBtn = actions.createEl('button', {
-      cls: 'history-action-btn',
-      attr: { 'aria-label': 'Continue conversation' },
-    });
-    setIcon(continueBtn, 'play');
-    continueBtn.onclick = (e) => {
-      e.stopPropagation();
-      this.continueConversation(conv.id);
-    };
-
-    // Duplicate button
-    const duplicateBtn = actions.createEl('button', {
-      cls: 'history-action-btn',
-      attr: { 'aria-label': 'Duplicate conversation' },
-    });
-    setIcon(duplicateBtn, 'copy-plus');
-    duplicateBtn.onclick = (e) => {
-      e.stopPropagation();
-      this.duplicateConversation(conv.id);
-    };
-
-    // Delete button
-    const deleteBtn = actions.createEl('button', {
-      cls: 'history-action-btn history-delete-btn',
-      attr: { 'aria-label': 'Delete conversation' },
-    });
-    setIcon(deleteBtn, 'trash-2');
-    deleteBtn.onclick = (e) => {
-      e.stopPropagation();
-      this.deleteConversation(conv.id);
-    };
-  }
-
-  private formatRelativeDate(date: Date): string {
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
-
-    if (diffMins < 1) return 'just now';
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays < 7) return `${diffDays}d ago`;
-
-    return date.toLocaleDateString();
-  }
+  // Note: refreshHistoryList, renderHistoryItem, formatRelativeDate moved to historyPanelModule
 
   private async togglePinConversation(id: string): Promise<void> {
     const isPinned = await this.plugin.storage.togglePin(id);
     this.showTemporaryStatus(isPinned ? 'Conversation pinned' : 'Conversation unpinned', 'success', 1500);
-    await this.refreshHistoryList();
+    await this.historyPanelModule?.refresh();
 
     // Update current conversation if it's the one being pinned
     if (this.conversation.id === id) {
@@ -1206,7 +818,7 @@ export class ChatView extends ItemView {
       if (newTitle && newTitle !== currentTitle) {
         await this.plugin.storage.renameConversation(id, newTitle);
         this.showTemporaryStatus('Conversation renamed', 'success', 1500);
-        await this.refreshHistoryList();
+        await this.historyPanelModule?.refresh();
 
         // Update current conversation title if it's the one being renamed
         if (this.conversation.id === id) {
@@ -1345,7 +957,7 @@ export class ChatView extends ItemView {
 
     const closeModal = async () => {
       modal.remove();
-      await this.refreshHistoryList();
+      await this.historyPanelModule?.refresh();
       // Update current conversation if modified
       if (this.conversation.id === id) {
         this.conversation.tags = currentTags;
@@ -1404,7 +1016,7 @@ export class ChatView extends ItemView {
     const newConv = await this.plugin.storage.duplicateConversation(id);
     if (newConv) {
       this.showTemporaryStatus('Conversation duplicated', 'success', 1500);
-      await this.refreshHistoryList();
+      await this.historyPanelModule?.refresh();
     } else {
       this.showTemporaryStatus('Failed to duplicate conversation', 'error', 2000);
     }
@@ -1427,7 +1039,7 @@ export class ChatView extends ItemView {
       }
     }
 
-    await this.refreshHistoryList();
+    await this.historyPanelModule?.refresh();
   }
 
   private updateTitle(): void {
@@ -5023,69 +4635,10 @@ ${content}
    * Check if running on mobile device.
    */
   private isMobile(): boolean {
-    return document.body.classList.contains('is-mobile');
+    return Platform.isMobile;
   }
 
-  /**
-   * Create floating action button for mobile.
-   */
-  private createMobileFAB(container: HTMLElement): void {
-    const fab = container.createDiv('chat-fab');
-    setIcon(fab, 'plus');
-    fab.setAttribute('aria-label', 'New conversation');
-    fab.onclick = () => this._newConversation();
-  }
-
-  /**
-   * Set up touch gesture handling for mobile.
-   */
-  private setupMobileTouchHandling(container: HTMLElement): void {
-    if (!this.isMobile()) return;
-
-    let touchStartX = 0;
-    let touchStartY = 0;
-    const swipeThreshold = 50;
-
-    // Track touch start
-    container.addEventListener('touchstart', (e) => {
-      const touch = e.touches[0];
-      touchStartX = touch.clientX;
-      touchStartY = touch.clientY;
-    }, { passive: true });
-
-    // Handle swipe gestures
-    container.addEventListener('touchend', (e) => {
-      const touch = e.changedTouches[0];
-      const deltaX = touch.clientX - touchStartX;
-      const deltaY = touch.clientY - touchStartY;
-
-      // Horizontal swipe detection
-      if (Math.abs(deltaX) > swipeThreshold && Math.abs(deltaX) > Math.abs(deltaY)) {
-        if (deltaX > 0) {
-          // Swipe right: show history
-          if (!this.historyVisible) {
-            this._toggleHistory();
-          }
-        } else {
-          // Swipe left: hide history if open
-          if (this.historyVisible) {
-            this._toggleHistory();
-          }
-        }
-      }
-    }, { passive: true });
-
-    // Long press on messages for actions
-    this.messagesContainer.addEventListener('contextmenu', (e) => {
-      // Prevent default context menu on mobile
-      if (this.isMobile()) {
-        e.preventDefault();
-      }
-    });
-
-    // Add swipe hint to empty state
-    this.addMobileSwipeHint();
-  }
+  // Note: createMobileFAB, setupMobileTouchHandling moved to mobileSupportModule
 
   /**
    * Add swipe gesture hint and welcome state for mobile users.
@@ -5421,5 +4974,9 @@ ${content}
     // Save tabs and conversation before closing
     await this.saveTabState();
     await this.saveConversation();
+
+    // Clean up modular components
+    this.historyPanelModule?.destroy();
+    this.mobileSupportModule?.destroy();
   }
 }
