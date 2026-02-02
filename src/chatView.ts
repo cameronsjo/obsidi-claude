@@ -655,7 +655,7 @@ export class ChatView extends ItemView {
       onToggleSearch: () => this._toggleSearch(),
       onToggleHistory: () => this._toggleHistory(),
       onFocusInput: () => this.inputEl.focus(),
-      onExport: () => this.exportModule?.export(),
+      onExport: () => this.exportModule?.downloadMarkdown(),
       onTogglePin: async () => {
         await this.plugin.storage.togglePin(this.conversation.id);
         this.conversation.pinned = !this.conversation.pinned;
@@ -1147,31 +1147,31 @@ export class ChatView extends ItemView {
    */
   private handleInputKeyDown(e: KeyboardEvent): boolean {
     // Handle autocomplete navigation
-    if (this.autocompleteEl && this.autocompleteCommands.length > 0) {
+    if (this.autocompleteModule?.isVisible()) {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
-        this.autocompleteIndex = Math.min(this.autocompleteIndex + 1, this.autocompleteCommands.length - 1);
-        this.updateAutocompleteSelection();
+        this.autocompleteModule.navigate('down');
+        
         return true;
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
-        this.autocompleteIndex = Math.max(this.autocompleteIndex - 1, 0);
-        this.updateAutocompleteSelection();
+        this.autocompleteModule.navigate('up');
+        
         return true;
       } else if (e.key === 'Enter' || e.key === 'Tab') {
         e.preventDefault();
-        this.selectAutocompleteCommand();
+        this.autocompleteModule.select();
         return true;
       } else if (e.key === 'Escape') {
         e.preventDefault();
-        this.hideAutocomplete();
+        this.autocompleteModule?.hide();
         return true;
       }
     }
 
     // Escape without autocomplete - still hide it
     if (e.key === 'Escape') {
-      this.hideAutocomplete();
+      this.autocompleteModule?.hide();
     }
 
     return false; // Let module handle it
@@ -3789,110 +3789,6 @@ ${content}
   /** Toggle in-conversation search */
   toggleSearch(): void {
     this._toggleSearch();
-  }
-
-
-  // ===== COMMAND AUTOCOMPLETE =====
-
-  private updateAutocomplete(): void {
-    const value = this.inputEl.value;
-
-    // Only show autocomplete for slash commands at the start
-    if (!value.startsWith('/') || value.includes(' ')) {
-      this.hideAutocomplete();
-      return;
-    }
-
-    const query = value.slice(1).toLowerCase();
-    const allCommands = getCommandList();
-
-    // Filter commands that match the query
-    this.autocompleteCommands = allCommands.filter(cmd => {
-      const cmdName = cmd.name.split(' ')[0].slice(1); // Remove / and get base command
-      return cmdName.startsWith(query);
-    });
-
-    if (this.autocompleteCommands.length === 0) {
-      this.hideAutocomplete();
-      return;
-    }
-
-    this.showAutocomplete();
-  }
-
-  private showAutocomplete(): void {
-    if (!this.autocompleteEl) {
-      this.autocompleteEl = this.inputWrapper.createDiv('command-autocomplete');
-    }
-
-    this.autocompleteEl.empty();
-    this.autocompleteIndex = 0;
-
-    for (let i = 0; i < this.autocompleteCommands.length; i++) {
-      const cmd = this.autocompleteCommands[i];
-      const item = this.autocompleteEl.createDiv('command-autocomplete-item');
-      if (i === 0) item.addClass('is-selected');
-
-      const nameEl = item.createDiv('command-autocomplete-name');
-      nameEl.setText(cmd.name);
-
-      const descEl = item.createDiv('command-autocomplete-desc');
-      descEl.setText(cmd.description);
-
-      item.addEventListener('click', () => {
-        this.autocompleteIndex = i;
-        this.selectAutocompleteCommand();
-      });
-
-      item.addEventListener('mouseenter', () => {
-        this.autocompleteIndex = i;
-        this.updateAutocompleteSelection();
-      });
-    }
-  }
-
-  private hideAutocomplete(): void {
-    if (this.autocompleteEl) {
-      this.autocompleteEl.remove();
-      this.autocompleteEl = null;
-    }
-    this.autocompleteCommands = [];
-    this.autocompleteIndex = -1;
-  }
-
-  private updateAutocompleteSelection(): void {
-    if (!this.autocompleteEl) return;
-
-    const items = this.autocompleteEl.querySelectorAll('.command-autocomplete-item');
-    items.forEach((item, i) => {
-      item.toggleClass('is-selected', i === this.autocompleteIndex);
-    });
-
-    // Scroll selected item into view
-    const selected = items[this.autocompleteIndex] as HTMLElement;
-    if (selected) {
-      selected.scrollIntoView({ block: 'nearest' });
-    }
-  }
-
-  private selectAutocompleteCommand(): void {
-    if (this.autocompleteIndex < 0 || this.autocompleteIndex >= this.autocompleteCommands.length) {
-      this.hideAutocomplete();
-      return;
-    }
-
-    const cmd = this.autocompleteCommands[this.autocompleteIndex];
-    // Extract just the command name (e.g., "/export" from "/export [clipboard|json]")
-    const cmdName = cmd.name.split(' ')[0];
-
-    this.inputEl.value = cmdName + ' ';
-    this.inputEl.focus();
-    this.hideAutocomplete();
-
-    // Trigger resize via module
-    if (this.inputModule) {
-      this.inputModule.resize();
-    }
   }
 
   // ===== MOBILE SUPPORT =====
