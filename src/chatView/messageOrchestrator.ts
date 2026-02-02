@@ -425,7 +425,7 @@ export function createMessageOrchestrator(
     if (!conversation.metadata) {
       conversation.metadata = { backendType: backend.type };
     }
-    (conversation.metadata as Record<string, unknown>).model = currentModel;
+    conversation.metadata.model = currentModel;
 
     const agentCallbacks = buildAgentCallbacks();
 
