@@ -89,6 +89,44 @@ Obsidian Plugin
 
 The plugin uses the official Claude Agent SDK which spawns Claude Code as a subprocess. This provides full access to Claude Code's capabilities including file operations, shell commands, and web access.
 
+### Backend Selection
+
+The plugin supports two backends: **SDK** (full Claude Code features) and **API** (direct Anthropic API).
+
+```
+                    ┌─────────────────────┐
+                    │  preferredBackend?  │
+                    └─────────┬───────────┘
+            ┌─────────────────┼─────────────────┐
+            ▼                 ▼                 ▼
+         ┌─────┐           ┌─────┐           ┌──────┐
+         │'sdk'│           │'api'│           │'auto'│
+         └──┬──┘           └──┬──┘           └──┬───┘
+            ▼                 │                 ▼
+    ┌───────────────┐         │         ┌─────────────┐
+    │SDK available? │         │         │  Platform?  │
+    └───────┬───────┘         │         └──────┬──────┘
+       yes/ \no               │           desktop│mobile
+          ▼   ▼               │              ▼      ▼
+       ┌───┐ ┌───┐            │      ┌───────────┐  │
+       │SDK│ │API│◄───────────┘      │SDK avail? │  │
+       └───┘ └─┬─┘                   └─────┬─────┘  │
+               │                      yes/ \no     │
+               │                         ▼   ▼     │
+               │                      ┌───┐ │      │
+               │                      │SDK│ │      │
+               │                      └───┘ │      │
+               │                            ▼      ▼
+               │                          ┌─────────┐
+               └─────────────────────────►│   API   │
+                                          └─────────┘
+```
+
+| Backend | Features | Platform |
+|---------|----------|----------|
+| **SDK** | Full Claude Code: tools, sessions, MCP servers | Desktop only |
+| **API** | Direct Anthropic API: lighter, mobile-compatible | All platforms |
+
 ## Troubleshooting
 
 ### "Claude Code not found"
