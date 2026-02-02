@@ -175,7 +175,7 @@ export class BackendFactory {
   /**
    * Get MCP server status (SDK backend only).
    */
-  async getMcpServerStatus(): Promise<Array<{ name: string; status: string; error?: string }> | null> {
+  async getMcpServerStatus(): Promise<Array<{ name: string; status: string; error?: string; toolCount?: number }> | null> {
     return this.sdkBackend?.mcpServerStatus() ?? null;
   }
 

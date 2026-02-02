@@ -71,6 +71,8 @@ export interface ConversationMetadata {
   resumeAtUuid?: string;
   /** Timestamp of last sync (for Obsidian Sync) */
   lastSyncAt?: number;
+  /** Model used for this conversation (for session continuity) */
+  model?: string;
   /** History of context compactions */
   compactions?: Array<{
     timestamp: number;
@@ -344,7 +346,7 @@ export interface ObsidiClaudeSettings {
   workingDirectory: string;
   claudeCodePath: string;
   allowedTools: string[];
-  permissionMode: 'default' | 'acceptEdits' | 'bypassPermissions';
+  permissionMode: 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan' | 'dontAsk';
   showToolCalls: boolean;
   showMessageActions: boolean;
   streamResponses: boolean;
