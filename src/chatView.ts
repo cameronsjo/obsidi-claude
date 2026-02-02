@@ -338,7 +338,7 @@ export class ChatView extends ItemView {
       onToolSummary: (id, summary) => this.updateToolSummary(id, summary), onFilesPersisted: (files) => log.info('Files modified', { count: files.length }),
       onTaskNotification: (taskId, status, summary, outputFile, assistantMsgId) => this.handleTaskNotification(taskId, status, summary, outputFile, assistantMsgId),
       onCompactionStatus: (status) => this.setStatus(status === 'compacting' ? 'Compacting context...' : '', 'info'),
-      onCompactionBoundary: (trigger, preTokens) => { new Notice(`Context compacted: ~${Math.round(preTokens / 1000)}K tokens (${trigger})`, 3000); if (!this.conversation.metadata) this.conversation.metadata = { backendType: 'sdk' }; if (!this.conversation.metadata.compactions) this.conversation.metadata.compactions = []; this.conversation.metadata.compactions.push({ timestamp: Date.now(), trigger, preTokens }); this.saveConversation(); },
+      onCompactionBoundary: async (trigger, preTokens) => { new Notice(`Context compacted: ~${Math.round(preTokens / 1000)}K tokens (${trigger})`, 3000); if (!this.conversation.metadata) this.conversation.metadata = { backendType: this.getBackend().type }; if (!this.conversation.metadata.compactions) this.conversation.metadata.compactions = []; this.conversation.metadata.compactions.push({ timestamp: Date.now(), trigger, preTokens }); await this.saveConversation(); },
       getBackend: () => this.getBackend(), getConversation: () => this.conversation, getContext: () => this.buildContextInfo(),
       saveConversation: () => this.saveConversation(), updateTokenCounter: () => this.updateTokenCounter(), refreshStatusBar: () => this.statusModule?.refresh(),
       scrollToBottom: () => this.scrollModule?.scrollToBottom(), getModel: () => this.plugin.settings.model,
@@ -579,12 +579,12 @@ export class ChatView extends ItemView {
       },
       onTaskNotification: (taskId, status, summary, outputFile) => this.handleTaskNotification(taskId, status, summary, outputFile, currentAssistantMsgId),
       onCompactionStatus: (status) => this.setStatus(status === 'compacting' ? 'Compacting context...' : '', 'info'),
-      onCompactionBoundary: (trigger, preTokens) => {
+      onCompactionBoundary: async (trigger, preTokens) => {
         new Notice(`Context compacted: ~${Math.round(preTokens / 1000)}K tokens (${trigger})`, 3000);
-        if (!this.conversation.metadata) this.conversation.metadata = {};
+        if (!this.conversation.metadata) this.conversation.metadata = { backendType: this.getBackend().type };
         if (!this.conversation.metadata.compactions) this.conversation.metadata.compactions = [];
         this.conversation.metadata.compactions.push({ timestamp: Date.now(), trigger, preTokens });
-        this.saveConversation();
+        await this.saveConversation();
       },
     };
 
@@ -629,7 +629,19 @@ export class ChatView extends ItemView {
   private async processNextInQueue(): Promise<void> {
     if (!this.queueModule || this.isProcessing) return;
     const nextMessage = this.queueModule.getNext();
-    if (nextMessage) { this.inputEl.value = nextMessage.content; await this.sendMessage(); }
+    if (nextMessage) {
+      this.inputEl.value = nextMessage.content;
+      try {
+        await this.sendMessage();
+      } catch (error) {
+        log.error('Queue message failed', error);
+        this.showTemporaryStatus('Queued message failed', 'error', 3000);
+        // Continue processing queue despite error
+        if ((this.queueModule?.getCount() ?? 0) > 0) {
+          setTimeout(() => this.processNextInQueue(), 500);
+        }
+      }
+    }
   }
 
   private async buildContextInfo(): Promise<ContextInfo> {
@@ -773,6 +785,7 @@ export class ChatView extends ItemView {
 
   async onClose(): Promise<void> {
     log.info('Closing chat view');
+    // Destroy all modules
     this.searchBarModule?.destroy();
     this.queueModule?.destroy();
     this.statusModule?.destroy();
@@ -783,6 +796,12 @@ export class ChatView extends ItemView {
     this.historyModule?.destroy();
     this.keyboardModule?.destroy();
     this.exportModule?.destroy();
+    this.messageOrchestrator?.destroy();
+    this.slashCommandsModule?.destroy();
+    this.contextModule?.destroy();
+    this.autocompleteModule?.destroy();
+    this.voiceModule?.destroy();
+    this.scrollModule?.destroy();
     await this.saveTabState();
     await this.saveConversation();
   }
