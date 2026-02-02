@@ -21,3 +21,4 @@ export * from './autocomplete';
 export * from './keyboardHandler';
 export * from './exportHandler';
 export * from './scrollManager';
+export * from './slashCommandHandlers';
