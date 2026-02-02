@@ -20,7 +20,7 @@ export interface BackendInfo {
 /**
  * Active context/note information for status bar badge.
  */
-export interface StatusStatusContextInfo {
+export interface StatusContextInfo {
   path: string;
   title: string;
 }
