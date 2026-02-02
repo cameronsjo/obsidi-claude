@@ -320,7 +320,7 @@ export function createConversationStore(
           return;
         }
       } catch (error) {
-        log.debug('Smart title generation failed, using fallback', error);
+        log.debug('Smart title generation failed, using fallback', { error });
       }
     }
 
@@ -351,8 +351,10 @@ export function createConversationStore(
    * Initialize tabs from saved state.
    */
   function initializeTabs(): void {
-    const savedTabs = plugin.settings.savedTabs as ChatTab[] | undefined;
-    const savedActiveTabId = plugin.settings.activeTabId as string | undefined;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const savedTabs = (plugin.settings as any).savedTabs as ChatTab[] | undefined;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const savedActiveTabId = (plugin.settings as any).activeTabId as string | undefined;
 
     if (savedTabs && savedTabs.length > 0) {
       tabs = savedTabs;
@@ -388,8 +390,7 @@ export function createConversationStore(
     activeTabId = tabId;
 
     // Load the conversation for this tab
-    const conversations = await plugin.conversationStore.list();
-    const targetConversation = conversations.find((c) => c.id === tab.conversationId);
+    const targetConversation = await plugin.storage.loadConversation(tab.conversationId);
 
     if (targetConversation) {
       conversation = targetConversation;

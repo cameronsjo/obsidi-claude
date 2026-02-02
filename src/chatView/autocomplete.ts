@@ -3,14 +3,7 @@
  * Handles slash command suggestions and selection.
  */
 import type { ModuleHandle } from './types';
-
-/**
- * Command information for autocomplete display.
- */
-export interface CommandInfo {
-  name: string;
-  description: string;
-}
+import type { CommandInfo } from './slashCommands';
 
 /**
  * Callbacks for autocomplete to communicate with parent.

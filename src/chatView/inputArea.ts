@@ -4,14 +4,7 @@
  */
 import { setIcon } from 'obsidian';
 import type { ModuleDeps, ModuleHandle, ImageAttachment } from './types';
-
-/**
- * Command information for autocomplete.
- */
-export interface CommandInfo {
-  name: string;
-  description: string;
-}
+import type { CommandInfo } from './slashCommands';
 
 /**
  * Callbacks for input area to communicate with parent.

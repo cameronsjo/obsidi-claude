@@ -17,7 +17,7 @@ export type ContextType = 'file' | 'folder' | 'vault' | 'none';
 /**
  * Context information for the active note badge display.
  */
-export interface ActiveActiveContextInfo {
+export interface ActiveContextInfo {
   type: ContextType;
   name: string;
   path?: string;
