@@ -337,19 +337,9 @@ export class ChatView extends ItemView {
 
   private buildMessageOrchestrator(deps: { app: typeof this.plugin.app; plugin: typeof this.plugin }): void {
     this.messageOrchestrator = createMessageOrchestrator(deps, {
-      onMessageStart: (msg) => { this.renderMessage(msg); this.updateTokenCounter(); if (msg.role === 'user') this.scrollModule?.resetScrollState(); this.scrollModule?.scrollToBottom(); },
-      onMessageUpdate: (id, content) => this.messageModule?.updateContent(id, content),
-      onMessageComplete: (id) => { const el = this.messageElements.get(id); if (el) (el.querySelector('.message-actions') as HTMLElement)?.style.removeProperty('display'); },
-      onToolCall: (id, tools) => this.messageModule?.updateTools(id, tools), onToolResult: () => {}, onError: (error) => log.error('Agent error', error),
-      onProcessingChange: (processing) => this.setProcessing(processing), onStatusChange: (message, type) => this.setStatus(message, type),
-      onSessionInit: (sessionId, tools) => log.info('Session initialized', { sessionId, toolCount: tools.length }), onSdkUuid: () => {},
-      onToolSummary: (id, summary) => this.updateToolSummary(id, summary), onFilesPersisted: (files) => log.info('Files modified', { count: files.length }),
-      onTaskNotification: (taskId, status, summary, outputFile, assistantMsgId) => this.handleTaskNotification(taskId, status, summary, outputFile, assistantMsgId),
-      onCompactionStatus: (status) => this.setStatus(status === 'compacting' ? 'Compacting context...' : '', 'info'),
-      onCompactionBoundary: async (trigger, preTokens) => { new Notice(`Context compacted: ~${Math.round(preTokens / 1000)}K tokens (${trigger})`, 3000); if (!this.conversation.metadata) this.conversation.metadata = { backendType: this.getBackend().type }; if (!this.conversation.metadata.compactions) this.conversation.metadata.compactions = []; this.conversation.metadata.compactions.push({ timestamp: Date.now(), trigger, preTokens }); await this.saveConversation(); },
-      getBackend: () => this.getBackend(), getConversation: () => this.conversation, getContext: () => this.buildContextInfo(),
-      saveConversation: () => this.saveConversation(), updateTokenCounter: () => this.updateTokenCounter(), refreshStatusBar: () => this.statusModule?.refresh(),
-      scrollToBottom: () => this.scrollModule?.scrollToBottom(), getModel: () => this.plugin.settings.model,
+      getBackend: () => this.getBackend(),
+      onProcessingChange: (processing) => this.setProcessing(processing),
+      onStatusChange: (message, type) => this.setStatus(message, type),
     });
   }
 
