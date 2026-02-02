@@ -93,21 +93,6 @@ The plugin uses the official Claude Agent SDK which spawns Claude Code as a subp
 
 The plugin supports two backends: **SDK** (full Claude Code features) and **API** (direct Anthropic API).
 
-<!-- Generated with beautiful-mermaid from:
-flowchart TD
-    A[preferredBackend?] --> B{'sdk'}
-    A --> C{'api'}
-    A --> D{'auto'}
-    B --> E{SDK available?}
-    E -->|yes| F[SDK Backend]
-    E -->|no| G[API Backend]
-    C --> G
-    D --> H{Platform?}
-    H -->|desktop| I{SDK available?}
-    H -->|mobile| G
-    I -->|yes| F
-    I -->|no| G
--->
 ```
 ┌───────────────────┐
 │ preferredBackend? ├─────┬────────┐
