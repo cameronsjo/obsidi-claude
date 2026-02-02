@@ -41,6 +41,9 @@ export function createMobileSupport(
   callbacks: MobileSupportCallbacks
 ): MobileSupportHandle {
   let fabElement: HTMLElement | null = null;
+  let touchContainer: HTMLElement | null = null;
+  let boundTouchStart: ((e: TouchEvent) => void) | null = null;
+  let boundTouchEnd: ((e: TouchEvent) => void) | null = null;
 
   // Create FAB only on mobile
   if (callbacks.isMobile()) {
@@ -69,22 +72,25 @@ export function createMobileSupport(
     hintText.textContent = 'Swipe left or right to switch conversations';
   }
 
-  function setupTouchHandling(touchContainer: HTMLElement): void {
+  function setupTouchHandling(container: HTMLElement): void {
     if (!callbacks.isMobile()) {
       return;
     }
 
+    // Store reference for cleanup
+    touchContainer = container;
+
     let startX = 0;
     let startY = 0;
 
-    const handleTouchStart = (e: TouchEvent): void => {
+    boundTouchStart = (e: TouchEvent): void => {
       if (e.touches.length === 1) {
         startX = e.touches[0].clientX;
         startY = e.touches[0].clientY;
       }
     };
 
-    const handleTouchEnd = (e: TouchEvent): void => {
+    boundTouchEnd = (e: TouchEvent): void => {
       if (e.changedTouches.length === 1) {
         const endX = e.changedTouches[0].clientX;
         const endY = e.changedTouches[0].clientY;
@@ -102,11 +108,21 @@ export function createMobileSupport(
       }
     };
 
-    touchContainer.addEventListener('touchstart', handleTouchStart, { passive: true });
-    touchContainer.addEventListener('touchend', handleTouchEnd, { passive: true });
+    touchContainer.addEventListener('touchstart', boundTouchStart, { passive: true });
+    touchContainer.addEventListener('touchend', boundTouchEnd, { passive: true });
   }
 
   function destroy(): void {
+    // Remove touch event listeners
+    if (touchContainer && boundTouchStart && boundTouchEnd) {
+      touchContainer.removeEventListener('touchstart', boundTouchStart);
+      touchContainer.removeEventListener('touchend', boundTouchEnd);
+    }
+    touchContainer = null;
+    boundTouchStart = null;
+    boundTouchEnd = null;
+
+    // Remove FAB element
     if (fabElement) {
       fabElement.remove();
       fabElement = null;

@@ -77,6 +77,8 @@ const log = createLogger('ChatView');
 
 // Constants
 const CHARS_PER_TOKEN_ESTIMATE = 4;
+const QUEUE_NEXT_DELAY_MS = 500;
+const VAULT_REFRESH_DEBOUNCE_MS = 500;
 
 export const CHAT_VIEW_TYPE = 'obsidi-claude-chat';
 
@@ -311,7 +313,13 @@ export class ChatView extends ItemView {
   }
 
   private buildStatusBar(deps: { app: typeof this.plugin.app; plugin: typeof this.plugin }): void {
-    if (!this.statusBadgesContainer || !this.inputModule) return;
+    if (!this.statusBadgesContainer || !this.inputModule) {
+      log.warn('Status bar initialization skipped - missing dependencies', {
+        hasStatusBadgesContainer: !!this.statusBadgesContainer,
+        hasInputModule: !!this.inputModule,
+      });
+      return;
+    }
     this.statusModule = createStatusBar({ badgesContainer: this.statusBadgesContainer, tokenContainer: this.inputModule.getButtonContainer() }, deps, {
       onBackendClick: () => {}, onAccountClick: () => {}, onTokenCounterClick: () => {},
       onContextClick: () => { this.plugin.settings.activeNoteContext = !this.plugin.settings.activeNoteContext; this.plugin.saveSettings(); this.statusModule?.refresh(); },
@@ -456,8 +464,23 @@ export class ChatView extends ItemView {
 
   private async generateSmartTitle(userMessage: string, assistantMessage: string): Promise<void> {
     const b = this.plugin.backendFactory?.getBackend();
-    if (b?.generateTitle) { try { const t = await b.generateTitle(userMessage, assistantMessage); if (t && this.conversation.title === 'New Conversation') { this.conversation.title = t; this.updateTitle(); await this.plugin.storage.saveConversation(this.conversation); return; } } catch { /* fallback */ } }
-    if (this.conversation.title === 'New Conversation') { this.conversation.title = this.plugin.storage.generateTitle(userMessage); this.updateTitle(); }
+    if (b?.generateTitle) {
+      try {
+        const t = await b.generateTitle(userMessage, assistantMessage);
+        if (t && this.conversation.title === 'New Conversation') {
+          this.conversation.title = t;
+          this.updateTitle();
+          await this.plugin.storage.saveConversation(this.conversation);
+          return;
+        }
+      } catch (error) {
+        log.warn('Smart title generation failed, using fallback', { error });
+      }
+    }
+    if (this.conversation.title === 'New Conversation') {
+      this.conversation.title = this.plugin.storage.generateTitle(userMessage);
+      this.updateTitle();
+    }
   }
 
   private async loadConversationById(id: string): Promise<void> { const c = await this.plugin.storage.loadConversation(id); if (c) { this.conversation = c; this.contextModule?.resetNoteTracking(); await this.plugin.storage.setCurrentConversationId(id); this.renderAllMessages(); this.updateTitle(); this.historyModule?.toggle(); } }
@@ -555,7 +578,7 @@ export class ChatView extends ItemView {
         else this.setStatus(`Errors: ${result.errors?.join(', ') || 'Unknown error'}`, 'error');
         this.conversation.updatedAt = Date.now();
         await this.saveConversation();
-        if ((this.queueModule?.getCount() ?? 0) > 0) setTimeout(() => this.processNextInQueue(), 500);
+        if ((this.queueModule?.getCount() ?? 0) > 0) setTimeout(() => this.processNextInQueue(), QUEUE_NEXT_DELAY_MS);
       },
       onError: (error) => {
         this.setProcessing(false);
@@ -575,7 +598,7 @@ export class ChatView extends ItemView {
       onFilesPersisted: (filenames) => {
         log.info('Files modified', { count: filenames.length });
         if (this.vaultRefreshTimeout) clearTimeout(this.vaultRefreshTimeout);
-        this.vaultRefreshTimeout = setTimeout(() => this.plugin.app.vault.trigger('modify'), 500);
+        this.vaultRefreshTimeout = setTimeout(() => this.plugin.app.vault.trigger('modify'), VAULT_REFRESH_DEBOUNCE_MS);
       },
       onTaskNotification: (taskId, status, summary, outputFile) => this.handleTaskNotification(taskId, status, summary, outputFile, currentAssistantMsgId),
       onCompactionStatus: (status) => this.setStatus(status === 'compacting' ? 'Compacting context...' : '', 'info'),
@@ -638,7 +661,7 @@ export class ChatView extends ItemView {
         this.showTemporaryStatus('Queued message failed', 'error', 3000);
         // Continue processing queue despite error
         if ((this.queueModule?.getCount() ?? 0) > 0) {
-          setTimeout(() => this.processNextInQueue(), 500);
+          setTimeout(() => this.processNextInQueue(), QUEUE_NEXT_DELAY_MS);
         }
       }
     }
