@@ -3134,67 +3134,6 @@ ${content}
   }
 
   /**
-   * Show the list of available skills.
-   */
-  private showSkillsList(): void {
-    const skills = this.plugin.skillRegistry.getSkills();
-
-    if (!this.plugin.settings.skills.enabled) {
-      this.showTemporaryStatus('Skills are disabled. Enable them in settings.', 'info', 3000);
-      return;
-    }
-
-    if (skills.length === 0) {
-      this.showTemporaryStatus(
-        `No skills found. Add SKILL.md files to ${this.plugin.settings.skills.folderPath}`,
-        'info',
-        3000
-      );
-      return;
-    }
-
-    // Build skills display
-    const lines: string[] = ['**Available Skills:**\n'];
-
-    // Group skills by always-active vs triggered
-    const alwaysActive = skills.filter(s => s.alwaysActive);
-    const triggered = skills.filter(s => !s.alwaysActive);
-
-    if (alwaysActive.length > 0) {
-      lines.push('**Always Active:**');
-      for (const skill of alwaysActive) {
-        lines.push(`- **${skill.name}**: ${skill.description}`);
-      }
-      lines.push('');
-    }
-
-    if (triggered.length > 0) {
-      lines.push('**Triggered by Keywords:**');
-      for (const skill of triggered) {
-        const triggers = skill.triggers.slice(0, 3).join(', ');
-        const moreCount = skill.triggers.length > 3 ? ` +${skill.triggers.length - 3} more` : '';
-        lines.push(`- **${skill.name}**: ${skill.description}`);
-        if (triggers) {
-          lines.push(`  - *Triggers:* ${triggers}${moreCount}`);
-        }
-      }
-    }
-
-    lines.push('');
-    lines.push(`*Skills folder: \`${this.plugin.settings.skills.folderPath}\`*`);
-
-    const skillsMsg: ChatMessage = {
-      id: generateId(),
-      role: 'assistant',
-      content: lines.join('\n'),
-      timestamp: Date.now(),
-    };
-
-    this.renderMessage(skillsMsg);
-    this.scrollToBottom(true);
-  }
-
-  /**
    * Generate a note from the current conversation.
    * Supports formats: full (default), summary, q-and-a
    */
