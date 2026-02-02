@@ -16,3 +16,8 @@ export * from './messageOrchestrator';
 export * from './conversationStore';
 export * from './contextLoader';
 export * from './slashCommands';
+export * from './voiceInput';
+export * from './autocomplete';
+export * from './keyboardHandler';
+export * from './exportHandler';
+export * from './scrollManager';

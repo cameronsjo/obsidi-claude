@@ -31,6 +31,11 @@ import {
   createSlashCommands,
   createContextLoader,
   createConversationStore,
+  createAutocomplete,
+  createExportHandler,
+  createKeyboardHandler,
+  createVoiceInput,
+  createScrollManager,
   type SearchBarHandle,
   type QueuePanelHandle,
   type StatusBarHandle,
@@ -45,12 +50,16 @@ import {
   type ContextLoaderHandle,
   type ContextInfo,
   type ConversationStoreHandle,
+  type AutocompleteHandle,
+  type ExportHandlerHandle,
+  type KeyboardHandlerHandle,
+  type VoiceInputHandle,
+  type ScrollManagerHandle,
 } from './chatView/index';
 
 const log = createLogger('ChatView');
 
 // UI Configuration Constants
-const SCROLL_THRESHOLD_PX = 100;
 const MAX_TEXTAREA_HEIGHT_PX = 180;
 const CHARS_PER_TOKEN_ESTIMATE = 4;
 
@@ -82,12 +91,7 @@ export class ChatView extends ItemView {
   private isProcessing = false;
   private messageElements: Map<string, HTMLElement> = new Map();
   private searchVisible = false;
-  private userScrolledUp = false;
   private vaultRefreshTimeout: ReturnType<typeof setTimeout> | null = null;
-
-  // Voice input state
-  private isRecording = false;
-  private speechRecognition: SpeechRecognition | null = null;
 
   // Message queue container (UI created by module)
   private queueContainer: HTMLElement;
@@ -98,12 +102,6 @@ export class ChatView extends ItemView {
   private tabsEnabled = true; // Can be disabled via settings
 
   // Scroll to bottom button
-  private scrollToBottomBtn: HTMLElement | null = null;
-
-  // Command autocomplete
-  private autocompleteEl: HTMLElement | null = null;
-  private autocompleteIndex = -1;
-  private autocompleteCommands: Array<{ name: string; description: string }> = [];
 
   // Extracted UI module handles
   private searchBarModule: SearchBarHandle | null = null;
@@ -117,6 +115,11 @@ export class ChatView extends ItemView {
   private messageOrchestrator: MessageOrchestratorHandle | null = null;
   private slashCommandsModule: SlashCommandsHandle | null = null;
   private contextModule: ContextLoaderHandle | null = null;
+  private autocompleteModule: AutocompleteHandle | null = null;
+  private exportModule: ExportHandlerHandle | null = null;
+  private keyboardModule: KeyboardHandlerHandle | null = null;
+  private voiceModule: VoiceInputHandle | null = null;
+  private scrollModule: ScrollManagerHandle | null = null;
 
   // Container references for deferred module initialization
   private statusBadgesContainer: HTMLElement | null = null;
@@ -288,7 +291,14 @@ export class ChatView extends ItemView {
 
     // Messages area
     this.messagesContainer = container.createDiv('chat-messages');
-    this.setupScrollTracking();
+
+    // Initialize scroll manager module
+    this.scrollModule = createScrollManager(this.messagesContainer, deps, {
+      onUserScrollChange: () => {
+        // Scroll state is managed by the module
+      },
+      getMessageElement: (id) => this.messageElements.get(id),
+    });
 
     // Initialize message renderer module
     this.messageModule = createMessageRenderer(this.messagesContainer, deps, {
@@ -331,7 +341,7 @@ export class ChatView extends ItemView {
           this.resumeFromMessage(msg);
         }
       },
-      scrollToBottom: () => this.scrollToBottom(),
+      scrollToBottom: () => this.scrollModule?.scrollToBottom(),
       canResume: (msg) => !!(msg.sdkUuid && this.getBackend().type === 'sdk'),
     });
 
@@ -339,29 +349,62 @@ export class ChatView extends ItemView {
     this.statusEl = container.createDiv('chat-status');
     this.statusEl.style.display = 'none';
 
+    // Voice input module
+    this.voiceModule = createVoiceInput({
+      onTranscript: (text) => {
+        if (this.inputModule) {
+          this.inputModule.setValue(text);
+          this.inputModule.resize();
+        }
+      },
+      onError: (error) => {
+        this.showTemporaryStatus(error, 'error');
+      },
+      onStateChange: (recording) => {
+        if (this.inputModule) {
+          this.inputModule.setRecording(recording);
+        }
+        if (recording) {
+          this.showTemporaryStatus('Listening...', 'info', 10000);
+        } else {
+          this.setStatus('');
+        }
+      },
+    });
+
     // Input area - use module
     const inputAreaContainer = container.createDiv('chat-input-area');
     this.inputModule = createInputArea(inputAreaContainer, deps, {
       onSend: (content) => this.sendMessage(content),
       onStop: () => this.stopGeneration(),
-      onVoiceToggle: () => this.toggleVoiceInput(),
+      onVoiceToggle: () => this.voiceModule?.toggle(),
       onImageAdd: (image) => {
         log.info('Image added', { filename: image.filename, mimeType: image.mimeType });
       },
       onImageRemove: (index) => {
         log.debug('Image removed', { index });
       },
-      onInputChange: () => {
-        this.updateAutocomplete();
+      onInputChange: (value) => {
+        this.autocompleteModule?.update(value);
       },
       onKeyDown: (e) => this.handleInputKeyDown(e),
       getCommands: () => getCommandList(),
-      isVoiceAvailable: () => ('webkitSpeechRecognition' in window) || ('SpeechRecognition' in window),
+      isVoiceAvailable: () => this.voiceModule?.isAvailable() ?? false,
     });
 
     // Store references for backward compatibility
     this.inputEl = this.inputModule.getInputElement();
     this.inputWrapper = this.inputModule.getWrapper();
+
+    // Initialize autocomplete module
+    this.autocompleteModule = createAutocomplete(this.inputWrapper, {
+      getCommands: () => getCommandList(),
+      onSelect: (command) => {
+        this.inputEl.value = command;
+        this.inputEl.focus();
+        this.inputModule?.resize();
+      },
+    });
 
     // Initialize status bar module with input area's button container
     if (this.statusBadgesContainer) {
@@ -453,9 +496,9 @@ export class ChatView extends ItemView {
         this.renderMessage(msg);
         this.updateTokenCounter();
         if (msg.role === 'user') {
-          this.userScrolledUp = false;
+          this.scrollModule?.resetScrollState();
         }
-        this.scrollToBottom();
+        this.scrollModule?.scrollToBottom();
       },
       onMessageUpdate: (id, content) => {
         this.updateMessageContent(id, content);
@@ -529,7 +572,7 @@ export class ChatView extends ItemView {
       saveConversation: () => this.saveConversation(),
       updateTokenCounter: () => this.updateTokenCounter(),
       refreshStatusBar: () => this.refreshStatusBar(),
-      scrollToBottom: () => this.scrollToBottom(),
+      scrollToBottom: () => this.scrollModule?.scrollToBottom(),
       getModel: () => this.plugin.settings.model,
     });
 
@@ -550,7 +593,7 @@ export class ChatView extends ItemView {
     this.slashCommandsModule = createSlashCommands(deps, {
       getCommandContext: () => this.createCommandContext(),
       renderMessage: (msg) => this.renderMessage(msg),
-      scrollToBottom: (force) => this.scrollToBottom(force),
+      scrollToBottom: (force) => this.scrollModule?.scrollToBottom(force),
       showTemporaryStatus: (msg, type, duration) => this.showTemporaryStatus(msg, type, duration),
       toggleHistory: () => this._toggleHistory(),
       togglePin: async () => {
@@ -574,7 +617,7 @@ export class ChatView extends ItemView {
       },
       showStats: () => this.showConversationStats(),
       showUsageDashboard: () => this.showUsageDashboard(),
-      copyToClipboard: () => this.copyConversationToClipboard(),
+      copyToClipboard: () => this.exportModule?.copyToClipboard() ?? Promise.resolve(),
       handleToolsCommand: (args) => this.handleToolsCommand(args),
       handleContextCommand: (args) => this.handleContextCommand(args),
       handleDuplicateCommand: () => this.handleDuplicateCommand(),
@@ -598,8 +641,34 @@ export class ChatView extends ItemView {
       getSkillsFolderPath: () => this.plugin.settings.skills.folderPath,
     });
 
-    // Register keyboard shortcuts
-    this.registerKeyboardShortcuts(container);
+    // Export handler module
+    this.exportModule = createExportHandler(deps, {
+      getConversation: () => this.conversation,
+      getModel: () => this.plugin.settings.model,
+      showStatus: (msg, type, duration) => this.showTemporaryStatus(msg, type, duration),
+      setStatus: (msg, type) => this.setStatus(msg, type),
+    });
+
+    // Register keyboard shortcuts via module
+    this.keyboardModule = createKeyboardHandler(container, deps, {
+      onNewConversation: () => this._newConversation(),
+      onToggleSearch: () => this._toggleSearch(),
+      onToggleHistory: () => this._toggleHistory(),
+      onFocusInput: () => this.inputEl.focus(),
+      onExport: () => this.exportModule?.export(),
+      onTogglePin: async () => {
+        await this.plugin.storage.togglePin(this.conversation.id);
+        this.conversation.pinned = !this.conversation.pinned;
+        this.showTemporaryStatus(
+          this.conversation.pinned ? 'Conversation pinned' : 'Conversation unpinned',
+          'success',
+          1500
+        );
+      },
+      isSearchVisible: () => this.searchVisible,
+      isHistoryVisible: () => this.historyModule?.isVisible() ?? false,
+    });
+    this.keyboardModule.register();
 
     // Listen for active file changes to update context badge
     this.registerEvent(
@@ -662,76 +731,6 @@ export class ChatView extends ItemView {
         });
       },
     });
-  }
-
-  private registerKeyboardShortcuts(container: HTMLElement): void {
-    // Use keydown on the container for global shortcuts
-    container.addEventListener('keydown', (e) => {
-      const isMod = e.ctrlKey || e.metaKey;
-
-      // Ctrl/Cmd+F for search
-      if (isMod && e.key === 'f') {
-        e.preventDefault();
-        e.stopPropagation();
-        this._toggleSearch();
-        return;
-      }
-
-      // Ctrl/Cmd+N for new conversation
-      if (isMod && e.key === 'n') {
-        e.preventDefault();
-        e.stopPropagation();
-        this._newConversation();
-        return;
-      }
-
-      // Ctrl/Cmd+H for history panel
-      if (isMod && e.key === 'h') {
-        e.preventDefault();
-        e.stopPropagation();
-        this._toggleHistory();
-        return;
-      }
-
-      // Ctrl/Cmd+E for export
-      if (isMod && e.key === 'e') {
-        e.preventDefault();
-        e.stopPropagation();
-        this.exportConversation();
-        return;
-      }
-
-      // Ctrl/Cmd+P for pin toggle
-      if (isMod && e.shiftKey && e.key === 'p') {
-        e.preventDefault();
-        e.stopPropagation();
-        this.togglePinConversation(this.conversation.id);
-        return;
-      }
-
-      // Ctrl/Cmd+L to focus input (like terminal)
-      if (isMod && e.key === 'l') {
-        e.preventDefault();
-        e.stopPropagation();
-        this.inputEl.focus();
-        return;
-      }
-
-      // Escape to close search or history
-      if (e.key === 'Escape') {
-        if (this.searchVisible) {
-          this._toggleSearch();
-        } else if (this.historyModule?.isVisible()) {
-          this._toggleHistory();
-        } else {
-          // Focus input if nothing else to close
-          this.inputEl.focus();
-        }
-      }
-    });
-
-    // Make container focusable for keyboard events
-    container.setAttribute('tabindex', '-1');
   }
 
   private createHeader(header: HTMLElement): void {
@@ -863,28 +862,6 @@ export class ChatView extends ItemView {
     log.info('Processing next message from queue');
     this.inputEl.value = nextMessage.content;
     await this.sendMessage();
-  }
-
-  private setupScrollTracking(): void {
-    // Create scroll-to-bottom button
-    this.scrollToBottomBtn = this.messagesContainer.createEl('button', {
-      cls: 'scroll-to-bottom-btn',
-      attr: { 'aria-label': 'Scroll to bottom' },
-    });
-    setIcon(this.scrollToBottomBtn, 'arrow-down');
-    this.scrollToBottomBtn.onclick = () => this.scrollToBottom(true);
-
-    this.messagesContainer.addEventListener('scroll', () => {
-      const { scrollTop, scrollHeight, clientHeight } = this.messagesContainer;
-      const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
-      // User is "near bottom" if within threshold of the bottom
-      this.userScrolledUp = distanceFromBottom > SCROLL_THRESHOLD_PX;
-
-      // Show/hide scroll-to-bottom button
-      if (this.scrollToBottomBtn) {
-        this.scrollToBottomBtn.toggleClass('visible', this.userScrolledUp);
-      }
-    });
   }
 
   private async promptRenameConversation(id: string, currentTitle: string): Promise<void> {
@@ -1294,8 +1271,8 @@ export class ChatView extends ItemView {
       }
     }
     // Force scroll when rendering all messages (loading conversation)
-    this.userScrolledUp = false;
-    this.scrollToBottom(true);
+    this.scrollModule?.resetScrollState();
+    this.scrollModule?.scrollToBottom(true);
 
     // Update token counter
     this.updateTokenCounter();
@@ -1820,7 +1797,7 @@ export class ChatView extends ItemView {
       actionsDiv.style.display = '';
     }
 
-    this.scrollToBottom();
+    this.scrollModule?.scrollToBottom();
   }
 
   private addCodeBlockCopyButtons(container: HTMLElement): void {
@@ -1959,7 +1936,7 @@ export class ChatView extends ItemView {
       timestamp: Date.now(),
     };
     this.renderMessage(dashboardMsg);
-    this.scrollToBottom(true);
+    this.scrollModule?.scrollToBottom(true);
   }
 
   /**
@@ -2076,7 +2053,7 @@ export class ChatView extends ItemView {
       showTemporaryStatus: (msg, type, duration) => this.showTemporaryStatus(msg, type, duration),
       setStatus: (msg, type) => this.setStatus(msg, type),
       renderAllMessages: () => this.renderAllMessages(),
-      scrollToBottom: (force) => this.scrollToBottom(force),
+      scrollToBottom: (force) => this.scrollModule?.scrollToBottom(force),
 
       clearMessages: () => this._clearMessages(),
       newConversation: () => this._newConversation(),
@@ -2091,9 +2068,9 @@ export class ChatView extends ItemView {
       addTagToConversation: (tag) => this.addTagToConversation(tag),
       removeTagFromConversation: (tag) => this.removeTagFromConversation(tag),
       saveConversation: () => this.saveConversation(),
-      exportConversation: () => this.exportConversation(),
-      exportToClipboard: () => this.exportToClipboard(),
-      exportToJson: () => this.exportToJson(),
+      exportConversation: () => this.exportModule?.downloadMarkdown() ?? Promise.resolve(),
+      exportToClipboard: () => this.exportModule?.copyToClipboard() ?? Promise.resolve(),
+      exportToJson: () => this.exportModule?.downloadJSON() ?? Promise.resolve(),
 
       resizeInput: () => {
         if (this.inputModule) {
@@ -2156,26 +2133,7 @@ export class ChatView extends ItemView {
       timestamp: Date.now(),
     };
     this.renderMessage(statsMsg);
-    this.scrollToBottom(true);
-  }
-
-  /**
-   * Copy entire conversation to clipboard as markdown.
-   */
-  private async copyConversationToClipboard(): Promise<void> {
-    const lines: string[] = [];
-    lines.push(`# ${this.conversation.title}`);
-    lines.push('');
-
-    for (const msg of this.conversation.messages) {
-      const role = msg.role === 'user' ? 'You' : 'Claude';
-      lines.push(`**${role}:**`);
-      lines.push(msg.content);
-      lines.push('');
-    }
-
-    await navigator.clipboard.writeText(lines.join('\n'));
-    this.showTemporaryStatus('Conversation copied to clipboard', 'success', 2000);
+    this.scrollModule?.scrollToBottom(true);
   }
 
   /**
@@ -2263,7 +2221,7 @@ export class ChatView extends ItemView {
         timestamp: Date.now(),
       };
       this.renderMessage(bookmarkMsg);
-      this.scrollToBottom(true);
+      this.scrollModule?.scrollToBottom(true);
     }
   }
 
@@ -2461,7 +2419,7 @@ export class ChatView extends ItemView {
         timestamp: Date.now(),
       };
       this.renderMessage(msg);
-      this.scrollToBottom(true);
+      this.scrollModule?.scrollToBottom(true);
       return;
     }
 
@@ -2693,7 +2651,7 @@ export class ChatView extends ItemView {
       timestamp: Date.now(),
     };
     this.renderMessage(mcpMsg);
-    this.scrollToBottom(true);
+    this.scrollModule?.scrollToBottom(true);
   }
 
   /**
@@ -2734,7 +2692,7 @@ export class ChatView extends ItemView {
         timestamp: Date.now(),
       };
       this.renderMessage(modeMsg);
-      this.scrollToBottom(true);
+      this.scrollModule?.scrollToBottom(true);
       return;
     }
 
@@ -2833,7 +2791,7 @@ export class ChatView extends ItemView {
       onMessage: (msg) => {
         this.conversation.messages.push(msg);
         this.renderMessage(msg);
-        this.scrollToBottom();
+        this.scrollModule?.scrollToBottom();
       },
       onStreamingUpdate: (messageId, newContent) => {
         const msg = this.conversation.messages.find((m) => m.id === messageId);
@@ -2936,7 +2894,7 @@ ${content}
       timestamp: Date.now(),
     };
     this.renderMessage(extractMsg);
-    this.scrollToBottom(true);
+    this.scrollModule?.scrollToBottom(true);
   }
 
   /**
@@ -3014,7 +2972,7 @@ ${content}
       onMessage: (msg) => {
         this.conversation.messages.push(msg);
         this.renderMessage(msg);
-        this.scrollToBottom();
+        this.scrollModule?.scrollToBottom();
       },
       onStreamingUpdate: (messageId, newContent) => {
         const msg = this.conversation.messages.find((m) => m.id === messageId);
@@ -3130,7 +3088,7 @@ ${content}
       timestamp: Date.now(),
     };
     this.renderMessage(analysisMsg);
-    this.scrollToBottom(true);
+    this.scrollModule?.scrollToBottom(true);
   }
 
   /**
@@ -3333,9 +3291,9 @@ ${content}
 
         // Force scroll when user sends a message or assistant starts replying
         if (msg.role === 'user') {
-          this.userScrolledUp = false;
+          this.scrollModule?.resetScrollState();
         }
-        this.scrollToBottom();
+        this.scrollModule?.scrollToBottom();
       },
 
       onStreamingUpdate: (messageId, content) => {
@@ -3774,210 +3732,6 @@ ${content}
     this.inputEl.focus();
   }
 
-  private async exportConversation(): Promise<void> {
-    if (this.conversation.messages.length === 0) {
-      this.showTemporaryStatus('No messages to export', 'info', 2000);
-      return;
-    }
-
-    log.info('Exporting conversation', { id: this.conversation.id });
-
-    // Build markdown content
-    const lines: string[] = [];
-    const date = new Date(this.conversation.createdAt);
-    const dateStr = date.toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    });
-
-    // Frontmatter
-    lines.push('---');
-    lines.push(`title: "${this.conversation.title}"`);
-    lines.push(`date: ${date.toISOString()}`);
-    lines.push('tags:');
-    lines.push('  - claude-chat');
-    lines.push('---');
-    lines.push('');
-
-    // Header
-    lines.push(`# ${this.conversation.title}`);
-    lines.push('');
-    lines.push(`*Exported from Claude Chat on ${dateStr}*`);
-    lines.push('');
-    lines.push('---');
-    lines.push('');
-
-    // Messages
-    for (const msg of this.conversation.messages) {
-      const role = msg.role === 'user' ? '**You**' : '**Claude**';
-      const time = new Date(msg.timestamp).toLocaleTimeString([], {
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-
-      lines.push(`### ${role} *${time}*`);
-      lines.push('');
-      lines.push(msg.content);
-      lines.push('');
-
-      // Include tool calls if present
-      if (msg.toolCalls && msg.toolCalls.length > 0) {
-        lines.push('<details>');
-        lines.push('<summary>Tool calls</summary>');
-        lines.push('');
-        for (const tool of msg.toolCalls) {
-          lines.push(`- **${tool.name}**`);
-          if (tool.result) {
-            lines.push('  ```');
-            lines.push(`  ${tool.result.slice(0, 200)}${tool.result.length > 200 ? '...' : ''}`);
-            lines.push('  ```');
-          }
-        }
-        lines.push('');
-        lines.push('</details>');
-        lines.push('');
-      }
-
-      lines.push('---');
-      lines.push('');
-    }
-
-    const content = lines.join('\n');
-
-    // Generate filename
-    const sanitizedTitle = this.conversation.title
-      .replace(/[\\/:*?"<>|]/g, '-')
-      .slice(0, 50);
-    const filename = `Claude Chat - ${sanitizedTitle}.md`;
-
-    // Create in vault root or a claude-exports folder
-    const folderPath = 'Claude Exports';
-    const folder = this.plugin.app.vault.getAbstractFileByPath(folderPath);
-    if (!folder) {
-      await this.plugin.app.vault.createFolder(folderPath);
-    }
-
-    const filePath = `${folderPath}/${filename}`;
-
-    try {
-      const existingFile = this.plugin.app.vault.getAbstractFileByPath(filePath);
-      if (existingFile) {
-        // Overwrite existing file
-        await this.plugin.app.vault.modify(existingFile as import('obsidian').TFile, content);
-      } else {
-        await this.plugin.app.vault.create(filePath, content);
-      }
-
-      this.showTemporaryStatus(`Exported to "${filename}"`, 'success');
-
-      log.info('Conversation exported', { path: filePath });
-    } catch (error) {
-      log.error('Failed to export conversation', error);
-      this.setStatus('Export failed', 'error');
-    }
-  }
-
-  /**
-   * Handle /export command with format options.
-   */
-  private async handleExportCommand(args: string): Promise<void> {
-    if (this.conversation.messages.length === 0) {
-      this.showTemporaryStatus('No messages to export', 'info', 2000);
-      return;
-    }
-
-    const format = args.toLowerCase().trim();
-
-    switch (format) {
-      case 'clipboard':
-      case 'copy':
-        await this.exportToClipboard();
-        break;
-      case 'json':
-        await this.exportToJson();
-        break;
-      case 'md':
-      case 'markdown':
-      case '':
-        await this.exportConversation();
-        break;
-      default:
-        this.showTemporaryStatus('Unknown format. Use: /export [clipboard|json|markdown]', 'info', 3000);
-    }
-  }
-
-  /**
-   * Export conversation to clipboard as markdown.
-   */
-  private async exportToClipboard(): Promise<void> {
-    const lines: string[] = [];
-    lines.push(`# ${this.conversation.title}`);
-    lines.push('');
-
-    for (const msg of this.conversation.messages) {
-      const role = msg.role === 'user' ? '**You**' : '**Claude**';
-      lines.push(`### ${role}`);
-      lines.push('');
-      lines.push(msg.content);
-      lines.push('');
-      lines.push('---');
-      lines.push('');
-    }
-
-    await navigator.clipboard.writeText(lines.join('\n'));
-    this.showTemporaryStatus('Copied to clipboard', 'success', 2000);
-  }
-
-  /**
-   * Export conversation to JSON file.
-   */
-  private async exportToJson(): Promise<void> {
-    const exportData = {
-      id: this.conversation.id,
-      title: this.conversation.title,
-      createdAt: this.conversation.createdAt,
-      exportedAt: Date.now(),
-      model: this.plugin.settings.model,
-      messages: this.conversation.messages.map(m => ({
-        id: m.id,
-        role: m.role,
-        content: m.content,
-        timestamp: m.timestamp,
-        toolCalls: m.toolCalls,
-      })),
-    };
-
-    const content = JSON.stringify(exportData, null, 2);
-
-    const sanitizedTitle = this.conversation.title
-      .replace(/[\\/:*?"<>|]/g, '-')
-      .slice(0, 50);
-    const filename = `Claude Chat - ${sanitizedTitle}.json`;
-
-    const folderPath = 'Claude Exports';
-    const folder = this.plugin.app.vault.getAbstractFileByPath(folderPath);
-    if (!folder) {
-      await this.plugin.app.vault.createFolder(folderPath);
-    }
-
-    const filePath = `${folderPath}/${filename}`;
-
-    try {
-      const existingFile = this.plugin.app.vault.getAbstractFileByPath(filePath);
-      if (existingFile) {
-        await this.plugin.app.vault.modify(existingFile as import('obsidian').TFile, content);
-      } else {
-        await this.plugin.app.vault.create(filePath, content);
-      }
-
-      this.showTemporaryStatus(`Exported JSON to "${filename}"`, 'success');
-    } catch (error) {
-      log.error('Failed to export JSON', error);
-      this.setStatus('Export failed', 'error');
-    }
-  }
-
   private async _clearMessages(): Promise<void> {
     log.info('Clearing messages', { conversationId: this.conversation.id });
     this.conversation.messages = [];
@@ -4037,13 +3791,6 @@ ${content}
     this._toggleSearch();
   }
 
-  private scrollToBottom(force = false): void {
-    if (!this.messagesContainer) return;
-    // Only auto-scroll if user hasn't scrolled up, or if forced
-    if (!this.userScrolledUp || force) {
-      this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
-    }
-  }
 
   // ===== COMMAND AUTOCOMPLETE =====
 
@@ -4341,6 +4088,8 @@ ${content}
     this.messageModule?.destroy();
     this.inputModule?.destroy();
     this.historyModule?.destroy();
+    this.keyboardModule?.destroy();
+    this.exportModule?.destroy();
 
     // Save tabs and conversation before closing
     await this.saveTabState();
