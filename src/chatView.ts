@@ -3983,114 +3983,8 @@ ${content}
   }
 
   /**
-   * Get selected text from the active editor, if any.
-   * Returns the selection with line numbers for context.
-   */
-  private getEditorSelection(): { text: string; startLine: number; endLine: number } | null {
-    const view = this.plugin.app.workspace.getActiveViewOfType(MarkdownView);
-    if (!view) return null;
-
-    const editor = view.editor;
-    const selection = editor.getSelection();
-
-    // Only return if there's actual selected text (not just cursor position)
-    if (!selection || selection.trim().length === 0) return null;
-
-    const from = editor.getCursor('from');
-    const to = editor.getCursor('to');
-
-    return {
-      text: selection,
-      startLine: from.line + 1, // 1-indexed for display
-      endLine: to.line + 1,
-    };
-  }
-
-  /**
-   * Compute a diff between old and new note content.
-   * Returns a formatted string showing only the changed lines with context.
-   */
-  private computeNoteDelta(oldContent: string, newContent: string): string | null {
-    const oldLines = oldContent.split('\n');
-    const newLines = newContent.split('\n');
-    const contextLines = 2; // Lines of context around changes
-    const changes: string[] = [];
-
-    // Simple line-by-line comparison to find changed regions
-    const maxLen = Math.max(oldLines.length, newLines.length);
-    let inChange = false;
-    let changeStart = -1;
-
-    for (let i = 0; i < maxLen; i++) {
-      const oldLine = oldLines[i];
-      const newLine = newLines[i];
-      const isDifferent = oldLine !== newLine;
-
-      if (isDifferent && !inChange) {
-        // Start of a change region
-        inChange = true;
-        changeStart = Math.max(0, i - contextLines);
-      } else if (!isDifferent && inChange) {
-        // End of a change region - output it with context
-        const changeEnd = Math.min(newLines.length, i + contextLines);
-        changes.push(this.formatChangeRegion(oldLines, newLines, changeStart, i - 1, changeEnd));
-        inChange = false;
-      }
-    }
-
-    // Handle change at end of file
-    if (inChange) {
-      const changeEnd = newLines.length;
-      changes.push(this.formatChangeRegion(oldLines, newLines, changeStart, maxLen - 1, changeEnd));
-    }
-
-    if (changes.length === 0) {
-      return null;
-    }
-
-    return changes.join('\n---\n');
-  }
-
-  /**
-   * Format a single change region with context lines.
-   * Uses diff-style markers: - for removed, + for added, space for context.
-   */
-  private formatChangeRegion(
-    oldLines: string[],
-    newLines: string[],
-    contextStart: number,
-    changeEnd: number,
-    contextEnd: number
-  ): string {
-    const result: string[] = [];
-    result.push(`[Lines ${contextStart + 1}-${contextEnd}]`);
-
-    for (let i = contextStart; i < contextEnd; i++) {
-      const oldLine = oldLines[i];
-      const newLine = newLines[i];
-
-      if (oldLine === newLine) {
-        // Context line (unchanged)
-        result.push(`  ${newLine ?? ''}`);
-      } else if (oldLine === undefined) {
-        // Added line
-        result.push(`+ ${newLine}`);
-      } else if (newLine === undefined) {
-        // Removed line
-        result.push(`- ${oldLine}`);
-      } else {
-        // Changed line
-        result.push(`- ${oldLine}`);
-        result.push(`+ ${newLine}`);
-      }
-    }
-
-    return result.join('\n');
-  }
-
-  /**
    * Build context info for message orchestrator.
-   * Includes system prompt, selected text, and active note context.
+   * Delegates to contextModule for note tracking and delta computation.
    */
   private async buildContextInfo(): Promise<ContextInfo> {
     // Build enhanced system prompt with active skills
@@ -4105,59 +3999,45 @@ ${content}
       systemPrompt: enhancedPrompt,
     };
 
-    // Check for active note context
-    if (this.plugin.settings.activeNoteContext) {
-      const activeFile = this.plugin.app.workspace.getActiveFile();
-      if (activeFile && activeFile.extension === 'md') {
-        const notePath = activeFile.path;
+    // Use context module to load active note context
+    if (this.contextModule) {
+      const result = await this.contextModule.load('');
 
-        // Check for selected text first - this takes priority
-        const selection = this.getEditorSelection();
-        if (selection) {
+      // Parse the result to extract structured context info
+      // The module returns XML-formatted context, we need to extract the data
+      if (result.messageContent !== '') {
+        const selectedTextMatch = result.messageContent.match(
+          /<selected_text path="([^"]+)" lines="(\d+)-(\d+)">\n([\s\S]*?)\n<\/selected_text>/
+        );
+        if (selectedTextMatch) {
           contextInfo.selectedText = {
-            path: notePath,
-            startLine: selection.startLine,
-            endLine: selection.endLine,
-            text: selection.text,
+            path: selectedTextMatch[1],
+            startLine: parseInt(selectedTextMatch[2], 10),
+            endLine: parseInt(selectedTextMatch[3], 10),
+            text: selectedTextMatch[4],
           };
-        } else {
-          // No selection - use full note or delta
-          const isNewNote = this.lastSentNotePath !== notePath;
+        }
 
-          try {
-            const noteContent = await this.plugin.app.vault.read(activeFile);
+        const activeNoteMatch = result.messageContent.match(
+          /<active_note path="([^"]+)">\n([\s\S]*?)\n<\/active_note>/
+        );
+        if (activeNoteMatch) {
+          contextInfo.activeNote = {
+            path: activeNoteMatch[1],
+            content: activeNoteMatch[2],
+            isDelta: false,
+          };
+        }
 
-            if (isNewNote) {
-              // Include full note content for new/different notes
-              contextInfo.activeNote = {
-                path: notePath,
-                content: noteContent,
-                isDelta: false,
-              };
-              this.lastSentNotePath = notePath;
-              this.lastSentNoteContent = noteContent;
-            } else if (this.lastSentNoteContent && noteContent !== this.lastSentNoteContent) {
-              // Same note but content changed - send delta if smaller
-              const delta = this.computeNoteDelta(this.lastSentNoteContent, noteContent);
-              if (delta && delta.length < noteContent.length) {
-                contextInfo.activeNote = {
-                  path: notePath,
-                  content: delta,
-                  isDelta: true,
-                };
-              } else if (delta) {
-                // Delta is larger - resend full note
-                contextInfo.activeNote = {
-                  path: notePath,
-                  content: noteContent,
-                  isDelta: false,
-                };
-              }
-              this.lastSentNoteContent = noteContent;
-            }
-          } catch (err) {
-            log.warn('Failed to read active note for context', { path: notePath, error: err });
-          }
+        const deltaMatch = result.messageContent.match(
+          /<active_note_changes path="([^"]+)">\n([\s\S]*?)\n<\/active_note_changes>/
+        );
+        if (deltaMatch) {
+          contextInfo.activeNote = {
+            path: deltaMatch[1],
+            content: deltaMatch[2],
+            isDelta: true,
+          };
         }
       }
     }
