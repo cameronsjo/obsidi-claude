@@ -8,7 +8,7 @@ import {
   type StatusBarCallbacks,
   type StatusBarContainers,
   type BackendInfo,
-  type ContextInfo,
+  type StatusContextInfo,
   type AccountInfo,
   type TokenInfo,
 } from '../../src/chatView/statusBar';

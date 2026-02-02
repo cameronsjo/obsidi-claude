@@ -1105,8 +1105,7 @@ export class ChatView extends ItemView {
     const conv = await this.plugin.storage.loadConversation(id);
     if (conv) {
       this.conversation = conv;
-      this.lastSentNotePath = null; // Reset note tracking when switching conversations
-      this.lastSentNoteContent = null;
+      this.contextModule?.resetNoteTracking(); // Reset note tracking when switching conversations
       await this.plugin.storage.setCurrentConversationId(id);
       this.renderAllMessages();
       this.updateTitle();
@@ -2114,271 +2113,175 @@ export class ChatView extends ItemView {
    * Returns true if the command was handled, false if it should be sent as a message
    */
   private async handleSlashCommand(input: string): Promise<boolean> {
-    // Try the modular command system first
-    const ctx = this.createCommandContext();
-    const handled = await executeCommand(input, ctx);
-    if (handled) {
-      return true;
+    if (this.slashCommandsModule) {
+      return this.slashCommandsModule.process(input);
     }
+    // Fallback if module not initialized
+    return false;
+  }
 
-    // Fall back to inline handlers for complex commands not yet extracted
-    const parts = input.slice(1).split(/\s+/);
-    const command = parts[0].toLowerCase();
-    const args = parts.slice(1).join(' ');
+  /**
+   * Show conversation statistics.
+   */
+  private showConversationStats(): void {
+    const msgCount = this.conversation.messages.length;
+    const userMsgs = this.conversation.messages.filter(m => m.role === 'user').length;
+    const assistantMsgs = this.conversation.messages.filter(m => m.role === 'assistant').length;
+    const tokens = this.estimateTokens();
+    const upVotes = this.conversation.messages.filter(m => m.reaction === 'up').length;
+    const downVotes = this.conversation.messages.filter(m => m.reaction === 'down').length;
+    const created = new Date(this.conversation.createdAt).toLocaleDateString();
 
-    log.debug('Processing slash command (fallback)', { command, args });
-
-    switch (command) {
-      // Commands handled by modular system: clear, new, export, note, search,
-      // queue, help, tag, tags, model, skills
-
-      case 'history':
-        await this._toggleHistory();
-        return true;
-
-      case 'pin':
-        await this.plugin.storage.togglePin(this.conversation.id);
-        this.conversation.pinned = !this.conversation.pinned;
-        this.showTemporaryStatus(
-          this.conversation.pinned ? 'Conversation pinned' : 'Conversation unpinned',
-          'success',
-          1500
-        );
-        return true;
-
-      case 'rename': {
-        if (args) {
-          await this.plugin.storage.renameConversation(this.conversation.id, args);
-          this.conversation.title = args;
-          this.updateTitle();
-          this.showTemporaryStatus('Conversation renamed', 'success', 1500);
-        } else {
-          this.promptRenameConversation(this.conversation.id, this.conversation.title);
-        }
-        return true;
-      }
-
-      case 'stats': {
-        const msgCount = this.conversation.messages.length;
-        const userMsgs = this.conversation.messages.filter(m => m.role === 'user').length;
-        const assistantMsgs = this.conversation.messages.filter(m => m.role === 'assistant').length;
-        const tokens = this.estimateTokens();
-        const upVotes = this.conversation.messages.filter(m => m.reaction === 'up').length;
-        const downVotes = this.conversation.messages.filter(m => m.reaction === 'down').length;
-        const created = new Date(this.conversation.createdAt).toLocaleDateString();
-
-        // Include usage if available
-        const usage = this.conversation.usage ?? calculateConversationUsage(this.conversation.messages);
-        const usageLines = usage.totalCost > 0 ? `
+    // Include usage if available
+    const usage = this.conversation.usage ?? calculateConversationUsage(this.conversation.messages);
+    const usageLines = usage.totalCost > 0 ? `
 - Input tokens: ${usage.totalInputTokens.toLocaleString()}
 - Output tokens: ${usage.totalOutputTokens.toLocaleString()}
 - Total cost: $${usage.totalCost.toFixed(4)}` : '';
 
-        const statsText = `
+    const statsText = `
 **Conversation Stats:**
 - Messages: ${msgCount} (${userMsgs} user, ${assistantMsgs} assistant)
 - Est. tokens: ~${tokens.toLocaleString()}${usageLines}
 - Created: ${created}
 - Pinned: ${this.conversation.pinned ? 'Yes' : 'No'}
 - Tags: ${(this.conversation.tags || []).join(', ') || 'None'}
-- Reactions: ${upVotes} 👍 / ${downVotes} 👎
-        `.trim();
+- Reactions: ${upVotes} thumbsUp / ${downVotes} thumbsDown
+    `.trim();
 
-        const statsMsg: ChatMessage = {
-          id: generateId(),
-          role: 'assistant',
-          content: statsText,
-          timestamp: Date.now(),
-        };
-        this.renderMessage(statsMsg);
-        this.scrollToBottom(true);
-        return true;
-      }
+    const statsMsg: ChatMessage = {
+      id: generateId(),
+      role: 'assistant',
+      content: statsText,
+      timestamp: Date.now(),
+    };
+    this.renderMessage(statsMsg);
+    this.scrollToBottom(true);
+  }
 
-      case 'usage': {
-        // Show detailed usage across all conversations
-        await this.showUsageDashboard();
-        return true;
-      }
+  /**
+   * Copy entire conversation to clipboard as markdown.
+   */
+  private async copyConversationToClipboard(): Promise<void> {
+    const lines: string[] = [];
+    lines.push(`# ${this.conversation.title}`);
+    lines.push('');
 
-      case 'copy': {
-        // Copy entire conversation to clipboard as markdown
-        const lines: string[] = [];
-        lines.push(`# ${this.conversation.title}`);
-        lines.push('');
+    for (const msg of this.conversation.messages) {
+      const role = msg.role === 'user' ? 'You' : 'Claude';
+      lines.push(`**${role}:**`);
+      lines.push(msg.content);
+      lines.push('');
+    }
 
-        for (const msg of this.conversation.messages) {
-          const role = msg.role === 'user' ? 'You' : 'Claude';
-          lines.push(`**${role}:**`);
-          lines.push(msg.content);
-          lines.push('');
+    await navigator.clipboard.writeText(lines.join('\n'));
+    this.showTemporaryStatus('Conversation copied to clipboard', 'success', 2000);
+  }
+
+  /**
+   * Handle /tools command.
+   */
+  private async handleToolsCommand(args: string): Promise<void> {
+    if (!args) {
+      const tools = this.plugin.settings.allowedTools;
+      this.showTemporaryStatus(`Allowed tools: ${tools.join(', ')}`, 'info', 3000);
+    } else if (args === 'show' || args === 'on') {
+      this.plugin.settings.showToolCalls = true;
+      await this.plugin.saveSettings();
+      this.showTemporaryStatus('Tool calls visible', 'success', 1500);
+    } else if (args === 'hide' || args === 'off') {
+      this.plugin.settings.showToolCalls = false;
+      await this.plugin.saveSettings();
+      this.showTemporaryStatus('Tool calls hidden', 'success', 1500);
+    }
+  }
+
+  /**
+   * Handle /context command.
+   */
+  private async handleContextCommand(args: string): Promise<void> {
+    if (args === 'on') {
+      this.plugin.settings.activeNoteContext = true;
+      await this.plugin.saveSettings();
+      this.updateContextBadge();
+      this.showTemporaryStatus('Active note context enabled', 'success', 1500);
+    } else if (args === 'off') {
+      this.plugin.settings.activeNoteContext = false;
+      await this.plugin.saveSettings();
+      this.updateContextBadge();
+      this.showTemporaryStatus('Active note context disabled', 'success', 1500);
+    } else {
+      const status = this.plugin.settings.activeNoteContext ? 'enabled' : 'disabled';
+      this.showTemporaryStatus(`Active note context: ${status}`, 'info', 2000);
+    }
+  }
+
+  /**
+   * Handle /duplicate or /fork command.
+   */
+  private async handleDuplicateCommand(): Promise<void> {
+    const newConv = await this.plugin.storage.duplicateConversation(this.conversation.id);
+    if (newConv) {
+      // If we have an SDK session, mark that the next message should fork it
+      const sessionId = this.conversation.metadata?.sessionId;
+      if (sessionId && this.getBackend().type === 'sdk') {
+        // Store the session to fork from in the new conversation's metadata
+        if (!newConv.metadata) {
+          newConv.metadata = { backendType: 'sdk' };
         }
-
-        await navigator.clipboard.writeText(lines.join('\n'));
-        this.showTemporaryStatus('Conversation copied to clipboard', 'success', 2000);
-        return true;
+        newConv.metadata.forkFromSessionId = sessionId;
+        await this.plugin.storage.saveConversation(newConv);
+        this.showTemporaryStatus('Conversation forked - SDK session will branch on next message', 'success', 3000);
+      } else {
+        this.showTemporaryStatus('Conversation duplicated - now editing copy', 'success', 2000);
       }
+      this.conversation = newConv;
+      await this.plugin.storage.setCurrentConversationId(newConv.id);
+      this.renderAllMessages();
+      this.updateTitle();
+    }
+  }
 
-      case 'tools': {
-        if (!args) {
-          const tools = this.plugin.settings.allowedTools;
-          this.showTemporaryStatus(`Allowed tools: ${tools.join(', ')}`, 'info', 3000);
-        } else if (args === 'show' || args === 'on') {
-          this.plugin.settings.showToolCalls = true;
-          await this.plugin.saveSettings();
-          this.showTemporaryStatus('Tool calls visible', 'success', 1500);
-        } else if (args === 'hide' || args === 'off') {
-          this.plugin.settings.showToolCalls = false;
-          await this.plugin.saveSettings();
-          this.showTemporaryStatus('Tool calls hidden', 'success', 1500);
-        }
-        return true;
-      }
+  /**
+   * Show bookmarked messages.
+   */
+  private showBookmarks(): void {
+    const bookmarked = this.conversation.messages.filter(m => m.bookmarked);
+    if (bookmarked.length === 0) {
+      this.showTemporaryStatus('No bookmarked messages. Click star on a message to bookmark it.', 'info', 3000);
+    } else {
+      const summaryLines = bookmarked.map((m, i) => {
+        const preview = m.content.slice(0, 60).replace(/\n/g, ' ');
+        const role = m.role === 'user' ? 'You' : 'Claude';
+        return `${i + 1}. **${role}**: ${preview}${m.content.length > 60 ? '...' : ''}`;
+      });
 
-      case 'context': {
-        // Toggle active note context
-        if (args === 'on') {
-          this.plugin.settings.activeNoteContext = true;
-          await this.plugin.saveSettings();
-          this.updateContextBadge();
-          this.showTemporaryStatus('Active note context enabled', 'success', 1500);
-        } else if (args === 'off') {
-          this.plugin.settings.activeNoteContext = false;
-          await this.plugin.saveSettings();
-          this.updateContextBadge();
-          this.showTemporaryStatus('Active note context disabled', 'success', 1500);
-        } else {
-          const status = this.plugin.settings.activeNoteContext ? 'enabled' : 'disabled';
-          this.showTemporaryStatus(`Active note context: ${status}`, 'info', 2000);
-        }
-        return true;
-      }
+      const bookmarkMsg: ChatMessage = {
+        id: generateId(),
+        role: 'assistant',
+        content: `**Bookmarked Messages (${bookmarked.length}):**\n\n${summaryLines.join('\n')}`,
+        timestamp: Date.now(),
+      };
+      this.renderMessage(bookmarkMsg);
+      this.scrollToBottom(true);
+    }
+  }
 
-      case 'duplicate':
-      case 'fork': {
-        const newConv = await this.plugin.storage.duplicateConversation(this.conversation.id);
-        if (newConv) {
-          // If we have an SDK session, mark that the next message should fork it
-          const sessionId = this.conversation.metadata?.sessionId;
-          if (sessionId && this.getBackend().type === 'sdk') {
-            // Store the session to fork from in the new conversation's metadata
-            if (!newConv.metadata) {
-              newConv.metadata = { backendType: 'sdk' };
-            }
-            newConv.metadata.forkFromSessionId = sessionId;
-            await this.plugin.storage.saveConversation(newConv);
-            this.showTemporaryStatus('Conversation forked - SDK session will branch on next message', 'success', 3000);
-          } else {
-            this.showTemporaryStatus('Conversation duplicated - now editing copy', 'success', 2000);
-          }
-          this.conversation = newConv;
-          await this.plugin.storage.setCurrentConversationId(newConv.id);
-          this.renderAllMessages();
-          this.updateTitle();
-        }
-        return true;
-      }
-
-      case 'bookmarks': {
-        const bookmarked = this.conversation.messages.filter(m => m.bookmarked);
-        if (bookmarked.length === 0) {
-          this.showTemporaryStatus('No bookmarked messages. Click ★ on a message to bookmark it.', 'info', 3000);
-        } else {
-          const summaryLines = bookmarked.map((m, i) => {
-            const preview = m.content.slice(0, 60).replace(/\n/g, ' ');
-            const role = m.role === 'user' ? 'You' : 'Claude';
-            return `${i + 1}. **${role}**: ${preview}${m.content.length > 60 ? '...' : ''}`;
-          });
-
-          const bookmarkMsg: ChatMessage = {
-            id: generateId(),
-            role: 'assistant',
-            content: `**Bookmarked Messages (${bookmarked.length}):**\n\n${summaryLines.join('\n')}`,
-            timestamp: Date.now(),
-          };
-          this.renderMessage(bookmarkMsg);
-          this.scrollToBottom(true);
-        }
-        return true;
-      }
-
-      case 'help':
-      case '?':
-        this.showSlashCommandHelp();
-        return true;
-
-      case 'prompts':
-      case 'prompt': {
-        await this.handlePromptsCommand(args);
-        return true;
-      }
-
-      case 'undo': {
-        await this.handleUndoCommand(args);
-        return true;
-      }
-
-      case 'budget': {
-        await this.handleBudgetCommand(args);
-        return true;
-      }
-
-      case 'cost': {
-        // Quick cost summary for current conversation
-        const usage = this.conversation.usage;
-        if (!usage || usage.totalCost === 0) {
-          this.showTemporaryStatus('No usage data yet for this conversation', 'info', 2000);
-        } else {
-          const inputK = Math.round(usage.totalInputTokens / 1000);
-          const outputK = Math.round(usage.totalOutputTokens / 1000);
-          this.showTemporaryStatus(
-            `Cost: $${usage.totalCost.toFixed(4)} (${inputK}K in / ${outputK}K out)`,
-            'info',
-            4000
-          );
-        }
-        return true;
-      }
-
-      case 'savenote':
-      case 'save-note':
-      case 'generate-note': {
-        await this.generateNoteFromConversation(args);
-        return true;
-      }
-
-      case 'skills': {
-        this.showSkillsList();
-        return true;
-      }
-
-      case 'mode':
-      case 'permission': {
-        await this.handlePermissionModeCommand(args);
-        return true;
-      }
-
-      case 'mcp': {
-        await this.handleMcpCommand(args);
-        return true;
-      }
-
-      case 'extract':
-      case 'extract-tasks': {
-        await this.handleExtractCommand(args);
-        return true;
-      }
-
-      case 'analyze':
-      case 'analyze-note': {
-        await this.handleAnalyzeNoteCommand(args);
-        return true;
-      }
-
-      default:
-        // Unknown command - show help hint
-        this.showTemporaryStatus(`Unknown command: /${command}. Type /help for available commands.`, 'info');
-        return true;
+  /**
+   * Show quick cost summary for current conversation.
+   */
+  private showCostSummary(): void {
+    const usage = this.conversation.usage;
+    if (!usage || usage.totalCost === 0) {
+      this.showTemporaryStatus('No usage data yet for this conversation', 'info', 2000);
+    } else {
+      const inputK = Math.round(usage.totalInputTokens / 1000);
+      const outputK = Math.round(usage.totalOutputTokens / 1000);
+      this.showTemporaryStatus(
+        `Cost: $${usage.totalCost.toFixed(4)} (${inputK}K in / ${outputK}K out)`,
+        'info',
+        4000
+      );
     }
   }
 
@@ -2662,91 +2565,6 @@ export class ChatView extends ItemView {
     const matches = content.match(/\{\{(\w+)\}\}/g);
     if (!matches) return [];
     return [...new Set(matches.map(m => m.slice(2, -2)))];
-  }
-
-  private showSlashCommandHelp(): void {
-    const helpText = `
-**Conversation:**
-- \`/new\` - Start new conversation
-- \`/clear\` - Clear all messages
-- \`/copy\` - Copy conversation to clipboard
-- \`/export\` - Export as markdown note
-- \`/export clipboard\` - Copy conversation to clipboard
-- \`/export json\` - Export as JSON file
-- \`/duplicate\` - Fork conversation (create editable copy)
-- \`/undo\` - Rewind file changes to last checkpoint (SDK only)
-- \`/undo --dry-run\` - Preview what /undo would restore
-- \`/budget\` - Show current spend and limit
-- \`/budget set <amount>\` - Set spending limit (e.g., /budget set 5.00)
-- \`/budget clear\` - Remove spending limit
-- \`/cost\` - Quick cost summary for this conversation
-- \`/stats\` - Show conversation statistics
-- \`/usage\` - Show usage dashboard (costs across conversations)
-- \`/rename [title]\` - Rename conversation
-- \`/pin\` - Toggle pin status
-
-**Tags:**
-- \`/tag\` - Show current tags
-- \`/tag <name>\` - Add a tag
-- \`/tag remove <name>\` - Remove a tag
-- \`/tag list\` - All tags across conversations
-
-**Settings:**
-- \`/model [name]\` - Show/switch model (sonnet, opus)
-- \`/tools [show|hide]\` - Toggle tool call visibility
-- \`/context [on|off]\` - Toggle active note context
-
-**Context:**
-- \`/note [question]\` - Insert current note
-- \`/search <query>\` - Search messages
-- \`/queue [clear]\` - Message queue status
-- \`/bookmarks\` - Show bookmarked messages
-
-**Export:**
-- \`/savenote [format] [path]\` - Save conversation as note
-  - Formats: full (default), summary, q-and-a
-  - Example: \`/savenote q-and-a research/meeting.md\`
-
-**Skills:**
-- \`/skills\` - List available skills and their triggers
-
-**Prompts:**
-- \`/prompts\` - List saved prompt templates
-- \`/prompts use <name>\` - Insert a saved prompt
-- \`/prompts save <name>\` - Save current input as prompt
-- \`/prompts delete <name>\` - Delete a saved prompt
-
-**Permissions (SDK only):**
-- \`/mode\` - Show current permission mode
-- \`/mode <mode>\` - Switch mode (default, acceptEdits, plan, etc.)
-
-**MCP Servers (SDK only):**
-- \`/mcp\` - Show MCP server status
-- \`/mcp reconnect <name>\` - Reconnect failed server
-- \`/mcp toggle <name>\` - Enable/disable server
-- \`/mcp add <name> <cmd> [args]\` - Add server dynamically
-- \`/mcp remove <name>\` - Remove/disable server
-
-**Structured Analysis (SDK only):**
-- \`/extract\` - Extract tasks, links, tags, and summary from current note
-- \`/analyze\` - Analyze note for topics, sentiment, readability, and improvements
-
-**Shortcuts:**
-\`Enter\` send · \`Shift+Enter\` newline · \`↑↓\` history
-\`Cmd+F\` search · \`Cmd+N\` new · \`Cmd+H\` history · \`Cmd+E\` export
-\`Cmd+L\` focus input · \`Cmd+Shift+P\` pin · \`Esc\` close/focus
-    `.trim();
-
-    // Create a temporary system message to show help
-    const helpMsg: ChatMessage = {
-      id: generateId(),
-      role: 'assistant',
-      content: helpText,
-      timestamp: Date.now(),
-    };
-
-    this.renderMessage(helpMsg);
-    this.scrollToBottom(true);
   }
 
   /**
@@ -3789,54 +3607,10 @@ ${content}
         content
       );
 
-      // Build message with optional active note context
-      // Priority: selected text > full/delta note content
-      let messageContent = content;
-      if (this.plugin.settings.activeNoteContext) {
-        const activeFile = this.plugin.app.workspace.getActiveFile();
-        if (activeFile && activeFile.extension === 'md') {
-          const notePath = activeFile.path;
-
-          // Check for selected text first - this takes priority
-          const selection = this.getEditorSelection();
-          if (selection) {
-            // Include selected text with line range for context
-            messageContent = `<selected_text path="${notePath}" lines="${selection.startLine}-${selection.endLine}">\n${selection.text}\n</selected_text>\n\n${content}`;
-            log.debug('Included selected text', { path: notePath, lines: `${selection.startLine}-${selection.endLine}`, length: selection.text.length });
-          } else {
-            // No selection - use full note or delta
-            const isNewNote = this.lastSentNotePath !== notePath;
-
-            try {
-              const noteContent = await this.plugin.app.vault.read(activeFile);
-
-              if (isNewNote) {
-                // Include full note content for new/different notes
-                messageContent = `<active_note path="${notePath}">\n${noteContent}\n</active_note>\n\n${content}`;
-                this.lastSentNotePath = notePath;
-                this.lastSentNoteContent = noteContent;
-                log.debug('Included active note context (new note)', { path: notePath, contentLength: noteContent.length });
-              } else if (this.lastSentNoteContent && noteContent !== this.lastSentNoteContent) {
-                // Same note but content changed - send only the delta if it's smaller
-                const delta = this.computeNoteDelta(this.lastSentNoteContent, noteContent);
-                if (delta && delta.length < noteContent.length) {
-                  // Delta is smaller - send just the changes
-                  messageContent = `<active_note_changes path="${notePath}">\n${delta}\n</active_note_changes>\n\n${content}`;
-                  log.debug('Included note delta', { path: notePath, deltaLength: delta.length });
-                } else if (delta) {
-                  // Delta is larger than full content - resend full note
-                  messageContent = `<active_note path="${notePath}">\n${noteContent}\n</active_note>\n\n${content}`;
-                  log.debug('Resent full note (delta too large)', { path: notePath, contentLength: noteContent.length });
-                }
-                this.lastSentNoteContent = noteContent;
-              }
-              // If same note and no changes, just send the user's message
-            } catch (err) {
-              log.warn('Failed to read active note for context', { path: notePath, error: err });
-            }
-          }
-        }
-      }
+      // Build message with optional active note context using contextModule
+      const contextResult = await this.contextModule?.load(content);
+      const messageContent = contextResult?.messageContent ?? content;
+      const displayContent = contextResult?.displayContent;
 
       // Collect images from module and clear preview
       const moduleImages = this.inputModule?.getImages() ?? [];
@@ -3862,7 +3636,7 @@ ${content}
           resumeSessionAt: resumeAtUuid,
           systemPrompt: enhancedPrompt,
           // Show only the user's input in UI, not the injected context
-          displayContent: content !== messageContent ? content : undefined,
+          displayContent,
           images,
         }
       );
@@ -4048,8 +3822,7 @@ ${content}
   private async _newConversation(): Promise<void> {
     log.info('Creating new conversation');
     this.conversation = await this.plugin.storage.createConversation();
-    this.lastSentNotePath = null; // Reset note tracking for new conversation
-    this.lastSentNoteContent = null;
+    this.contextModule?.resetNoteTracking(); // Reset note tracking for new conversation
     this.renderAllMessages();
     this.updateTitle();
     this.setStatus('');

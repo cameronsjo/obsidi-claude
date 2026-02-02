@@ -18,9 +18,9 @@ export interface BackendInfo {
 }
 
 /**
- * Active context/note information.
+ * Active context/note information for status bar badge.
  */
-export interface ContextInfo {
+export interface StatusStatusContextInfo {
   path: string;
   title: string;
 }
@@ -51,7 +51,7 @@ export interface StatusBarCallbacks {
   onAccountClick: () => void;
   onTokenCounterClick: () => void;
   getBackendInfo: () => BackendInfo;
-  getActiveNoteInfo: () => ContextInfo | null;
+  getActiveNoteInfo: () => StatusContextInfo | null;
   getAccountInfo: () => AccountInfo | null;
   getTokenEstimate: () => TokenInfo;
 }
@@ -71,7 +71,7 @@ export interface StatusBarContainers {
  */
 export interface StatusBarHandle extends ModuleHandle {
   updateBackend(info: BackendInfo): void;
-  updateContext(info: ContextInfo | null): void;
+  updateContext(info: StatusContextInfo | null): void;
   updateAccount(info: AccountInfo | null): void;
   updateTokens(info: TokenInfo): void;
   updateEphemeral(active: boolean): void;
@@ -128,7 +128,7 @@ export function createStatusBar(
     );
   }
 
-  function updateContext(info: ContextInfo | null): void {
+  function updateContext(info: StatusContextInfo | null): void {
     contextBadge.empty();
     if (info) {
       // Show badge with file icon and truncated name
