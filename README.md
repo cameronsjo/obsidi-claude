@@ -1,5 +1,7 @@
 # Obsidi-Claude
 
+![Obsidi-Claude Hero](hero.png)
+
 Chat with Claude AI using the Agent SDK directly in Obsidian.
 
 ## Features
