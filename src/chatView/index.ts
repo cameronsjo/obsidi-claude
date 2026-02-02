@@ -12,3 +12,7 @@ export * from './tabBar';
 export * from './messageRenderer';
 export * from './inputArea';
 export * from './historyPanel';
+export * from './messageOrchestrator';
+export * from './conversationStore';
+export * from './contextLoader';
+export * from './slashCommands';

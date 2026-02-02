@@ -27,6 +27,10 @@ import {
   createMessageRenderer,
   createInputArea,
   createHistoryPanel,
+  createMessageOrchestrator,
+  createSlashCommands,
+  createContextLoader,
+  createConversationStore,
   type SearchBarHandle,
   type QueuePanelHandle,
   type StatusBarHandle,
@@ -36,6 +40,11 @@ import {
   type MessageRendererHandle,
   type InputAreaHandle,
   type HistoryPanelHandle,
+  type MessageOrchestratorHandle,
+  type SlashCommandsHandle,
+  type ContextLoaderHandle,
+  type ContextInfo,
+  type ConversationStoreHandle,
 } from './chatView/index';
 
 const log = createLogger('ChatView');
@@ -80,10 +89,6 @@ export class ChatView extends ItemView {
   private isRecording = false;
   private speechRecognition: SpeechRecognition | null = null;
 
-  // Track last sent note to avoid redundant context injection
-  private lastSentNotePath: string | null = null;
-  private lastSentNoteContent: string | null = null;
-
   // Message queue container (UI created by module)
   private queueContainer: HTMLElement;
 
@@ -109,6 +114,9 @@ export class ChatView extends ItemView {
   private messageModule: MessageRendererHandle | null = null;
   private inputModule: InputAreaHandle | null = null;
   private historyModule: HistoryPanelHandle | null = null;
+  private messageOrchestrator: MessageOrchestratorHandle | null = null;
+  private slashCommandsModule: SlashCommandsHandle | null = null;
+  private contextModule: ContextLoaderHandle | null = null;
 
   // Container references for deferred module initialization
   private statusBadgesContainer: HTMLElement | null = null;
@@ -424,6 +432,107 @@ export class ChatView extends ItemView {
       this.statusModule.updateEphemeral(this.plugin.settings.ephemeralMode);
     }
 
+    // Initialize context loader module
+    this.contextModule = createContextLoader(deps, {
+      onContextChange: (info) => {
+        // Update status bar badge when context changes
+        if (info) {
+          this.statusModule?.updateContext({
+            path: info.path ?? '',
+            title: info.name,
+          });
+        } else {
+          this.statusModule?.updateContext(null);
+        }
+      },
+    });
+
+    // Initialize message orchestrator
+    this.messageOrchestrator = createMessageOrchestrator(deps, {
+      onMessageStart: (msg) => {
+        this.renderMessage(msg);
+        this.updateTokenCounter();
+        if (msg.role === 'user') {
+          this.userScrolledUp = false;
+        }
+        this.scrollToBottom();
+      },
+      onMessageUpdate: (id, content) => {
+        this.updateMessageContent(id, content);
+      },
+      onMessageComplete: (id) => {
+        // Message complete - ensure actions are visible
+        const msgEl = this.messageElements.get(id);
+        if (msgEl) {
+          const actionsDiv = msgEl.querySelector('.message-actions') as HTMLElement;
+          if (actionsDiv) {
+            actionsDiv.style.display = '';
+          }
+        }
+      },
+      onToolCall: (id, tools) => {
+        this.updateMessageTools(id, tools);
+      },
+      onToolResult: () => {
+        // Tool result handled by onToolCall updates
+      },
+      onError: (error) => {
+        log.error('Agent error during message processing', error);
+      },
+      onProcessingChange: (processing) => {
+        this.setProcessing(processing);
+      },
+      onStatusChange: (message, type) => {
+        this.setStatus(message, type);
+      },
+      onSessionInit: (sessionId, tools) => {
+        log.info('Session initialized', { sessionId, toolCount: tools.length });
+      },
+      onSdkUuid: (messageId, uuid) => {
+        log.debug('Stored SDK UUID for message', { messageId, uuid });
+      },
+      onToolSummary: (messageId, summary) => {
+        this.updateToolSummary(messageId, summary);
+      },
+      onFilesPersisted: (filenames) => {
+        log.info('Files modified by Claude', { count: filenames.length });
+      },
+      onTaskNotification: (taskId, status, summary, outputFile, assistantMsgId) => {
+        this.handleTaskNotification(taskId, status, summary, outputFile, assistantMsgId);
+      },
+      onCompactionStatus: (status) => {
+        if (status === 'compacting') {
+          this.setStatus('Compacting context...', 'info');
+        } else {
+          this.setStatus('', 'info');
+        }
+      },
+      onCompactionBoundary: (trigger, preTokens) => {
+        const tokensK = Math.round(preTokens / 1000);
+        new Notice(`Context compacted: was ~${tokensK}K tokens (${trigger})`, 3000);
+        if (!this.conversation.metadata) {
+          this.conversation.metadata = { backendType: 'sdk' };
+        }
+        if (!this.conversation.metadata.compactions) {
+          this.conversation.metadata.compactions = [];
+        }
+        this.conversation.metadata.compactions.push({
+          timestamp: Date.now(),
+          trigger,
+          preTokens,
+        });
+        this.saveConversation();
+      },
+      getBackend: () => this.getBackend(),
+      getConversation: () => this.conversation,
+      getContext: async () => this.buildContextInfo(),
+      saveConversation: () => this.saveConversation(),
+      updateTokenCounter: () => this.updateTokenCounter(),
+      refreshStatusBar: () => this.refreshStatusBar(),
+      scrollToBottom: () => this.scrollToBottom(),
+      getModel: () => this.plugin.settings.model,
+    });
+
     // Mobile support - use module
     this.mobileModule = createMobileSupport(container, deps, {
       onNewConversation: () => this._newConversation(),
@@ -436,6 +545,58 @@ export class ChatView extends ItemView {
       isMobile: () => this.isMobile(),
     });
     this.mobileModule.setupTouchHandling(container);
+
+    // Slash commands processor - use module
+    this.slashCommandsModule = createSlashCommands(deps, {
+      getCommandContext: () => this.createCommandContext(),
+      renderMessage: (msg) => this.renderMessage(msg),
+      scrollToBottom: (force) => this.scrollToBottom(force),
+      showTemporaryStatus: (msg, type, duration) => this.showTemporaryStatus(msg, type, duration),
+      toggleHistory: () => this._toggleHistory(),
+      togglePin: async () => {
+        await this.plugin.storage.togglePin(this.conversation.id);
+        this.conversation.pinned = !this.conversation.pinned;
+        this.showTemporaryStatus(
+          this.conversation.pinned ? 'Conversation pinned' : 'Conversation unpinned',
+          'success',
+          1500
+        );
+      },
+      renameConversation: (title) => {
+        if (title) {
+          this.plugin.storage.renameConversation(this.conversation.id, title);
+          this.conversation.title = title;
+          this.updateTitle();
+          this.showTemporaryStatus('Conversation renamed', 'success', 1500);
+        } else {
+          this.promptRenameConversation(this.conversation.id, this.conversation.title);
+        }
+      },
+      showStats: () => this.showConversationStats(),
+      showUsageDashboard: () => this.showUsageDashboard(),
+      copyToClipboard: () => this.copyConversationToClipboard(),
+      handleToolsCommand: (args) => this.handleToolsCommand(args),
+      handleContextCommand: (args) => this.handleContextCommand(args),
+      handleDuplicateCommand: () => this.handleDuplicateCommand(),
+      showBookmarks: () => this.showBookmarks(),
+      handlePromptsCommand: (args) => this.handlePromptsCommand(args),
+      handleUndoCommand: (args) => this.handleUndoCommand(args),
+      handleBudgetCommand: (args) => this.handleBudgetCommand(args),
+      showCostSummary: () => this.showCostSummary(),
+      generateNote: (args) => this.generateNoteFromConversation(args),
+      handleModeCommand: (args) => this.handlePermissionModeCommand(args),
+      handleMcpCommand: (args) => this.handleMcpCommand(args),
+      handleExtractCommand: (args) => this.handleExtractCommand(args),
+      handleAnalyzeCommand: (args) => this.handleAnalyzeNoteCommand(args),
+      getSkills: () => this.plugin.skillRegistry.getSkills().map(s => ({
+        name: s.name,
+        description: s.description,
+        triggers: s.triggers,
+        alwaysActive: s.alwaysActive,
+      })),
+      skillsEnabled: () => this.plugin.settings.skills.enabled,
+      getSkillsFolderPath: () => this.plugin.settings.skills.folderPath,
+    });
 
     // Register keyboard shortcuts
     this.registerKeyboardShortcuts(container);
@@ -3720,10 +3881,15 @@ ${content}
   }
 
   private stopGeneration(): void {
-    log.info('User stopped generation');
-    this.getBackend().abort();
-    this.setProcessing(false);
-    this.setStatus('Stopped', 'info');
+    if (this.messageOrchestrator) {
+      this.messageOrchestrator.stop();
+    } else {
+      // Fallback for when orchestrator is not initialized
+      log.info('User stopped generation');
+      this.getBackend().abort();
+      this.setProcessing(false);
+      this.setStatus('Stopped', 'info');
+    }
   }
 
   /**
@@ -3920,6 +4086,83 @@ ${content}
     }
 
     return result.join('\n');
+  }
+
+  /**
+   * Build context info for message orchestrator.
+   * Includes system prompt, selected text, and active note context.
+   */
+  private async buildContextInfo(): Promise<ContextInfo> {
+    // Build enhanced system prompt with active skills
+    const basePrompt = this.plugin.settings.systemPrompt;
+    const inputValue = this.inputEl?.value ?? '';
+    const enhancedPrompt = this.plugin.skillRegistry.buildSystemPrompt(
+      basePrompt,
+      inputValue
+    );
+
+    const contextInfo: ContextInfo = {
+      systemPrompt: enhancedPrompt,
+    };
+
+    // Check for active note context
+    if (this.plugin.settings.activeNoteContext) {
+      const activeFile = this.plugin.app.workspace.getActiveFile();
+      if (activeFile && activeFile.extension === 'md') {
+        const notePath = activeFile.path;
+
+        // Check for selected text first - this takes priority
+        const selection = this.getEditorSelection();
+        if (selection) {
+          contextInfo.selectedText = {
+            path: notePath,
+            startLine: selection.startLine,
+            endLine: selection.endLine,
+            text: selection.text,
+          };
+        } else {
+          // No selection - use full note or delta
+          const isNewNote = this.lastSentNotePath !== notePath;
+
+          try {
+            const noteContent = await this.plugin.app.vault.read(activeFile);
+
+            if (isNewNote) {
+              // Include full note content for new/different notes
+              contextInfo.activeNote = {
+                path: notePath,
+                content: noteContent,
+                isDelta: false,
+              };
+              this.lastSentNotePath = notePath;
+              this.lastSentNoteContent = noteContent;
+            } else if (this.lastSentNoteContent && noteContent !== this.lastSentNoteContent) {
+              // Same note but content changed - send delta if smaller
+              const delta = this.computeNoteDelta(this.lastSentNoteContent, noteContent);
+              if (delta && delta.length < noteContent.length) {
+                contextInfo.activeNote = {
+                  path: notePath,
+                  content: delta,
+                  isDelta: true,
+                };
+              } else if (delta) {
+                // Delta is larger - resend full note
+                contextInfo.activeNote = {
+                  path: notePath,
+                  content: noteContent,
+                  isDelta: false,
+                };
+              }
+              this.lastSentNoteContent = noteContent;
+            }
+          } catch (err) {
+            log.warn('Failed to read active note for context', { path: notePath, error: err });
+          }
+        }
+      }
+    }
+
+    return contextInfo;
   }
 
   private async _newConversation(): Promise<void> {
