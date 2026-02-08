@@ -7,11 +7,25 @@ import type { RAGService } from './ragService';
  * These wrap Obsidian's APIs in a way that's useful for AI assistants
  */
 
+/** Optional context passed from the transport layer to tool handlers */
+export interface ToolExecutionContext {
+  /** Request user confirmation/input via MCP elicitation. Undefined when not connected via MCP. */
+  elicitInput?: (params: {
+    mode: 'form';
+    message: string;
+    requestedSchema: {
+      type: 'object';
+      properties: Record<string, unknown>;
+      required?: string[];
+    };
+  }) => Promise<{ action: 'accept' | 'decline' | 'cancel'; content?: Record<string, unknown> }>;
+}
+
 export interface ToolDefinition {
   name: string;
   description: string;
   parameters: Record<string, unknown>;
-  handler: (params: Record<string, unknown>) => Promise<string>;
+  handler: (params: Record<string, unknown>, context?: ToolExecutionContext) => Promise<string>;
 }
 
 /**
@@ -58,11 +72,11 @@ export class ObsidianTools {
    * Reduces boilerplate across all tool handlers.
    */
   private wrapHandler<T>(
-    fn: (params: Record<string, unknown>) => Promise<T>
-  ): (params: Record<string, unknown>) => Promise<string> {
-    return async (params) => {
+    fn: (params: Record<string, unknown>, context?: ToolExecutionContext) => Promise<T>
+  ): (params: Record<string, unknown>, context?: ToolExecutionContext) => Promise<string> {
+    return async (params, context) => {
       try {
-        const result = await fn(params);
+        const result = await fn(params, context);
         return JSON.stringify(result);
       } catch (error) {
         return JSON.stringify({
@@ -1695,7 +1709,7 @@ export class ObsidianTools {
         },
         required: ['path'],
       },
-      handler: this.wrapHandler(async (params) => {
+      handler: this.wrapHandler(async (params, context) => {
         const filepath = params.path as string;
         const permanent = (params.permanent as boolean) || false;
 
@@ -1705,6 +1719,30 @@ export class ObsidianTools {
         }
 
         const isFolder = 'children' in item;
+
+        // Elicit confirmation from user if MCP context is available
+        if (context?.elicitInput) {
+          const confirmation = await context.elicitInput({
+            mode: 'form',
+            message: `Confirm ${permanent ? 'permanent deletion' : 'trash'} of ${isFolder ? 'folder' : 'file'}: ${filepath}`,
+            requestedSchema: {
+              type: 'object',
+              properties: {
+                confirm: {
+                  type: 'boolean',
+                  title: 'Confirm deletion',
+                  description: `${permanent ? 'Permanently delete' : 'Move to trash'}: ${filepath}`,
+                },
+              },
+              required: ['confirm'],
+            },
+          });
+
+          if (confirmation.action !== 'accept' || !confirmation.content?.confirm) {
+            return { cancelled: true, path: filepath, message: 'Deletion cancelled by user' };
+          }
+        }
+
         if (permanent) {
           await this.app.vault.delete(item, true);
         } else {
@@ -2355,13 +2393,14 @@ export class ObsidianTools {
    */
   async executeTool(
     name: string,
-    params: Record<string, unknown>
+    params: Record<string, unknown>,
+    context?: ToolExecutionContext
   ): Promise<string> {
     const tool = this.getToolDefinitions().find((t) => t.name === name);
     if (!tool) {
       return JSON.stringify({ error: `Unknown tool: ${name}` });
     }
-    return tool.handler(params);
+    return tool.handler(params, context);
   }
 
   /**

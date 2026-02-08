@@ -10,7 +10,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import express, { type Express, type Request, type Response } from 'express';
 import type { Server as HttpServer } from 'http';
-import type { ObsidianTools } from './obsidianTools';
+import type { ObsidianTools, ToolExecutionContext } from './obsidianTools';
 import { createLogger } from './logger';
 
 const log = createLogger('MCPServer');
@@ -125,7 +125,7 @@ export class MCPServer {
 
     this.stdioServer = new Server(
       { name: this.config.name, version: this.config.version },
-      { capabilities: { tools: { listChanged: true } } }
+      { capabilities: { tools: { listChanged: true }, elicitation: {} } }
     );
 
     this.setupServerHandlers(this.stdioServer);
@@ -430,7 +430,7 @@ export class MCPServer {
   private createMcpServer(): Server {
     const server = new Server(
       { name: this.config.name, version: this.config.version },
-      { capabilities: { tools: { listChanged: true } } }
+      { capabilities: { tools: { listChanged: true }, elicitation: {} } }
     );
     this.setupServerHandlers(server);
     return server;
@@ -600,13 +600,17 @@ export class MCPServer {
       };
     });
 
-    // Handle tool calls
+    // Handle tool calls — pass elicitation context so tools can request user confirmation
     server.setRequestHandler(CallToolRequestSchema, async (request): Promise<CallToolResult> => {
       const { name, arguments: args } = request.params;
       log.info('Tool call received', { tool: name });
 
+      const context: ToolExecutionContext = {
+        elicitInput: (params) => server.elicitInput(params),
+      };
+
       try {
-        const result = await this.tools.executeTool(name, (args as Record<string, unknown>) || {});
+        const result = await this.tools.executeTool(name, (args as Record<string, unknown>) || {}, context);
         log.debug('Tool call completed', { tool: name, resultLength: result.length });
 
         return {
