@@ -77,6 +77,7 @@ export class ObsidianTools {
    */
   getToolDefinitions(): ToolDefinition[] {
     const tools: ToolDefinition[] = [
+      this.getInstructionsTool(),
       this.getSemanticSearchTool(),
       this.getVaultStructureTool(),
       this.getFileMetadataTool(),
@@ -731,10 +732,30 @@ export class ObsidianTools {
           await this.app.vault.create(filepath, content);
         }
 
+        // Read-back verification: confirm the write actually persisted
+        const written = this.app.vault.getAbstractFileByPath(filepath);
+        if (!written || !(written instanceof TFile)) {
+          return { error: `Write verification failed: file not found after write at ${filepath}` };
+        }
+        const verified = await this.app.vault.cachedRead(written);
+        const contentLength = content.length;
+        const verifiedLength = verified.length;
+
+        if (verifiedLength !== contentLength) {
+          return {
+            error: `Write verification failed: expected ${contentLength} chars, got ${verifiedLength}`,
+            path: filepath,
+            contentLength,
+            verifiedLength,
+          };
+        }
+
         return {
           success: true,
           path: filepath,
           message: overwrite && existing ? 'File overwritten' : 'File created',
+          contentLength,
+          verified: true,
         };
       }),
     };
@@ -783,7 +804,20 @@ export class ObsidianTools {
             await this.ensureParentFolder(filepath);
             const initialContent = heading ? `# ${heading}\n\n${content}` : content;
             await this.app.vault.create(filepath, initialContent);
-            return { success: true, path: filepath, created: true };
+
+            const created = this.app.vault.getAbstractFileByPath(filepath);
+            if (!created || !(created instanceof TFile)) {
+              return { error: `Write verification failed: file not found after create at ${filepath}` };
+            }
+            const verified = await this.app.vault.cachedRead(created);
+            return {
+              success: true,
+              path: filepath,
+              created: true,
+              contentLength: initialContent.length,
+              verifiedLength: verified.length,
+              verified: verified.length === initialContent.length,
+            };
           }
           return { error: `File not found: ${filepath}` };
         }
@@ -794,6 +828,7 @@ export class ObsidianTools {
 
         const tfile = file as TFile;
         let existingContent = await this.app.vault.read(tfile);
+        const previousLength = existingContent.length;
 
         if (heading) {
           const headingPattern = new RegExp(
@@ -821,8 +856,30 @@ export class ObsidianTools {
           existingContent += '\n\n' + content;
         }
 
+        const expectedLength = existingContent.length;
         await this.app.vault.modify(tfile, existingContent);
-        return { success: true, path: filepath };
+
+        // Read-back verification
+        const verified = await this.app.vault.cachedRead(tfile);
+        const verifiedLength = verified.length;
+
+        if (verifiedLength !== expectedLength) {
+          return {
+            error: `Write verification failed: expected ${expectedLength} chars, got ${verifiedLength}`,
+            path: filepath,
+            expectedLength,
+            verifiedLength,
+          };
+        }
+
+        return {
+          success: true,
+          path: filepath,
+          previousLength,
+          contentLength: expectedLength,
+          appendedLength: content.length,
+          verified: true,
+        };
       }),
     };
   }
@@ -929,12 +986,28 @@ export class ObsidianTools {
           : '';
         const newContent = newFrontmatter + bodyContent;
 
+        const expectedLength = newContent.length;
         await this.app.vault.modify(tfile, newContent);
+
+        // Read-back verification
+        const verified = await this.app.vault.cachedRead(tfile);
+        const verifiedLength = verified.length;
+
+        if (verifiedLength !== expectedLength) {
+          return {
+            error: `Write verification failed: expected ${expectedLength} chars, got ${verifiedLength}`,
+            path: filepath,
+            expectedLength,
+            verifiedLength,
+          };
+        }
 
         return {
           success: true,
           path: filepath,
           frontmatter: finalProps,
+          contentLength: expectedLength,
+          verified: true,
         };
       }),
     };
@@ -1015,7 +1088,23 @@ export class ObsidianTools {
 
         await this.ensureParentFolder(createPath);
         await this.app.vault.create(createPath, template);
-        return { path: createPath, exists: false, created: true, content: template };
+
+        // Read-back verification
+        const written = this.app.vault.getAbstractFileByPath(createPath);
+        if (!written || !(written instanceof TFile)) {
+          return { error: `Write verification failed: file not found after create at ${createPath}` };
+        }
+        const verified = await this.app.vault.cachedRead(written);
+
+        return {
+          path: createPath,
+          exists: false,
+          created: true,
+          content: template,
+          contentLength: template.length,
+          verifiedLength: verified.length,
+          verified: verified.length === template.length,
+        };
       }),
     };
   }
@@ -1375,11 +1464,31 @@ export class ObsidianTools {
         await this.ensureParentFolder(targetPath);
         await this.app.vault.create(targetPath, content);
 
+        // Read-back verification
+        const written = this.app.vault.getAbstractFileByPath(targetPath);
+        if (!written || !(written instanceof TFile)) {
+          return { error: `Write verification failed: file not found after create at ${targetPath}` };
+        }
+        const verified = await this.app.vault.cachedRead(written);
+        const contentLength = content.length;
+        const verifiedLength = verified.length;
+
+        if (verifiedLength !== contentLength) {
+          return {
+            error: `Write verification failed: expected ${contentLength} chars, got ${verifiedLength}`,
+            path: targetPath,
+            contentLength,
+            verifiedLength,
+          };
+        }
+
         return {
           success: true,
           path: targetPath,
           template: templateFile.path,
           substitutionsApplied: Object.keys(substitutions),
+          contentLength,
+          verified: true,
         };
       }),
     };
@@ -1537,14 +1646,35 @@ export class ObsidianTools {
           edges: canvasEdges,
         };
 
+        const canvasContent = JSON.stringify(canvasData, null, 2);
         await this.ensureParentFolder(filepath);
-        await this.app.vault.create(filepath, JSON.stringify(canvasData, null, 2));
+        await this.app.vault.create(filepath, canvasContent);
+
+        // Read-back verification
+        const written = this.app.vault.getAbstractFileByPath(filepath);
+        if (!written || !(written instanceof TFile)) {
+          return { error: `Write verification failed: file not found after create at ${filepath}` };
+        }
+        const verified = await this.app.vault.cachedRead(written);
+        const contentLength = canvasContent.length;
+        const verifiedLength = verified.length;
+
+        if (verifiedLength !== contentLength) {
+          return {
+            error: `Write verification failed: expected ${contentLength} chars, got ${verifiedLength}`,
+            path: filepath,
+            contentLength,
+            verifiedLength,
+          };
+        }
 
         return {
           success: true,
           path: filepath,
           nodeCount: canvasNodes.length,
           edgeCount: canvasEdges.length,
+          contentLength,
+          verified: true,
         };
       }),
     };
@@ -1581,7 +1711,22 @@ export class ObsidianTools {
           await this.app.vault.trash(item, false);
         }
 
-        return { success: true, path: filepath, type: isFolder ? 'folder' : 'file', method: permanent ? 'deleted' : 'trashed' };
+        // Verify deletion: file should no longer exist at original path
+        const stillExists = this.app.vault.getAbstractFileByPath(filepath);
+        if (stillExists) {
+          return {
+            error: `Delete verification failed: ${filepath} still exists after ${permanent ? 'delete' : 'trash'}`,
+            path: filepath,
+          };
+        }
+
+        return {
+          success: true,
+          path: filepath,
+          type: isFolder ? 'folder' : 'file',
+          method: permanent ? 'deleted' : 'trashed',
+          verified: true,
+        };
       }),
     };
   }
@@ -1953,12 +2098,24 @@ export class ObsidianTools {
         await this.ensureParentFolder(newPath);
         await this.app.fileManager.renameFile(item, newPath);
 
+        // Verify rename: new path should exist, old path should not
+        const atNewPath = this.app.vault.getAbstractFileByPath(newPath);
+        const atOldPath = this.app.vault.getAbstractFileByPath(oldPath);
+
+        if (!atNewPath) {
+          return { error: `Rename verification failed: file not found at new path ${newPath}` };
+        }
+        if (atOldPath) {
+          return { error: `Rename verification failed: file still exists at old path ${oldPath}` };
+        }
+
         return {
           success: true,
           oldPath,
           newPath,
           type: isFolder ? 'folder' : 'file',
           message: `${isFolder ? 'Folder' : 'File'} renamed and links updated`,
+          verified: true,
         };
       }),
     };
@@ -2128,6 +2285,69 @@ export class ObsidianTools {
       return JSON.stringify(value);
     }
     return String(value);
+  }
+
+  /**
+   * Get vault instruction files (CLAUDE.md, AGENTS.md) for agent context.
+   * Convention-based search — checks well-known locations in priority order.
+   */
+  private getInstructionsTool(): ToolDefinition {
+    const SEARCH_LOCATIONS = [
+      'CLAUDE.md',
+      'AGENTS.md',
+      '.obsidian/CLAUDE.md',
+      '.obsidian/AGENTS.md',
+    ];
+
+    return {
+      name: 'get_instructions',
+      description:
+        'Get vault-specific instructions and conventions for working with this vault. ' +
+        'Call this FIRST when starting work with a vault to learn folder structure conventions, ' +
+        'tagging rules, frontmatter requirements, linking preferences, and other vault-specific context. ' +
+        'Searches well-known locations (CLAUDE.md, AGENTS.md) at vault root and in .obsidian/.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: {
+            type: 'string',
+            description:
+              'Optional: read a specific instruction file by path instead of searching default locations',
+          },
+        },
+      },
+      handler: this.wrapHandler(async (params) => {
+        const specificPath = params.path as string | undefined;
+
+        if (specificPath) {
+          const file = this.app.vault.getAbstractFileByPath(specificPath);
+          if (!file || !(file instanceof TFile)) {
+            return { found: false, error: `Instruction file not found: ${specificPath}` };
+          }
+          const content = await this.app.vault.cachedRead(file);
+          return {
+            found: true,
+            files: [{ path: specificPath, content, size: content.length }],
+          };
+        }
+
+        const files: Array<{ path: string; content: string; size: number }> = [];
+
+        for (const location of SEARCH_LOCATIONS) {
+          const file = this.app.vault.getAbstractFileByPath(location);
+          if (file && file instanceof TFile) {
+            const content = await this.app.vault.cachedRead(file);
+            files.push({ path: location, content, size: content.length });
+          }
+        }
+
+        return {
+          found: files.length > 0,
+          files,
+          searchedLocations: SEARCH_LOCATIONS,
+        };
+      }),
+    };
   }
 
   /**
