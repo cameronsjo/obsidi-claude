@@ -11,7 +11,7 @@ import {
 import express, { type Express, type Request, type Response } from 'express';
 import type { Server as HttpServer } from 'http';
 import type { ObsidianTools, ToolExecutionContext } from './obsidianTools';
-import { createLogger } from './logger';
+import { createLogger, Logger, type LogEntry, type LogLevel } from './logger';
 
 const log = createLogger('MCPServer');
 
@@ -74,6 +74,15 @@ export class MCPServer {
   private tools: ObsidianTools;
   private config: MCPServerConfig;
   private isRunning = false;
+  private unsubscribeLogSink: (() => void) | null = null;
+
+  /** Map our log levels to MCP RFC 5424 levels */
+  private static readonly LOG_LEVEL_MAP: Record<LogLevel, string> = {
+    debug: 'debug',
+    info: 'info',
+    warn: 'warning',
+    error: 'error',
+  };
 
   constructor(tools: ObsidianTools, config: MCPServerConfig) {
     this.tools = tools;
@@ -108,6 +117,23 @@ export class MCPServer {
         await this.startSseServer();
       }
 
+      // Register log sink to forward logs to connected MCP clients
+      this.unsubscribeLogSink = Logger.addSink((entry: LogEntry) => {
+        const mcpLevel = MCPServer.LOG_LEVEL_MAP[entry.level] ?? 'info';
+        const data = {
+          component: entry.component,
+          action: entry.action,
+          ...(entry.context ?? {}),
+          ...(entry.error ? { error: entry.error.message } : {}),
+        };
+
+        for (const server of this.getActiveServers()) {
+          server.sendLoggingMessage({ level: mcpLevel, logger: entry.component, data }).catch(() => {
+            // Best-effort — don't break on send failures
+          });
+        }
+      });
+
       this.isRunning = true;
       log.info('MCP server started successfully');
     } catch (error) {
@@ -125,7 +151,7 @@ export class MCPServer {
 
     this.stdioServer = new Server(
       { name: this.config.name, version: this.config.version },
-      { capabilities: { tools: { listChanged: true }, elicitation: {} } }
+      { capabilities: { tools: { listChanged: true }, elicitation: {}, logging: {} } }
     );
 
     this.setupServerHandlers(this.stdioServer);
@@ -430,7 +456,7 @@ export class MCPServer {
   private createMcpServer(): Server {
     const server = new Server(
       { name: this.config.name, version: this.config.version },
-      { capabilities: { tools: { listChanged: true }, elicitation: {} } }
+      { capabilities: { tools: { listChanged: true }, elicitation: {}, logging: {} } }
     );
     this.setupServerHandlers(server);
     return server;
@@ -489,6 +515,19 @@ export class MCPServer {
     }
   }
 
+  /** Collect all active Server instances for broadcasting (logging, notifications) */
+  private getActiveServers(): Server[] {
+    const servers: Server[] = [];
+    if (this.stdioServer) servers.push(this.stdioServer);
+    for (const session of this.httpSessions.values()) {
+      servers.push(session.server);
+    }
+    for (const session of this.sseSessions.values()) {
+      servers.push(session.server);
+    }
+    return servers;
+  }
+
   /**
    * Stop the MCP server
    */
@@ -500,6 +539,12 @@ export class MCPServer {
     log.info('Stopping MCP server');
 
     try {
+      // Unsubscribe log sink before tearing down servers
+      if (this.unsubscribeLogSink) {
+        this.unsubscribeLogSink();
+        this.unsubscribeLogSink = null;
+      }
+
       // Stop cleanup interval
       this.stopCleanupInterval();
 

@@ -14,7 +14,10 @@ export interface LogContext {
   [key: string]: unknown;
 }
 
-interface LogEntry {
+/** Callback signature for external log sinks (e.g., MCP logging transport) */
+export type LogSink = (entry: LogEntry) => void;
+
+export interface LogEntry {
   timestamp: string;
   level: LogLevel;
   component: string;
@@ -66,6 +69,7 @@ export class Logger {
   private component: string;
   private static globalEnabled = true;
   private static minLevel: LogLevel = 'debug';
+  private static sinks: Set<LogSink> = new Set();
 
   constructor(component: string) {
     this.component = component;
@@ -83,6 +87,12 @@ export class Logger {
    */
   static setMinLevel(level: LogLevel): void {
     Logger.minLevel = level;
+  }
+
+  /** Register an external log sink. Returns an unsubscribe function. */
+  static addSink(sink: LogSink): () => void {
+    Logger.sinks.add(sink);
+    return () => Logger.sinks.delete(sink);
   }
 
   private shouldLog(level: LogLevel): boolean {
@@ -111,6 +121,16 @@ export class Logger {
     };
   }
 
+  private dispatchToSinks(entry: LogEntry): void {
+    for (const sink of Logger.sinks) {
+      try {
+        sink(entry);
+      } catch {
+        // Sink errors must not break logging
+      }
+    }
+  }
+
   /**
    * Log debug-level message
    * Use for detailed diagnostic information
@@ -120,6 +140,7 @@ export class Logger {
 
     const entry = this.createEntry('debug', action, context);
     console.debug(formatLogEntry(entry));
+    this.dispatchToSinks(entry);
   }
 
   /**
@@ -131,6 +152,7 @@ export class Logger {
 
     const entry = this.createEntry('info', action, context);
     console.info(formatLogEntry(entry));
+    this.dispatchToSinks(entry);
   }
 
   /**
@@ -142,6 +164,7 @@ export class Logger {
 
     const entry = this.createEntry('warn', action, context);
     console.warn(formatLogEntry(entry));
+    this.dispatchToSinks(entry);
   }
 
   /**
@@ -162,6 +185,7 @@ export class Logger {
     } else {
       console.error(message);
     }
+    this.dispatchToSinks(entry);
   }
 
   /**
