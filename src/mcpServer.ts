@@ -5,6 +5,13 @@ import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import {
   ListToolsRequestSchema,
   CallToolRequestSchema,
+  ListResourcesRequestSchema,
+  ListResourceTemplatesRequestSchema,
+  ReadResourceRequestSchema,
+  SubscribeRequestSchema,
+  UnsubscribeRequestSchema,
+  CompleteRequestSchema,
+  RootsListChangedNotificationSchema,
   isInitializeRequest,
   type CallToolResult,
 } from '@modelcontextprotocol/sdk/types.js';
@@ -75,6 +82,9 @@ export class MCPServer {
   private config: MCPServerConfig;
   private isRunning = false;
   private unsubscribeLogSink: (() => void) | null = null;
+  private unsubscribeVaultChange: (() => void) | null = null;
+  /** URIs subscribed by clients → set of Server instances watching them */
+  private resourceSubscriptions: Map<string, Set<Server>> = new Map();
 
   /** Map our log levels to MCP RFC 5424 levels */
   private static readonly LOG_LEVEL_MAP: Record<LogLevel, string> = {
@@ -134,6 +144,37 @@ export class MCPServer {
         }
       });
 
+      // Wire vault change events to MCP resource notifications
+      this.unsubscribeVaultChange = this.tools.onVaultChange((event, path, oldPath) => {
+        const uri = `vault://note/${path}`;
+
+        // Notify subscribers of the changed resource
+        const subscribers = this.resourceSubscriptions.get(uri);
+        if (subscribers) {
+          for (const server of subscribers) {
+            server.sendResourceUpdated({ uri }).catch(() => {});
+          }
+        }
+
+        // On rename, also notify subscribers of the old URI
+        if (event === 'rename' && oldPath) {
+          const oldUri = `vault://note/${oldPath}`;
+          const oldSubscribers = this.resourceSubscriptions.get(oldUri);
+          if (oldSubscribers) {
+            for (const server of oldSubscribers) {
+              server.sendResourceUpdated({ uri: oldUri }).catch(() => {});
+            }
+          }
+        }
+
+        // On create/delete/rename, the resource list changed
+        if (event !== 'modify') {
+          for (const server of this.getActiveServers()) {
+            server.sendResourceListChanged().catch(() => {});
+          }
+        }
+      });
+
       this.isRunning = true;
       log.info('MCP server started successfully');
     } catch (error) {
@@ -151,13 +192,16 @@ export class MCPServer {
 
     this.stdioServer = new Server(
       { name: this.config.name, version: this.config.version },
-      { capabilities: { tools: { listChanged: true }, elicitation: {}, logging: {} } }
+      { capabilities: { tools: { listChanged: true }, resources: { subscribe: true, listChanged: true }, completions: {}, elicitation: {}, logging: {} } }
     );
 
     this.setupServerHandlers(this.stdioServer);
 
     this.stdioTransport = new StdioServerTransport();
     await this.stdioServer.connect(this.stdioTransport);
+
+    // Query client roots after connection (best-effort)
+    this.logClientRoots(this.stdioServer).catch(() => {});
 
     log.info('Stdio transport started');
   }
@@ -266,6 +310,7 @@ export class MCPServer {
       this.sseSessions.set(sessionId, { transport, server });
 
       log.info('SSE session established', { sessionId, activeSessions: this.sseSessions.size });
+      this.logClientRoots(server).catch(() => {});
 
       // Clean up on connection close
       req.on('close', () => {
@@ -432,6 +477,7 @@ export class MCPServer {
         const server = this.createMcpServer();
         this.httpSessions.set(id, { transport, server, lastActivityTime: Date.now() });
         log.info(logMessage, { sessionId: id, activeSessions: this.httpSessions.size });
+        this.logClientRoots(server).catch(() => {});
       },
       onsessionclosed: (id: string) => {
         this.httpSessions.delete(id);
@@ -456,7 +502,7 @@ export class MCPServer {
   private createMcpServer(): Server {
     const server = new Server(
       { name: this.config.name, version: this.config.version },
-      { capabilities: { tools: { listChanged: true }, elicitation: {}, logging: {} } }
+      { capabilities: { tools: { listChanged: true }, resources: { subscribe: true, listChanged: true }, completions: {}, elicitation: {}, logging: {} } }
     );
     this.setupServerHandlers(server);
     return server;
@@ -539,11 +585,16 @@ export class MCPServer {
     log.info('Stopping MCP server');
 
     try {
-      // Unsubscribe log sink before tearing down servers
+      // Unsubscribe log sink and vault change listener before tearing down servers
       if (this.unsubscribeLogSink) {
         this.unsubscribeLogSink();
         this.unsubscribeLogSink = null;
       }
+      if (this.unsubscribeVaultChange) {
+        this.unsubscribeVaultChange();
+        this.unsubscribeVaultChange = null;
+      }
+      this.resourceSubscriptions.clear();
 
       // Stop cleanup interval
       this.stopCleanupInterval();
@@ -671,6 +722,113 @@ export class MCPServer {
         };
       }
     });
+
+    // --- Resource handlers ---
+
+    server.setRequestHandler(ListResourcesRequestSchema, async () => {
+      const notes = this.tools.listVaultNotes();
+      log.debug('Listing resources', { count: notes.length });
+
+      return {
+        resources: notes.map((note) => ({
+          uri: `vault://note/${note.path}`,
+          name: note.name,
+          mimeType: 'text/markdown',
+        })),
+      };
+    });
+
+    server.setRequestHandler(ListResourceTemplatesRequestSchema, async () => {
+      return {
+        resourceTemplates: [
+          {
+            uriTemplate: 'vault://note/{path}',
+            name: 'Vault Note',
+            description: 'A markdown note in the Obsidian vault',
+            mimeType: 'text/markdown',
+          },
+        ],
+      };
+    });
+
+    server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+      const { uri } = request.params;
+      const match = uri.match(/^vault:\/\/note\/(.+)$/);
+      if (!match) {
+        throw new Error(`Invalid resource URI: ${uri}. Expected vault://note/{path}`);
+      }
+
+      const path = decodeURIComponent(match[1]);
+      const content = await this.tools.readVaultFile(path);
+      if (content === null) {
+        throw new Error(`Note not found: ${path}`);
+      }
+
+      log.debug('Read resource', { uri, path, size: content.length });
+
+      return {
+        contents: [{ uri, mimeType: 'text/markdown', text: content }],
+      };
+    });
+
+    // --- Subscription handlers ---
+
+    server.setRequestHandler(SubscribeRequestSchema, async (request) => {
+      const { uri } = request.params;
+      if (!this.resourceSubscriptions.has(uri)) {
+        this.resourceSubscriptions.set(uri, new Set());
+      }
+      this.resourceSubscriptions.get(uri)!.add(server);
+      log.debug('Resource subscription added', { uri, subscribers: this.resourceSubscriptions.get(uri)!.size });
+      return {};
+    });
+
+    server.setRequestHandler(UnsubscribeRequestSchema, async (request) => {
+      const { uri } = request.params;
+      const subscribers = this.resourceSubscriptions.get(uri);
+      if (subscribers) {
+        subscribers.delete(server);
+        if (subscribers.size === 0) this.resourceSubscriptions.delete(uri);
+      }
+      log.debug('Resource subscription removed', { uri });
+      return {};
+    });
+
+    // --- Completion handler ---
+
+    server.setRequestHandler(CompleteRequestSchema, async (request) => {
+      const { ref, argument } = request.params;
+
+      // Complete vault note paths for resource template references
+      if (ref.type === 'ref/resource' && argument.name === 'path') {
+        const paths = this.tools.getVaultPaths(argument.value);
+        return { completion: { values: paths, hasMore: paths.length >= 100 } };
+      }
+
+      log.debug('No completions for ref', { refType: ref.type, argument: argument.name });
+      return { completion: { values: [] } };
+    });
+
+    // --- Roots change notification ---
+
+    server.setNotificationHandler(RootsListChangedNotificationSchema, async () => {
+      await this.logClientRoots(server);
+    });
+  }
+
+  /** Query and log the client's declared roots (best-effort — not all clients support roots) */
+  private async logClientRoots(server: Server): Promise<void> {
+    try {
+      const { roots } = await server.listRoots();
+      if (roots.length > 0) {
+        log.info('Client roots detected', {
+          count: roots.length,
+          roots: roots.map((r) => r.name ?? r.uri),
+        });
+      }
+    } catch {
+      log.debug('Client does not support roots');
+    }
   }
 }
 

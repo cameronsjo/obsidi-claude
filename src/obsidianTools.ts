@@ -1,5 +1,6 @@
 import type { App, TFile, TFolder } from 'obsidian';
 import { TAbstractFile } from 'obsidian';
+import type { ElicitRequestFormParams, ElicitResult } from '@modelcontextprotocol/sdk/types.js';
 import type { RAGService } from './ragService';
 
 /**
@@ -10,15 +11,7 @@ import type { RAGService } from './ragService';
 /** Optional context passed from the transport layer to tool handlers */
 export interface ToolExecutionContext {
   /** Request user confirmation/input via MCP elicitation. Undefined when not connected via MCP. */
-  elicitInput?: (params: {
-    mode: 'form';
-    message: string;
-    requestedSchema: {
-      type: 'object';
-      properties: Record<string, unknown>;
-      required?: string[];
-    };
-  }) => Promise<{ action: 'accept' | 'decline' | 'cancel'; content?: Record<string, unknown> }>;
+  elicitInput?: (params: ElicitRequestFormParams) => Promise<ElicitResult>;
 }
 
 export interface ToolDefinition {
@@ -2416,5 +2409,74 @@ export class ObsidianTools {
       description: tool.description,
       input_schema: tool.parameters,
     }));
+  }
+
+  // --- Resource helpers for MCP resource subscriptions ---
+
+  /** List all markdown notes in the vault as resource metadata */
+  listVaultNotes(): Array<{ path: string; name: string; size: number; mtime: number }> {
+    return this.app.vault.getMarkdownFiles().map((file) => ({
+      path: file.path,
+      name: file.basename,
+      size: file.stat.size,
+      mtime: file.stat.mtime,
+    }));
+  }
+
+  /** Read a vault file's content by path. Returns null if not found. */
+  async readVaultFile(path: string): Promise<string | null> {
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (!file || !('extension' in file)) return null;
+    return this.app.vault.cachedRead(file as TFile);
+  }
+
+  /** Register a callback for vault file change events. Returns unsubscribe function. */
+  onVaultChange(
+    callback: (event: 'create' | 'modify' | 'delete' | 'rename', path: string, oldPath?: string) => void
+  ): () => void {
+    const onCreate = (file: TAbstractFile) => {
+      if ('extension' in file) callback('create', file.path);
+    };
+    const onModify = (file: TAbstractFile) => {
+      if ('extension' in file) callback('modify', file.path);
+    };
+    const onDelete = (file: TAbstractFile) => {
+      if ('extension' in file) callback('delete', file.path);
+    };
+    const onRename = (file: TAbstractFile, oldPath: string) => {
+      if ('extension' in file) callback('rename', file.path, oldPath);
+    };
+
+    this.app.vault.on('create', onCreate);
+    this.app.vault.on('modify', onModify);
+    this.app.vault.on('delete', onDelete);
+    this.app.vault.on('rename', onRename);
+
+    return () => {
+      this.app.vault.off('create', onCreate);
+      this.app.vault.off('modify', onModify);
+      this.app.vault.off('delete', onDelete);
+      this.app.vault.off('rename', onRename);
+    };
+  }
+
+  // --- Completion helpers for MCP autocomplete ---
+
+  /** Get vault file paths matching a prefix, for autocomplete */
+  getVaultPaths(prefix?: string, limit = 100): string[] {
+    const files = this.app.vault.getFiles();
+    const paths = files.map((f) => f.path);
+    if (!prefix) return paths.slice(0, limit);
+    const lower = prefix.toLowerCase();
+    return paths.filter((p) => p.toLowerCase().startsWith(lower)).slice(0, limit);
+  }
+
+  /** Get all tags in the vault matching a prefix, for autocomplete */
+  getVaultTags(prefix?: string, limit = 100): string[] {
+    const tagCounts = (this.app.metadataCache as unknown as { getTags(): Record<string, number> }).getTags();
+    const tags = Object.keys(tagCounts);
+    if (!prefix) return tags.slice(0, limit);
+    const lower = prefix.toLowerCase();
+    return tags.filter((t) => t.toLowerCase().startsWith(lower)).slice(0, limit);
   }
 }
