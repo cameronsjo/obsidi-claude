@@ -1,6 +1,6 @@
 {
   "name": "obsidi-claude",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Chat with Claude AI using the Agent SDK in Obsidian",
   "main": "main.js",
   "scripts": {

@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.2.0](https://github.com/cameronsjo/obsidi-claude/compare/1.1.0...1.2.0) (2026-02-08)
+
+
+### Features
+
+* **mcp:** add elicitation confirmation for delete tool ([2d86792](https://github.com/cameronsjo/obsidi-claude/commit/2d86792cde37844d02546a3ab668ceb4d63f720b))
+* **mcp:** add get_instructions tool and write verification to all mutating tools ([59e5ce1](https://github.com/cameronsjo/obsidi-claude/commit/59e5ce122f8239cf6d15c772ddd31c4b83a8dfb8))
+* **mcp:** add resources, completions, roots, and typed elicitation ([8ce05f6](https://github.com/cameronsjo/obsidi-claude/commit/8ce05f62a63fa2c78c019035b32d45a3d0f8dd6f))
+* **mcp:** forward structured logs to connected MCP clients ([01e1f97](https://github.com/cameronsjo/obsidi-claude/commit/01e1f9741006193a13b9af69d0a9ccc173e7e06c))
+
+
+### Bug Fixes
+
+* **deps:** update @modelcontextprotocol/sdk to 1.26.0 ([014f938](https://github.com/cameronsjo/obsidi-claude/commit/014f9388eee607278f9b9d16e515ae766b265631))
+
 ## [1.1.0](https://github.com/cameronsjo/obsidi-claude/compare/1.0.1...1.1.0) (2026-02-01)
 
 
