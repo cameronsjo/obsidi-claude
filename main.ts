@@ -1,4 +1,4 @@
-import { Plugin, WorkspaceLeaf, TFile, Notice, Editor, MarkdownView, Menu, App } from 'obsidian';
+import { Plugin, WorkspaceLeaf, TFile, Notice, Editor, MarkdownView, Menu, App, requireApiVersion } from 'obsidian';
 import { ChatView, CHAT_VIEW_TYPE } from './src/chatView';
 import { SettingsTab } from './src/settingsTab';
 import { DEFAULT_SETTINGS, type ObsidiClaudeSettings } from './src/types';
@@ -564,11 +564,21 @@ export default class ObsidiClaudePlugin extends Plugin {
     }
   }
 
+  /** Minimum Obsidian version that ships with CLI support */
+  private static readonly MIN_CLI_APP_VERSION = '1.12.0';
+
   /**
    * Initialize CLI bridge for Obsidian CLI tools (Sync, file history, diff).
-   * Fails gracefully — if CLI not found, plugin continues without CLI tools.
+   * Checks the running Obsidian app version FIRST — if below 1.12.0,
+   * skips entirely without touching the filesystem or spawning processes.
    */
   private async initializeCLIBridge(): Promise<void> {
+    // Gate on the running app version before we ever look for a binary
+    if (!requireApiVersion(ObsidiClaudePlugin.MIN_CLI_APP_VERSION)) {
+      log.info('CLI bridge skipped: Obsidian version too old (requires 1.12.0+)');
+      return;
+    }
+
     try {
       const executor = new CLIExecutor({
         vaultName: this.app.vault.getName(),
@@ -583,7 +593,7 @@ export default class ObsidiClaudePlugin extends Plugin {
           toolCount: this.cliTools.getToolDefinitions().length,
         });
       } else {
-        log.info('CLI bridge unavailable (Obsidian CLI not found)');
+        log.info('CLI bridge unavailable (Obsidian CLI binary not found)');
       }
     } catch (error) {
       log.warn('CLI bridge initialization failed', { error: error instanceof Error ? error.message : String(error) });
