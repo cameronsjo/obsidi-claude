@@ -5,7 +5,7 @@ import { createLogger } from './logger';
 
 const log = createLogger('SettingsTab');
 
-type SettingsTabId = 'agent' | 'embedding' | 'mcp' | 'tools' | 'about';
+type SettingsTabId = 'agent' | 'embedding' | 'tools' | 'about';
 
 export class SettingsTab extends PluginSettingTab {
   plugin: ObsidiClaudePlugin;
@@ -138,7 +138,6 @@ export class SettingsTab extends PluginSettingTab {
     const allTabs: { id: SettingsTabId; label: string; desktopOnly?: boolean }[] = [
       { id: 'agent', label: 'Agent' },
       { id: 'embedding', label: 'Embedding' },
-      { id: 'mcp', label: 'MCP', desktopOnly: true },
       { id: 'tools', label: 'Tools' },
       { id: 'about', label: 'About' },
     ];
@@ -166,15 +165,9 @@ export class SettingsTab extends PluginSettingTab {
       case 'embedding':
         this.addEmbeddingSettings(contentEl);
         break;
-      case 'mcp':
-        this.addMCPSettings(contentEl);
-        this.addExternalMCPSettings(contentEl);
-        if (!Platform.isMobile) {
-          this.addCLIBridgeSettings(contentEl);
-        }
-        break;
       case 'tools':
         this.addToolSettings(contentEl);
+        this.addExternalMCPSettings(contentEl);
         break;
       case 'about':
         this.addAboutSettings(contentEl);
@@ -1123,152 +1116,6 @@ export class SettingsTab extends PluginSettingTab {
     }
   }
 
-  private addMCPSettings(containerEl: HTMLElement): void {
-    // Server section - expose vault tools via MCP
-    const serverSection = this.createCollapsibleSection(
-      containerEl,
-      'mcp-server',
-      'Server (Expose Vault)',
-      true
-    );
-
-    const mcp = this.plugin.settings.mcp;
-
-    new Setting(serverSection)
-      .setName('Enable MCP Server')
-      .setDesc(
-        'Expose Obsidian vault tools via Model Context Protocol. Allows external Claude instances to interact with your vault.'
-      )
-      .addToggle((toggle) =>
-        toggle.setValue(mcp.enabled).onChange(async (value) => {
-          this.plugin.settings.mcp.enabled = value;
-          await this.plugin.saveSettings();
-
-          // Start or stop the MCP server
-          if (value) {
-            await this.plugin.startMCPServer();
-            new Notice('MCP server enabled');
-          } else {
-            await this.plugin.stopMCPServer();
-            new Notice('MCP server disabled');
-          }
-
-          this.display();
-        })
-      );
-
-    if (!mcp.enabled) return;
-
-    new Setting(serverSection)
-      .setName('Server Name')
-      .setDesc('Name used to identify this MCP server')
-      .addText((text) =>
-        text
-          .setPlaceholder('obsidi-claude')
-          .setValue(mcp.serverName)
-          .onChange(async (value) => {
-            this.plugin.settings.mcp.serverName = value || 'obsidi-claude';
-            await this.plugin.saveSettings();
-          })
-      );
-
-    new Setting(serverSection)
-      .setName('Transport')
-      .setDesc('How clients connect to the MCP server')
-      .addDropdown((dropdown) =>
-        dropdown
-          .addOption('http', 'HTTP (Recommended)')
-          .addOption('sse', 'SSE (Deprecated)')
-          .addOption('stdio', 'Stdio (For CLI integration)')
-          .addOption('both', 'Both (HTTP + Stdio)')
-          .setValue(mcp.transport)
-          .onChange(async (value) => {
-            this.plugin.settings.mcp.transport = value as typeof mcp.transport;
-            await this.plugin.saveSettings();
-
-            // Restart server if running
-            if (mcp.enabled && this.plugin.mcpServer?.isServerRunning()) {
-              await this.plugin.stopMCPServer();
-              await this.plugin.startMCPServer();
-              new Notice('MCP server restarted with new transport');
-            }
-
-            this.display();
-          })
-      );
-
-    if (mcp.transport === 'http' || mcp.transport === 'sse' || mcp.transport === 'both') {
-      new Setting(serverSection)
-        .setName('HTTP Port')
-        .setDesc('Port for HTTP/SSE transport (default: 3000)')
-        .addText((text) =>
-          text
-            .setPlaceholder('3000')
-            .setValue(String(mcp.httpPort))
-            .onChange(async (value) => {
-              const port = parseInt(value, 10);
-              if (!isNaN(port) && port >= 1024 && port <= 65535) {
-                this.plugin.settings.mcp.httpPort = port;
-                await this.plugin.saveSettings();
-              }
-            })
-        );
-    }
-
-    // Show MCP configuration instructions based on transport
-    const infoEl = serverSection.createDiv({ cls: 'setting-item-description' });
-    infoEl.style.marginTop = '10px';
-
-    if (mcp.transport === 'http' || mcp.transport === 'both') {
-      infoEl.innerHTML = `
-        <strong>HTTP Transport:</strong><br>
-        Server running at <code>http://localhost:${mcp.httpPort}/mcp</code><br>
-        Health check: <code>http://localhost:${mcp.httpPort}/health</code><br><br>
-        <strong>Claude Code Configuration:</strong><br>
-        Add to <code>~/.claude/claude_desktop_config.json</code>:<br>
-        <pre style="background: var(--background-secondary); padding: 8px; border-radius: 4px; overflow-x: auto; font-size: 0.85em;">{
-  "mcpServers": {
-    "${mcp.serverName}": {
-      "url": "http://localhost:${mcp.httpPort}/mcp"
-    }
-  }
-}</pre>
-        <em>Note: The MCP server exposes 16 tools for vault interaction including semantic search, file operations, and knowledge graph navigation.</em>
-      `;
-    } else if (mcp.transport === 'sse') {
-      infoEl.innerHTML = `
-        <strong>SSE Transport (Deprecated):</strong><br>
-        SSE endpoint: <code>http://localhost:${mcp.httpPort}/sse</code><br>
-        Messages endpoint: <code>http://localhost:${mcp.httpPort}/messages</code><br>
-        Health check: <code>http://localhost:${mcp.httpPort}/health</code><br><br>
-        <strong>Claude Code Configuration:</strong><br>
-        Add to <code>~/.claude/claude_desktop_config.json</code>:<br>
-        <pre style="background: var(--background-secondary); padding: 8px; border-radius: 4px; overflow-x: auto; font-size: 0.85em;">{
-  "mcpServers": {
-    "${mcp.serverName}": {
-      "url": "http://localhost:${mcp.httpPort}/sse"
-    }
-  }
-}</pre>
-        <em>Note: SSE transport is deprecated. Consider using HTTP transport instead.</em>
-      `;
-    } else {
-      infoEl.innerHTML = `
-        <strong>Stdio Transport:</strong><br>
-        Add to <code>~/.claude/claude_desktop_config.json</code>:<br>
-        <pre style="background: var(--background-secondary); padding: 8px; border-radius: 4px; overflow-x: auto; font-size: 0.85em;">{
-  "mcpServers": {
-    "${mcp.serverName}": {
-      "command": "obsidian",
-      "args": ["--mcp-server"]
-    }
-  }
-}</pre>
-        <em>Note: The MCP server exposes 16 tools for vault interaction including semantic search, file operations, and knowledge graph navigation.</em>
-      `;
-    }
-  }
-
   private addExternalMCPSettings(containerEl: HTMLElement): void {
     // Client section - connect to external MCP servers
     const clientSection = this.createCollapsibleSection(
@@ -1340,86 +1187,6 @@ export class SettingsTab extends PluginSettingTab {
             })
           );
       }
-    }
-  }
-
-  private addCLIBridgeSettings(containerEl: HTMLElement): void {
-    const bridgeSection = this.createCollapsibleSection(
-      containerEl,
-      'cli-bridge',
-      'CLI Bridge (Sync & History)',
-      false
-    );
-
-    const cli = this.plugin.settings.cliBridge;
-
-    new Setting(bridgeSection)
-      .setName('Enable CLI Bridge')
-      .setDesc(
-        'Expose Obsidian CLI tools (Sync history, file recovery, diff). ' +
-        'Requires Obsidian v1.12+ with CLI enabled. Desktop only.'
-      )
-      .addToggle((toggle) =>
-        toggle.setValue(cli.enabled).onChange(async (value) => {
-          this.plugin.settings.cliBridge.enabled = value;
-          await this.plugin.saveSettings();
-
-          // Restart MCP server to pick up or remove CLI tools
-          if (this.plugin.mcpServer?.isServerRunning()) {
-            await this.plugin.stopMCPServer();
-            await this.plugin.startMCPServer();
-            new Notice(`MCP server restarted ${value ? 'with' : 'without'} CLI tools`);
-          }
-
-          this.display();
-        })
-      );
-
-    if (!cli.enabled) return;
-
-    new Setting(bridgeSection)
-      .setName('Binary Path')
-      .setDesc('Path to obsidian CLI binary. Leave empty for auto-detection.')
-      .addText((text) =>
-        text
-          .setPlaceholder('Auto-detect')
-          .setValue(cli.binaryPath)
-          .onChange(async (value) => {
-            this.plugin.settings.cliBridge.binaryPath = value.trim();
-            await this.plugin.saveSettings();
-          })
-      );
-
-    new Setting(bridgeSection)
-      .setName('Command Timeout')
-      .setDesc('Maximum time for CLI commands (milliseconds)')
-      .addText((text) =>
-        text
-          .setPlaceholder('10000')
-          .setValue(String(cli.timeout))
-          .onChange(async (value) => {
-            const num = parseInt(value, 10);
-            if (!isNaN(num) && num >= 1000 && num <= 60000) {
-              this.plugin.settings.cliBridge.timeout = num;
-              await this.plugin.saveSettings();
-            }
-          })
-      );
-
-    // Show status using safe DOM methods (no innerHTML with dynamic content)
-    const statusEl = bridgeSection.createDiv({ cls: 'setting-item-description' });
-    statusEl.style.marginTop = '0.5rem';
-    const statusText = statusEl.createEl('em');
-    if (this.plugin.cliTools) {
-      const toolCount = this.plugin.cliTools.getToolDefinitions().length;
-      statusText.setText(
-        `CLI bridge active: ${toolCount} tools available ` +
-        '(sync_status, sync_history, sync_read, sync_restore, file_diff, file_history, file_history_read)'
-      );
-    } else {
-      statusText.setText(
-        'CLI bridge inactive. Enable and restart Obsidian, or check that the Obsidian CLI is installed.'
-      );
     }
   }
 

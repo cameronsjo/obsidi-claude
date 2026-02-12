@@ -156,12 +156,6 @@ export const DEFAULT_CONVERSATION_STORAGE_SETTINGS: ConversationStorageSettings 
   autoResume: false,
 };
 
-export interface MCPSettings {
-  enabled: boolean;
-  serverName: string;
-  transport: 'stdio' | 'http' | 'sse' | 'both';
-  httpPort: number;
-}
 
 /**
  * Transport type for MCP servers.
@@ -351,7 +345,6 @@ export interface ObsidiClaudeSettings {
   showMessageActions: boolean;
   streamResponses: boolean;
   embedding: EmbeddingSettings;
-  mcp: MCPSettings;
   externalMcpServers: ExternalMCPServer[];
   /** Anthropic API key for direct API backend (mobile) - overrides env var */
   anthropicApiKey: string;
@@ -418,8 +411,6 @@ export interface ObsidiClaudeSettings {
   pluginSettings: PluginSettings;
   /** Inline completion settings */
   inlineCompletion: InlineCompletionSettings;
-  /** CLI bridge settings (desktop only) */
-  cliBridge: CLIBridgeSettings;
 }
 
 /**
@@ -555,27 +546,6 @@ export const DEFAULT_EMBEDDING_SETTINGS: EmbeddingSettings = {
   batchDelayMs: 100,
 };
 
-export const DEFAULT_MCP_SETTINGS: MCPSettings = {
-  enabled: false,
-  serverName: 'obsidi-claude',
-  transport: 'http',
-  httpPort: 3000,
-};
-
-export interface CLIBridgeSettings {
-  /** Enable CLI bridge to expose Obsidian CLI tools (desktop only) */
-  enabled: boolean;
-  /** Path to obsidian CLI binary (empty = auto-detect) */
-  binaryPath: string;
-  /** Command timeout in milliseconds */
-  timeout: number;
-}
-
-export const DEFAULT_CLI_BRIDGE_SETTINGS: CLIBridgeSettings = {
-  enabled: false,
-  binaryPath: '',
-  timeout: 10000,
-};
 
 export const DEFAULT_SETTINGS: ObsidiClaudeSettings = {
   model: 'claude-sonnet-4-5',
@@ -675,7 +645,6 @@ When the user asks about their notes, always search first to ground your respons
   showMessageActions: true,
   streamResponses: true,
   embedding: DEFAULT_EMBEDDING_SETTINGS,
-  mcp: DEFAULT_MCP_SETTINGS,
   externalMcpServers: [],
   anthropicApiKey: '',
   preferredBackend: 'auto',
@@ -709,7 +678,6 @@ When the user asks about their notes, always search first to ground your respons
   useV2SessionApi: false, // Use stable query() API by default
   pluginSettings: DEFAULT_PLUGIN_SETTINGS,
   inlineCompletion: DEFAULT_INLINE_COMPLETION_SETTINGS,
-  cliBridge: DEFAULT_CLI_BRIDGE_SETTINGS,
 };
 
 export function generateId(): string {

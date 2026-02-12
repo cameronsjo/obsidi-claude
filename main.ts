@@ -1,14 +1,12 @@
-import { Plugin, WorkspaceLeaf, TFile, Notice, Editor, MarkdownView, Menu, App, requireApiVersion } from 'obsidian';
+import { Plugin, WorkspaceLeaf, TFile, Notice, Editor, MarkdownView, Menu, App } from 'obsidian';
 import { ChatView, CHAT_VIEW_TYPE } from './src/chatView';
 import { SettingsTab } from './src/settingsTab';
 import { DEFAULT_SETTINGS, type ObsidiClaudeSettings } from './src/types';
 import { RAGService } from './src/ragService';
 import { ObsidianTools } from './src/obsidianTools';
 import { StorageService } from './src/storageService';
-import { MCPServer } from './src/mcpServer';
 import { BackendFactory } from './src/backends';
 import { SkillRegistry } from './src/skills';
-import { CLIExecutor, CLITools } from './src/cliBridge';
 import { createLogger } from './src/logger';
 
 const log = createLogger('Plugin');
@@ -29,11 +27,8 @@ export default class ObsidiClaudePlugin extends Plugin {
   ragService: RAGService | null = null;
   obsidianTools: ObsidianTools | null = null;
   storage: StorageService;
-  mcpServer: MCPServer | null = null;
   backendFactory: BackendFactory;
   skillRegistry: SkillRegistry;
-  cliExecutor: CLIExecutor | null = null;
-  cliTools: CLITools | null = null;
   statusBarItem: HTMLElement | null = null;
 
   async onload(): Promise<void> {
@@ -78,11 +73,6 @@ export default class ObsidiClaudePlugin extends Plugin {
     this.skillRegistry = new SkillRegistry(this.app, this.settings.skills);
     await this.skillRegistry.initialize();
     log.info('Skill registry initialized', { skillCount: this.skillRegistry.getSkills().length });
-
-    // Initialize CLI bridge (desktop only — exposes Sync history, file recovery, diff)
-    if (this.settings.cliBridge.enabled) {
-      await this.initializeCLIBridge();
-    }
 
     // Register the chat view
     this.registerView(
@@ -164,46 +154,6 @@ export default class ObsidiClaudePlugin extends Plugin {
       },
     });
 
-    // Add commands to control MCP server
-    this.addCommand({
-      id: 'toggle-mcp-server',
-      name: 'Toggle MCP Server',
-      callback: async () => {
-        if (this.mcpServer?.isServerRunning()) {
-          await this.stopMCPServer();
-          new Notice('MCP server stopped');
-        } else {
-          await this.startMCPServer();
-          new Notice('MCP server started');
-        }
-      },
-    });
-
-    this.addCommand({
-      id: 'start-mcp-server',
-      name: 'Start MCP Server',
-      callback: async () => {
-        if (this.mcpServer?.isServerRunning()) {
-          new Notice('MCP server is already running');
-          return;
-        }
-        await this.startMCPServer();
-        new Notice('MCP server started');
-      },
-    });
-
-    this.addCommand({
-      id: 'stop-mcp-server',
-      name: 'Stop MCP Server',
-      callback: async () => {
-        if (!this.mcpServer?.isServerRunning()) {
-          new Notice('MCP server is not running');
-          return;
-        }
-        await this.stopMCPServer();
-        new Notice('MCP server stopped');
-      },
-    });
 
     // Add selection-based commands
     this.addCommand({
@@ -540,10 +490,8 @@ export default class ObsidiClaudePlugin extends Plugin {
         }
       }
 
-      // Start MCP server if enabled
-      if (this.settings.mcp.enabled) {
-        await this.startMCPServer();
-      }
+      // Register tools with obsidi-mcp if available
+      this.registerWithMCPPlugin();
     });
   }
 
@@ -564,40 +512,38 @@ export default class ObsidiClaudePlugin extends Plugin {
     }
   }
 
-  /** Minimum Obsidian version that ships with CLI support */
-  private static readonly MIN_CLI_APP_VERSION = '1.12.0';
-
   /**
-   * Initialize CLI bridge for Obsidian CLI tools (Sync, file history, diff).
-   * Checks the running Obsidian app version FIRST — if below 1.12.0,
-   * skips entirely without touching the filesystem or spawning processes.
+   * Register tools with obsidi-mcp plugin if it's available.
+   * This gives obsidi-mcp access to our enhanced tools (RAG-powered semantic_search, etc.).
+   * When both plugins are installed, our tools take priority over obsidi-mcp's built-in tools.
    */
-  private async initializeCLIBridge(): Promise<void> {
-    // Gate on the running app version before we ever look for a binary
-    if (!requireApiVersion(ObsidiClaudePlugin.MIN_CLI_APP_VERSION)) {
-      log.info('CLI bridge skipped: Obsidian version too old (requires 1.12.0+)');
+  private registerWithMCPPlugin(): void {
+    const mcp = (this.app as unknown as { plugins?: { plugins?: Record<string, unknown> } })
+      .plugins?.plugins?.['obsidi-mcp'] as { registerToolProvider?: (p: { id: string; name: string; tools: unknown[] }) => void } | undefined;
+
+    if (!mcp?.registerToolProvider) {
+      log.debug('obsidi-mcp not available — running without MCP server');
       return;
     }
 
-    try {
-      const executor = new CLIExecutor({
-        vaultName: this.app.vault.getName(),
-        binaryPath: this.settings.cliBridge.binaryPath || undefined,
-        timeout: this.settings.cliBridge.timeout,
-      });
-
-      if (await executor.initialize()) {
-        this.cliExecutor = executor;
-        this.cliTools = new CLITools(executor);
-        log.info('CLI bridge initialized', {
-          toolCount: this.cliTools.getToolDefinitions().length,
-        });
-      } else {
-        log.info('CLI bridge unavailable (Obsidian CLI binary not found)');
-      }
-    } catch (error) {
-      log.warn('CLI bridge initialization failed', { error: error instanceof Error ? error.message : String(error) });
+    if (!this.obsidianTools) {
+      log.warn('Cannot register with obsidi-mcp: ObsidianTools not initialized');
+      return;
     }
+
+    mcp.registerToolProvider({
+      id: 'obsidi-claude',
+      name: 'Obsidian Claude',
+      tools: this.obsidianTools.getToolDefinitions(),
+    });
+    log.info('Registered tools with obsidi-mcp');
+  }
+
+  /** Unregister from obsidi-mcp on unload */
+  private unregisterFromMCPPlugin(): void {
+    const mcp = (this.app as unknown as { plugins?: { plugins?: Record<string, unknown> } })
+      .plugins?.plugins?.['obsidi-mcp'] as { unregisterToolProvider?: (id: string) => void } | undefined;
+    mcp?.unregisterToolProvider?.('obsidi-claude');
   }
 
   private async initializeRAGService(): Promise<void> {
@@ -937,63 +883,11 @@ export default class ObsidiClaudePlugin extends Plugin {
     menu.showAtMouseEvent(e);
   }
 
-  async startMCPServer(): Promise<void> {
-    if (!this.obsidianTools) {
-      log.warn('Cannot start MCP server: ObsidianTools not initialized');
-      return;
-    }
-
-    if (this.mcpServer?.isServerRunning()) {
-      log.debug('MCP server already running');
-      return;
-    }
-
-    try {
-      this.mcpServer = new MCPServer(
-        this.obsidianTools,
-        {
-          name: this.settings.mcp.serverName,
-          version: this.manifest.version,
-          transport: this.settings.mcp.transport,
-          httpPort: this.settings.mcp.httpPort,
-          // Enable session persistence for hot reload recovery
-          sessionPersistence: {
-            loadStaleSessionIds: () => this.storage.loadStaleSessionIds(),
-            saveSessionIds: (ids) => this.storage.saveSessionIds(ids),
-            clearSessionIds: () => this.storage.clearSessionIds(),
-          },
-        },
-        this.cliTools?.getToolDefinitions(),
-      );
-      await this.mcpServer.start();
-      log.info('MCP server started', {
-        name: this.settings.mcp.serverName,
-        transport: this.settings.mcp.transport,
-        httpPort: this.settings.mcp.httpPort,
-      });
-    } catch (error) {
-      log.error('Failed to start MCP server', error);
-      new Notice(`Failed to start MCP server: ${error}`);
-    }
-  }
-
-  async stopMCPServer(): Promise<void> {
-    if (!this.mcpServer) return;
-
-    try {
-      await this.mcpServer.stop();
-      this.mcpServer = null;
-      log.info('MCP server stopped');
-    } catch (error) {
-      log.error('Failed to stop MCP server', error);
-    }
-  }
-
   async onunload(): Promise<void> {
     log.info('Unloading Obsidi-Claude plugin');
 
-    // Stop MCP server if running
-    await this.stopMCPServer();
+    // Unregister from obsidi-mcp
+    this.unregisterFromMCPPlugin();
 
     // Dispose backend factory
     if (this.backendFactory) {

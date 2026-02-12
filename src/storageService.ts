@@ -3,7 +3,6 @@ import type { ObsidiClaudeSettings, Conversation, ConversationStorageSettings } 
 import {
   DEFAULT_SETTINGS,
   DEFAULT_EMBEDDING_SETTINGS,
-  DEFAULT_MCP_SETTINGS,
   DEFAULT_SKILL_SETTINGS,
   DEFAULT_AGENT_SETTINGS,
   DEFAULT_CONVERSATION_STORAGE_SETTINGS,
@@ -216,7 +215,6 @@ export class StorageService {
       ...DEFAULT_SETTINGS,
       ...saved,
       embedding: { ...DEFAULT_EMBEDDING_SETTINGS, ...(saved.embedding || {}) },
-      mcp: { ...DEFAULT_MCP_SETTINGS, ...(saved.mcp || {}) },
       skills: { ...DEFAULT_SKILL_SETTINGS, ...(saved.skills || {}) },
       agents: { ...DEFAULT_AGENT_SETTINGS, ...(saved.agents || {}) },
       conversationStorage: { ...DEFAULT_CONVERSATION_STORAGE_SETTINGS, ...(saved.conversationStorage || {}) },
@@ -618,57 +616,6 @@ export class StorageService {
 
   getVectorsPath(): string {
     return this.vectorsPath;
-  }
-
-  // ==================== MCP Sessions ====================
-
-  /**
-   * Load stale MCP session IDs (sessions that existed before last restart)
-   */
-  loadStaleSessionIds(): Set<string> {
-    const filePath = path.join(this.basePath, 'mcp-sessions.json');
-    try {
-      if (fs.existsSync(filePath)) {
-        const content = fs.readFileSync(filePath, 'utf-8');
-        const data = JSON.parse(content) as { sessionIds: string[]; savedAt: number };
-        log.debug('Loaded stale MCP session IDs', { count: data.sessionIds.length });
-        return new Set(data.sessionIds);
-      }
-    } catch (error) {
-      log.error('Failed to load stale MCP session IDs', error);
-    }
-    return new Set();
-  }
-
-  /**
-   * Save active MCP session IDs (called before server stop)
-   */
-  saveSessionIds(sessionIds: string[]): void {
-    const filePath = path.join(this.basePath, 'mcp-sessions.json');
-    try {
-      fs.writeFileSync(filePath, JSON.stringify({
-        sessionIds,
-        savedAt: Date.now(),
-      }, null, 2));
-      log.debug('Saved MCP session IDs', { count: sessionIds.length });
-    } catch (error) {
-      log.error('Failed to save MCP session IDs', error);
-    }
-  }
-
-  /**
-   * Clear saved MCP session IDs
-   */
-  clearSessionIds(): void {
-    const filePath = path.join(this.basePath, 'mcp-sessions.json');
-    try {
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-        log.debug('Cleared MCP session IDs');
-      }
-    } catch (error) {
-      log.error('Failed to clear MCP session IDs', error);
-    }
   }
 
   // ==================== Export/Import ====================
