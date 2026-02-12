@@ -418,6 +418,8 @@ export interface ObsidiClaudeSettings {
   pluginSettings: PluginSettings;
   /** Inline completion settings */
   inlineCompletion: InlineCompletionSettings;
+  /** CLI bridge settings (desktop only) */
+  cliBridge: CLIBridgeSettings;
 }
 
 /**
@@ -560,6 +562,21 @@ export const DEFAULT_MCP_SETTINGS: MCPSettings = {
   httpPort: 3000,
 };
 
+export interface CLIBridgeSettings {
+  /** Enable CLI bridge to expose Obsidian CLI tools (desktop only) */
+  enabled: boolean;
+  /** Path to obsidian CLI binary (empty = auto-detect) */
+  binaryPath: string;
+  /** Command timeout in milliseconds */
+  timeout: number;
+}
+
+export const DEFAULT_CLI_BRIDGE_SETTINGS: CLIBridgeSettings = {
+  enabled: false,
+  binaryPath: '',
+  timeout: 10000,
+};
+
 export const DEFAULT_SETTINGS: ObsidiClaudeSettings = {
   model: 'claude-sonnet-4-5',
   systemPrompt: `You are Claude, an AI assistant deeply integrated with Obsidian. You have direct access to the user's knowledge base and can read, write, search, and navigate their vault.
@@ -692,6 +709,7 @@ When the user asks about their notes, always search first to ground your respons
   useV2SessionApi: false, // Use stable query() API by default
   pluginSettings: DEFAULT_PLUGIN_SETTINGS,
   inlineCompletion: DEFAULT_INLINE_COMPLETION_SETTINGS,
+  cliBridge: DEFAULT_CLI_BRIDGE_SETTINGS,
 };
 
 export function generateId(): string {

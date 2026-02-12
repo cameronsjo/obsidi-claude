@@ -17,7 +17,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import express, { type Express, type Request, type Response } from 'express';
 import type { Server as HttpServer } from 'http';
-import type { ObsidianTools, ToolExecutionContext } from './obsidianTools';
+import type { ObsidianTools, ToolDefinition, ToolExecutionContext } from './obsidianTools';
 import { createLogger, Logger, type LogEntry, type LogLevel } from './logger';
 
 const log = createLogger('MCPServer');
@@ -80,6 +80,7 @@ export class MCPServer {
   private sseSessions: Map<string, SSESession> = new Map();
   private tools: ObsidianTools;
   private config: MCPServerConfig;
+  private allToolDefinitions: ToolDefinition[];
   private isRunning = false;
   private unsubscribeLogSink: (() => void) | null = null;
   private unsubscribeVaultChange: (() => void) | null = null;
@@ -94,9 +95,13 @@ export class MCPServer {
     error: 'error',
   };
 
-  constructor(tools: ObsidianTools, config: MCPServerConfig) {
+  constructor(tools: ObsidianTools, config: MCPServerConfig, additionalTools?: ToolDefinition[]) {
     this.tools = tools;
     this.config = config;
+    this.allToolDefinitions = [
+      ...tools.getToolDefinitions(),
+      ...(additionalTools ?? []),
+    ];
   }
 
   /**
@@ -682,31 +687,39 @@ export class MCPServer {
    * Setup request handlers for a server instance
    */
   private setupServerHandlers(server: Server): void {
-    // Handle tool listing
+    // Handle tool listing — merges ObsidianTools + any additional tools (e.g., CLI bridge)
     server.setRequestHandler(ListToolsRequestSchema, async () => {
-      const toolSchemas = this.tools.getToolSchemas();
-      log.debug('Listing tools', { count: toolSchemas.length });
+      log.debug('Listing tools', { count: this.allToolDefinitions.length });
 
       return {
-        tools: toolSchemas.map((tool) => ({
+        tools: this.allToolDefinitions.map((tool) => ({
           name: tool.name,
           description: tool.description,
-          inputSchema: tool.input_schema,
+          inputSchema: tool.parameters,
         })),
       };
     });
 
-    // Handle tool calls — pass elicitation context so tools can request user confirmation
+    // Handle tool calls — dispatches to the matching ToolDefinition handler directly
     server.setRequestHandler(CallToolRequestSchema, async (request): Promise<CallToolResult> => {
       const { name, arguments: args } = request.params;
       log.info('Tool call received', { tool: name });
+
+      const toolDef = this.allToolDefinitions.find((t) => t.name === name);
+      if (!toolDef) {
+        log.warn('Unknown tool requested', { tool: name });
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: `Unknown tool: ${name}` }) }],
+          isError: true,
+        };
+      }
 
       const context: ToolExecutionContext = {
         elicitInput: (params) => server.elicitInput(params),
       };
 
       try {
-        const result = await this.tools.executeTool(name, (args as Record<string, unknown>) || {}, context);
+        const result = await toolDef.handler((args as Record<string, unknown>) || {}, context);
         log.debug('Tool call completed', { tool: name, resultLength: result.length });
 
         return {
@@ -837,12 +850,17 @@ export class MCPServer {
  */
 export function createMCPServer(
   tools: ObsidianTools,
-  config?: Partial<MCPServerConfig>
+  config?: Partial<MCPServerConfig>,
+  additionalTools?: ToolDefinition[]
 ): MCPServer {
-  return new MCPServer(tools, {
-    name: config?.name ?? 'obsidi-claude',
-    version: config?.version ?? '0.1.0',
-    transport: config?.transport ?? 'http',
-    httpPort: config?.httpPort ?? 3000,
-  });
+  return new MCPServer(
+    tools,
+    {
+      name: config?.name ?? 'obsidi-claude',
+      version: config?.version ?? '0.1.0',
+      transport: config?.transport ?? 'http',
+      httpPort: config?.httpPort ?? 3000,
+    },
+    additionalTools
+  );
 }

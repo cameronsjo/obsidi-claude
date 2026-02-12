@@ -169,6 +169,9 @@ export class SettingsTab extends PluginSettingTab {
       case 'mcp':
         this.addMCPSettings(contentEl);
         this.addExternalMCPSettings(contentEl);
+        if (!Platform.isMobile) {
+          this.addCLIBridgeSettings(contentEl);
+        }
         break;
       case 'tools':
         this.addToolSettings(contentEl);
@@ -1337,6 +1340,86 @@ export class SettingsTab extends PluginSettingTab {
             })
           );
       }
+    }
+  }
+
+  private addCLIBridgeSettings(containerEl: HTMLElement): void {
+    const bridgeSection = this.createCollapsibleSection(
+      containerEl,
+      'cli-bridge',
+      'CLI Bridge (Sync & History)',
+      false
+    );
+
+    const cli = this.plugin.settings.cliBridge;
+
+    new Setting(bridgeSection)
+      .setName('Enable CLI Bridge')
+      .setDesc(
+        'Expose Obsidian CLI tools (Sync history, file recovery, diff). ' +
+        'Requires Obsidian v1.12+ with CLI enabled. Desktop only.'
+      )
+      .addToggle((toggle) =>
+        toggle.setValue(cli.enabled).onChange(async (value) => {
+          this.plugin.settings.cliBridge.enabled = value;
+          await this.plugin.saveSettings();
+
+          // Restart MCP server to pick up or remove CLI tools
+          if (this.plugin.mcpServer?.isServerRunning()) {
+            await this.plugin.stopMCPServer();
+            await this.plugin.startMCPServer();
+            new Notice(`MCP server restarted ${value ? 'with' : 'without'} CLI tools`);
+          }
+
+          this.display();
+        })
+      );
+
+    if (!cli.enabled) return;
+
+    new Setting(bridgeSection)
+      .setName('Binary Path')
+      .setDesc('Path to obsidian CLI binary. Leave empty for auto-detection.')
+      .addText((text) =>
+        text
+          .setPlaceholder('Auto-detect')
+          .setValue(cli.binaryPath)
+          .onChange(async (value) => {
+            this.plugin.settings.cliBridge.binaryPath = value.trim();
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(bridgeSection)
+      .setName('Command Timeout')
+      .setDesc('Maximum time for CLI commands (milliseconds)')
+      .addText((text) =>
+        text
+          .setPlaceholder('10000')
+          .setValue(String(cli.timeout))
+          .onChange(async (value) => {
+            const num = parseInt(value, 10);
+            if (!isNaN(num) && num >= 1000 && num <= 60000) {
+              this.plugin.settings.cliBridge.timeout = num;
+              await this.plugin.saveSettings();
+            }
+          })
+      );
+
+    // Show status using safe DOM methods (no innerHTML with dynamic content)
+    const statusEl = bridgeSection.createDiv({ cls: 'setting-item-description' });
+    statusEl.style.marginTop = '0.5rem';
+    const statusText = statusEl.createEl('em');
+    if (this.plugin.cliTools) {
+      const toolCount = this.plugin.cliTools.getToolDefinitions().length;
+      statusText.setText(
+        `CLI bridge active: ${toolCount} tools available ` +
+        '(sync_status, sync_history, sync_read, sync_restore, file_diff, file_history, file_history_read)'
+      );
+    } else {
+      statusText.setText(
+        'CLI bridge inactive. Enable and restart Obsidian, or check that the Obsidian CLI is installed.'
+      );
     }
   }
 

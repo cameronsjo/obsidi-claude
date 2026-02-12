@@ -8,6 +8,7 @@ import { StorageService } from './src/storageService';
 import { MCPServer } from './src/mcpServer';
 import { BackendFactory } from './src/backends';
 import { SkillRegistry } from './src/skills';
+import { CLIExecutor, CLITools } from './src/cliBridge';
 import { createLogger } from './src/logger';
 
 const log = createLogger('Plugin');
@@ -31,6 +32,8 @@ export default class ObsidiClaudePlugin extends Plugin {
   mcpServer: MCPServer | null = null;
   backendFactory: BackendFactory;
   skillRegistry: SkillRegistry;
+  cliExecutor: CLIExecutor | null = null;
+  cliTools: CLITools | null = null;
   statusBarItem: HTMLElement | null = null;
 
   async onload(): Promise<void> {
@@ -75,6 +78,11 @@ export default class ObsidiClaudePlugin extends Plugin {
     this.skillRegistry = new SkillRegistry(this.app, this.settings.skills);
     await this.skillRegistry.initialize();
     log.info('Skill registry initialized', { skillCount: this.skillRegistry.getSkills().length });
+
+    // Initialize CLI bridge (desktop only — exposes Sync history, file recovery, diff)
+    if (this.settings.cliBridge.enabled) {
+      await this.initializeCLIBridge();
+    }
 
     // Register the chat view
     this.registerView(
@@ -556,6 +564,32 @@ export default class ObsidiClaudePlugin extends Plugin {
     }
   }
 
+  /**
+   * Initialize CLI bridge for Obsidian CLI tools (Sync, file history, diff).
+   * Fails gracefully — if CLI not found, plugin continues without CLI tools.
+   */
+  private async initializeCLIBridge(): Promise<void> {
+    try {
+      const executor = new CLIExecutor({
+        vaultName: this.app.vault.getName(),
+        binaryPath: this.settings.cliBridge.binaryPath || undefined,
+        timeout: this.settings.cliBridge.timeout,
+      });
+
+      if (await executor.initialize()) {
+        this.cliExecutor = executor;
+        this.cliTools = new CLITools(executor);
+        log.info('CLI bridge initialized', {
+          toolCount: this.cliTools.getToolDefinitions().length,
+        });
+      } else {
+        log.info('CLI bridge unavailable (Obsidian CLI not found)');
+      }
+    } catch (error) {
+      log.warn('CLI bridge initialization failed', { error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
   private async initializeRAGService(): Promise<void> {
     const storagePath = this.storage.getVectorsPath();
 
@@ -905,18 +939,22 @@ export default class ObsidiClaudePlugin extends Plugin {
     }
 
     try {
-      this.mcpServer = new MCPServer(this.obsidianTools, {
-        name: this.settings.mcp.serverName,
-        version: this.manifest.version,
-        transport: this.settings.mcp.transport,
-        httpPort: this.settings.mcp.httpPort,
-        // Enable session persistence for hot reload recovery
-        sessionPersistence: {
-          loadStaleSessionIds: () => this.storage.loadStaleSessionIds(),
-          saveSessionIds: (ids) => this.storage.saveSessionIds(ids),
-          clearSessionIds: () => this.storage.clearSessionIds(),
+      this.mcpServer = new MCPServer(
+        this.obsidianTools,
+        {
+          name: this.settings.mcp.serverName,
+          version: this.manifest.version,
+          transport: this.settings.mcp.transport,
+          httpPort: this.settings.mcp.httpPort,
+          // Enable session persistence for hot reload recovery
+          sessionPersistence: {
+            loadStaleSessionIds: () => this.storage.loadStaleSessionIds(),
+            saveSessionIds: (ids) => this.storage.saveSessionIds(ids),
+            clearSessionIds: () => this.storage.clearSessionIds(),
+          },
         },
-      });
+        this.cliTools?.getToolDefinitions(),
+      );
       await this.mcpServer.start();
       log.info('MCP server started', {
         name: this.settings.mcp.serverName,

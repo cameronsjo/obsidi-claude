@@ -62,9 +62,13 @@ function jsonSchemaToZod(schema: Record<string, unknown>): z.ZodRawShape {
  */
 export function createObsidianMCPServer(
   obsidianTools: ObsidianTools,
-  serverName = 'obsidian'
+  serverName = 'obsidian',
+  additionalTools?: ToolDefinition[]
 ): McpSdkServerConfigWithInstance {
-  const toolDefinitions = obsidianTools.getToolDefinitions();
+  const toolDefinitions = [
+    ...obsidianTools.getToolDefinitions(),
+    ...(additionalTools ?? []),
+  ];
   log.info('Creating Obsidian MCP server', { toolCount: toolDefinitions.length });
 
   const sdkTools = toolDefinitions.map((toolDef) => {
@@ -113,6 +117,14 @@ export function createObsidianMCPServer(
 /**
  * Get allowed tool names for the Obsidian MCP server
  */
-export function getObsidianToolNames(obsidianTools: ObsidianTools, serverName = 'obsidian'): string[] {
-  return obsidianTools.getToolDefinitions().map((tool) => `mcp__${serverName}__${tool.name}`);
+export function getObsidianToolNames(
+  obsidianTools: ObsidianTools,
+  serverName = 'obsidian',
+  additionalTools?: ToolDefinition[]
+): string[] {
+  const allTools = [
+    ...obsidianTools.getToolDefinitions(),
+    ...(additionalTools ?? []),
+  ];
+  return allTools.map((tool) => `mcp__${serverName}__${tool.name}`);
 }
