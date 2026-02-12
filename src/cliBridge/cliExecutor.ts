@@ -21,6 +21,37 @@ export interface CLIResult {
   exitCode: number;
 }
 
+/** Minimum Obsidian CLI version required for the commands we use */
+const MIN_CLI_VERSION = [1, 12, 0] as const;
+
+/**
+ * Parse a semver-ish version string (e.g., "1.12.0", "v1.12.3-beta").
+ * Returns [major, minor, patch] or null if unparseable.
+ */
+function parseVersion(raw: string): [number, number, number] | null {
+  const match = raw.trim().match(/v?(\d+)\.(\d+)(?:\.(\d+))?/);
+  if (!match) return null;
+  return [
+    parseInt(match[1], 10),
+    parseInt(match[2], 10),
+    parseInt(match[3] ?? '0', 10),
+  ];
+}
+
+/**
+ * Returns true if `version` >= `minimum`.
+ */
+function meetsMinVersion(
+  version: [number, number, number],
+  minimum: readonly [number, number, number]
+): boolean {
+  for (let i = 0; i < 3; i++) {
+    if (version[i] > minimum[i]) return true;
+    if (version[i] < minimum[i]) return false;
+  }
+  return true; // equal
+}
+
 /**
  * Known locations for the Obsidian CLI binary.
  * The CLI ships with Obsidian v1.12+ (early access).
@@ -119,7 +150,7 @@ export class CLIExecutor {
       return false;
     }
 
-    // Validate by running `obsidian version`
+    // Validate by running `obsidian version` and checking minimum version
     try {
       const result = await this.executeRaw(['version']);
       if (result.exitCode !== 0) {
@@ -128,9 +159,26 @@ export class CLIExecutor {
         return false;
       }
 
+      const versionStr = result.stdout.trim();
+      const parsed = parseVersion(versionStr);
+      if (!parsed) {
+        log.warn('Could not parse Obsidian CLI version', { raw: versionStr });
+        this._isAvailable = false;
+        return false;
+      }
+
+      if (!meetsMinVersion(parsed, MIN_CLI_VERSION)) {
+        log.warn('Obsidian CLI version too old for CLI bridge', {
+          detected: versionStr,
+          minimum: MIN_CLI_VERSION.join('.'),
+        });
+        this._isAvailable = false;
+        return false;
+      }
+
       log.info('Obsidian CLI available', {
         path: this.resolvedBinaryPath,
-        version: result.stdout.trim(),
+        version: versionStr,
       });
       this._isAvailable = true;
       return true;

@@ -73,6 +73,31 @@ describe('CLIExecutor', () => {
       expect(executor.isAvailable).toBe(true);
     });
 
+    it('should accept version with v prefix', async () => {
+      mockExecFileResult('v1.13.2\n');
+      const result = await executor.initialize();
+      expect(result).toBe(true);
+    });
+
+    it('should reject version below minimum (1.12.0)', async () => {
+      mockExecFileResult('1.11.9\n');
+      const result = await executor.initialize();
+      expect(result).toBe(false);
+      expect(executor.isAvailable).toBe(false);
+    });
+
+    it('should accept exact minimum version', async () => {
+      mockExecFileResult('1.12.0\n');
+      const result = await executor.initialize();
+      expect(result).toBe(true);
+    });
+
+    it('should reject unparseable version string', async () => {
+      mockExecFileResult('not-a-version\n');
+      const result = await executor.initialize();
+      expect(result).toBe(false);
+    });
+
     it('should fail gracefully when CLI version check fails', async () => {
       mockExecFileResult('', 'not found', 127);
       const result = await executor.initialize();
