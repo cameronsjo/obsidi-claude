@@ -31,16 +31,20 @@ jobs:
 
       - name: Update versions.json
         if: ${{ steps.release.outputs.release_created }}
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
         run: |
-          node scripts/update-versions.mjs "${{ steps.release.outputs.version }}"
+          node scripts/update-versions.mjs "$RELEASE_VERSION"
 
       - name: Commit versions.json update
         if: ${{ steps.release.outputs.release_created }}
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add versions.json
-          git diff --staged --quiet || git commit -m "chore: update versions.json for ${{ steps.release.outputs.version }}"
+          git diff --staged --quiet || git commit -m "chore: update versions.json for $RELEASE_VERSION"
           git push
 
   build-and-release:
@@ -67,8 +71,9 @@ jobs:
       - name: Upload release assets
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.release-please.outputs.tag_name }}
         run: |
-          gh release upload "${{ needs.release-please.outputs.tag_name }}" \
+          gh release upload "$TAG_NAME" \
             main.js \
             manifest.json \
             styles.css \

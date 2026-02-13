@@ -65,20 +65,23 @@ jobs:
           echo "Beta version: $BETA_VERSION (commits since $LAST_TAG: $COMMIT_COUNT)"
 
       - name: Update manifest for beta
+        env:
+          BETA_VERSION: ${{ steps.version.outputs.beta_version }}
         run: |
           node -e "
             const fs = require('fs');
             const manifest = require('./manifest.json');
-            manifest.version = '${{ steps.version.outputs.beta_version }}';
+            manifest.version = process.env.BETA_VERSION;
             fs.writeFileSync('manifest.json', JSON.stringify(manifest, null, 2) + '\n');
           "
 
       - name: Create beta release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BETA_VERSION: ${{ steps.version.outputs.beta_version }}
+          COMMIT_SHA: ${{ github.sha }}
         run: |
           BETA_TAG="beta"
-          BETA_VERSION="${{ steps.version.outputs.beta_version }}"
 
           # Delete existing beta release to get fresh timestamps (BRAT checks publishedAt)
           if gh release view "$BETA_TAG" &>/dev/null; then
@@ -89,18 +92,20 @@ jobs:
           # Also delete local tag if it exists (checkout may have fetched it)
           git tag -d "$BETA_TAG" 2>/dev/null || true
 
+          BUILD_TIME=$(date -u +'%Y-%m-%d %H:%M:%S UTC')
+
           echo "Creating fresh beta release..."
           gh release create "$BETA_TAG" \
             --title "Beta: $BETA_VERSION" \
             --notes "Latest beta build from main branch.
 
           **Version:** \`$BETA_VERSION\`
-          **Commit:** \`${{ github.sha }}\`
-          **Built:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')
+          **Commit:** \`$COMMIT_SHA\`
+          **Built:** $BUILD_TIME
 
           ---
 
-          ⚠️ **This is a pre-release build.** It may contain bugs or incomplete features.
+          This is a pre-release build. It may contain bugs or incomplete features.
 
           To install via BRAT: Add \`cameronsjo/obsidi-claude\` and enable beta versions." \
             --prerelease \
