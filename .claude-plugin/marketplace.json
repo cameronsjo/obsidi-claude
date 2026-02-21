@@ -1,0 +1,15 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "obsidi-claude",
+  "owner": {
+    "name": "Cameron Sjo",
+    "github": "cameronsjo"
+  },
+  "plugins": [
+    {
+      "name": "obsidi-claude",
+      "source": "./.claude-plugin",
+      "description": "Obsidian plugin for chatting with Claude AI"
+    }
+  ]
+}
