@@ -1707,6 +1707,192 @@ pre:hover .code-copy-btn {
   margin: 2px 0;
 }
 
+/* ===== SETTINGS TAB — CLASS-BASED REPLACEMENTS FOR INLINE STYLES ===== */
+
+/* Collapsible section header */
+.settings-section-header {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  padding: 0.5rem 0;
+  margin-top: 1rem;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.settings-section-header:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.settings-section-chevron {
+  margin-right: 0.5rem;
+  transition: transform 0.15s ease;
+  display: flex;
+  align-items: center;
+  color: var(--text-muted);
+}
+
+.settings-section-header.is-expanded .settings-section-chevron {
+  transform: rotate(90deg);
+}
+
+.settings-section-title {
+  flex: 1;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+/* Collapsible section content */
+.settings-section-content {
+  display: none;
+}
+
+.settings-section-content.is-expanded {
+  display: block;
+}
+
+/* Mobile notice banner */
+.obsidi-claude-mobile-notice {
+  background: var(--background-secondary);
+  padding: 0.75rem;
+  border-radius: 6px;
+  margin-bottom: 1rem;
+  border-left: 3px solid var(--interactive-accent);
+}
+
+/* API key status indicator */
+.obsidi-claude-api-key-status {
+  margin-right: 1rem;
+}
+
+.obsidi-claude-api-key-status.configured {
+  color: var(--text-success);
+}
+
+.obsidi-claude-api-key-status.not-configured {
+  color: var(--text-muted);
+}
+
+/* API key set/update button spacing */
+.obsidi-claude-api-key-btn {
+  margin-right: 0.5rem;
+}
+
+/* Backend info blocks */
+.obsidi-claude-backend-info {
+  margin-bottom: 0.5rem;
+}
+
+.obsidi-claude-backend-current {
+  margin-top: -0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+/* Skills active list */
+.obsidi-claude-skills-list {
+  margin-top: 0.5rem;
+}
+
+/* Index stats block */
+.obsidi-claude-index-stats {
+  margin-top: 10px;
+}
+
+/* MCP server list item */
+.mcp-server-item {
+  padding: 0.5rem;
+  margin: 0.5rem 0;
+  background: var(--background-secondary);
+  border-radius: 4px;
+}
+
+/* About hero */
+.obsidi-claude-hero {
+  text-align: center;
+  padding: 1.5rem 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+  margin-bottom: 1rem;
+}
+
+.obsidi-claude-hero-title {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.obsidi-claude-hero-version {
+  font-size: 1.1rem;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+}
+
+.obsidi-claude-hero-desc {
+  color: var(--text-muted);
+  max-width: 400px;
+  margin: 0 auto;
+}
+
+/* System info monospace block */
+.obsidi-claude-sysinfo {
+  background: var(--background-secondary);
+  padding: 1rem;
+  border-radius: 6px;
+  font-family: var(--font-monospace);
+  font-size: 0.85rem;
+}
+
+.obsidi-claude-sysinfo div {
+  line-height: 1.7;
+}
+
+/* Credits */
+.obsidi-claude-credits {
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.obsidi-claude-credits-thanks {
+  margin-top: 1rem;
+  font-size: 0.9rem;
+}
+
+/* Modal shared input width */
+.obsidi-claude-modal-input-full {
+  width: 100%;
+}
+
+/* Modal button container */
+.obsidi-claude-modal-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+/* ApiKeyModal elements */
+.obsidi-claude-modal-desc {
+  margin-bottom: 1rem;
+  color: var(--text-muted);
+}
+
+.obsidi-claude-modal-input-container {
+  margin-bottom: 1rem;
+}
+
+.obsidi-claude-modal-key-input {
+  width: 100%;
+  padding: 0.5rem;
+}
+
+.obsidi-claude-modal-toggle-row {
+  margin-top: 0.5rem;
+}
+
+.obsidi-claude-modal-checkbox {
+  margin-right: 0.5rem;
+}
+
 /* Message Queue */
 .chat-queue-container {
   padding: 0.5rem 1rem;
