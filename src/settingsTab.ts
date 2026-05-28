@@ -212,7 +212,7 @@ export class SettingsTab extends PluginSettingTab {
 
     // Include active note
     new Setting(containerEl)
-      .setName('Include Active Note')
+      .setName('Include active note')
       .setDesc('Automatically include the currently open note as context')
       .addToggle((toggle) =>
         toggle
@@ -225,7 +225,7 @@ export class SettingsTab extends PluginSettingTab {
 
     // Permission mode
     new Setting(containerEl)
-      .setName('Permission Mode')
+      .setName('Permission mode')
       .setDesc('How to handle tool permissions')
       .addDropdown((dropdown) =>
         dropdown
@@ -249,10 +249,10 @@ export class SettingsTab extends PluginSettingTab {
     // ═══════════════════════════════════════════════════════════════════
     // DISPLAY PREFERENCES - Collapsible, expanded by default
     // ═══════════════════════════════════════════════════════════════════
-    const displaySection = this.createCollapsibleSection(containerEl, 'display', 'Display Preferences', true);
+    const displaySection = this.createCollapsibleSection(containerEl, 'display', 'Display preferences', true);
 
     new Setting(displaySection)
-      .setName('Show Tool Calls')
+      .setName('Show tool calls')
       .setDesc('Display when Claude uses tools (Read, Write, Bash, etc.)')
       .addToggle((toggle) =>
         toggle
@@ -264,7 +264,7 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     new Setting(displaySection)
-      .setName('Show Message Actions')
+      .setName('Show message actions')
       .setDesc('Display action buttons (copy, bookmark, reactions) below messages')
       .addToggle((toggle) =>
         toggle
@@ -276,7 +276,7 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     new Setting(displaySection)
-      .setName('Stream Responses')
+      .setName('Stream responses')
       .setDesc('Show responses as they are generated')
       .addToggle((toggle) =>
         toggle
@@ -290,10 +290,10 @@ export class SettingsTab extends PluginSettingTab {
     // ═══════════════════════════════════════════════════════════════════
     // SAFETY & LIMITS - Collapsible, collapsed by default
     // ═══════════════════════════════════════════════════════════════════
-    const limitsSection = this.createCollapsibleSection(containerEl, 'limits', 'Safety & Limits');
+    const limitsSection = this.createCollapsibleSection(containerEl, 'limits', 'Safety & limits');
 
     new Setting(limitsSection)
-      .setName('Max Budget (USD)')
+      .setName('Max budget (USD)')
       .setDesc('Maximum spend per conversation (empty = no limit)')
       .addText((text) =>
         text
@@ -314,7 +314,7 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     new Setting(limitsSection)
-      .setName('Max Turns')
+      .setName('Max turns')
       .setDesc('Maximum conversation turns before stopping')
       .addSlider((slider) =>
         slider
@@ -330,7 +330,7 @@ export class SettingsTab extends PluginSettingTab {
     // ═══════════════════════════════════════════════════════════════════
     // BACKEND SETUP - Collapsible, collapsed by default
     // ═══════════════════════════════════════════════════════════════════
-    const backendSection = this.createCollapsibleSection(containerEl, 'backend', 'Backend Setup');
+    const backendSection = this.createCollapsibleSection(containerEl, 'backend', 'Backend setup');
 
     // On mobile, only show API option; on desktop show all options
     if (Platform.isMobile) {
@@ -364,7 +364,7 @@ export class SettingsTab extends PluginSettingTab {
 
     // API Key with secure storage
     const apiKeySetting = new Setting(backendSection)
-      .setName('Anthropic API Key')
+      .setName('Anthropic API key')
       .setDesc('Required for API backend. Stored securely. Env var ANTHROPIC_API_KEY takes precedence.');
 
     // Add status indicator and buttons asynchronously
@@ -373,7 +373,7 @@ export class SettingsTab extends PluginSettingTab {
     // Desktop-only: Claude Code Path and Working Directory
     if (!Platform.isMobile) {
       new Setting(backendSection)
-        .setName('Claude Code Path')
+        .setName('Claude Code path')
         .setDesc('Path to Claude Code CLI. Run "which claude" in terminal to find it.')
         .addText((text) =>
           text
@@ -386,7 +386,7 @@ export class SettingsTab extends PluginSettingTab {
         );
 
       new Setting(backendSection)
-        .setName('Working Directory')
+        .setName('Working directory')
         .setDesc('Directory where the agent operates. Leave empty for vault root.')
         .addText((text) =>
           text
@@ -402,12 +402,12 @@ export class SettingsTab extends PluginSettingTab {
     // ═══════════════════════════════════════════════════════════════════
     // STORAGE - Vault-based conversation storage for sync
     // ═══════════════════════════════════════════════════════════════════
-    const storageSection = this.createCollapsibleSection(containerEl, 'storage', 'Conversation Storage');
+    const storageSection = this.createCollapsibleSection(containerEl, 'storage', 'Conversation storage');
 
     const storageSettings = this.plugin.settings.conversationStorage;
 
     new Setting(storageSection)
-      .setName('Store in Vault')
+      .setName('Store in vault')
       .setDesc('Save conversations to your vault for cross-device sync via Obsidian Sync')
       .addToggle((toggle) =>
         toggle
@@ -430,7 +430,7 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     new Setting(storageSection)
-      .setName('Folder Path')
+      .setName('Folder path')
       .setDesc('Vault folder for conversation files')
       .addText((text) =>
         text
@@ -443,7 +443,7 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     new Setting(storageSection)
-      .setName('Auto-Resume')
+      .setName('Auto-resume')
       .setDesc('Automatically resume the last conversation on startup')
       .addToggle((toggle) =>
         toggle
@@ -461,7 +461,7 @@ export class SettingsTab extends PluginSettingTab {
 
     // System prompt
     new Setting(advancedSection)
-      .setName('Custom Instructions')
+      .setName('Custom instructions')
       .setDesc('Instructions that guide Claude\'s behavior')
       .addTextArea((text) => {
         text
@@ -494,7 +494,7 @@ export class SettingsTab extends PluginSettingTab {
     new Setting(containerEl).setName('Skills').setHeading();
 
     new Setting(containerEl)
-      .setName('Enable Skills')
+      .setName('Enable skills')
       .setDesc('Load SKILL.md files from your vault to enhance Claude\'s capabilities')
       .addToggle((toggle) =>
         toggle
@@ -508,7 +508,7 @@ export class SettingsTab extends PluginSettingTab {
 
     if (this.plugin.settings.skills.enabled) {
       new Setting(containerEl)
-        .setName('Skills Folder')
+        .setName('Skills folder')
         .setDesc('Vault folder containing SKILL.md files')
         .addText((text) =>
           text
@@ -521,7 +521,7 @@ export class SettingsTab extends PluginSettingTab {
         );
 
       new Setting(containerEl)
-        .setName('Install Bundled Skills')
+        .setName('Install bundled skills')
         .setDesc('Auto-install default skills like Obsidian Markdown (by kepano)')
         .addToggle((toggle) =>
           toggle
@@ -538,7 +538,7 @@ export class SettingsTab extends PluginSettingTab {
 
       const skills = this.plugin.skillRegistry?.getSkills() ?? [];
       new Setting(containerEl)
-        .setName('Loaded Skills')
+        .setName('Loaded skills')
         .setDesc(`${skills.length} skill${skills.length !== 1 ? 's' : ''} loaded`)
         .addButton((button) =>
           button.setButtonText('Reload Skills').onClick(async () => {
@@ -562,11 +562,11 @@ export class SettingsTab extends PluginSettingTab {
 
   private addSDKAdvancedSettings(containerEl: HTMLElement): void {
     // SDK Options header (nested in Advanced section)
-    new Setting(containerEl).setName('SDK Options').setHeading();
+    new Setting(containerEl).setName('SDK options').setHeading();
 
     // System prompt mode
     new Setting(containerEl)
-      .setName('System Prompt Mode')
+      .setName('System prompt mode')
       .setDesc('How to handle your custom system prompt')
       .addDropdown((dropdown) =>
         dropdown
@@ -580,7 +580,7 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Auto-Continue Session')
+      .setName('Auto-continue session')
       .setDesc('Continue the most recent session in working directory')
       .addToggle((toggle) =>
         toggle
@@ -592,7 +592,7 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('File Checkpointing')
+      .setName('File checkpointing')
       .setDesc('Enable undo/rewind for file changes (use /undo command)')
       .addToggle((toggle) =>
         toggle
@@ -604,7 +604,7 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Extended Context (1M tokens)')
+      .setName('Extended context (1M tokens)')
       .setDesc('Enable 1M token context window (Sonnet 4/4.5 only, beta)')
       .addToggle((toggle) =>
         toggle
@@ -616,7 +616,7 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Load Vault CLAUDE.md')
+      .setName('Load vault CLAUDE.md')
       .setDesc('Load project instructions from .claude/CLAUDE.md')
       .addToggle((toggle) =>
         toggle
@@ -628,7 +628,7 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Max Thinking Tokens')
+      .setName('Max thinking tokens')
       .setDesc('Limit thinking tokens to control costs (empty = no limit)')
       .addText((text) =>
         text
@@ -649,7 +649,7 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Additional Directories')
+      .setName('Additional directories')
       .setDesc('Extra directories Claude can access (comma-separated)')
       .addText((text) =>
         text
@@ -665,7 +665,7 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Blocked Tools')
+      .setName('Blocked tools')
       .setDesc('Tools to disable (comma-separated, e.g., "Bash, WebSearch")')
       .addText((text) =>
         text
@@ -696,7 +696,7 @@ export class SettingsTab extends PluginSettingTab {
 
     if (agentOptions.length > 1) {
       new Setting(containerEl)
-        .setName('Main Agent')
+        .setName('Main agent')
         .setDesc('Use a specific agent for all conversations')
         .addDropdown((dropdown) => {
           for (const opt of agentOptions) {
@@ -712,7 +712,7 @@ export class SettingsTab extends PluginSettingTab {
     }
 
     new Setting(containerEl)
-      .setName('Fallback Model')
+      .setName('Fallback model')
       .setDesc('Model to use if primary is rate-limited')
       .addDropdown((dropdown) => {
         dropdown.addOption('', '(None)');
@@ -726,7 +726,7 @@ export class SettingsTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
-      .setName('Ephemeral Mode')
+      .setName('Ephemeral mode')
       .setDesc('Privacy mode - sessions not saved to disk')
       .addToggle((toggle) =>
         toggle.setValue(this.plugin.settings.ephemeralMode).onChange(async (value) => {
@@ -739,7 +739,7 @@ export class SettingsTab extends PluginSettingTab {
     new Setting(containerEl).setName('Sandbox').setHeading();
 
     new Setting(containerEl)
-      .setName('Sandbox Mode')
+      .setName('Sandbox mode')
       .setDesc('Run Bash commands in a sandboxed environment')
       .addToggle((toggle) =>
         toggle.setValue(this.plugin.settings.sandboxEnabled).onChange(async (value) => {
@@ -749,7 +749,7 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Auto-allow Bash in Sandbox')
+      .setName('Auto-allow Bash in sandbox')
       .setDesc('Auto-approve Bash when sandbox is enabled')
       .addToggle((toggle) =>
         toggle.setValue(this.plugin.settings.autoAllowBashIfSandboxed).onChange(async (value) => {
@@ -762,7 +762,7 @@ export class SettingsTab extends PluginSettingTab {
     new Setting(containerEl).setName('Hooks').setHeading();
 
     new Setting(containerEl)
-      .setName('Enable Hooks')
+      .setName('Enable hooks')
       .setDesc('SDK hooks for vault refresh, audit logging, etc.')
       .addToggle((toggle) =>
         toggle.setValue(this.plugin.settings.hooks.enabled).onChange(async (value) => {
@@ -774,7 +774,7 @@ export class SettingsTab extends PluginSettingTab {
 
     if (this.plugin.settings.hooks.enabled) {
       new Setting(containerEl)
-        .setName('Auto-refresh Vault')
+        .setName('Auto-refresh vault')
         .setDesc('Refresh Obsidian after Claude edits files')
         .addToggle((toggle) =>
           toggle.setValue(this.plugin.settings.hooks.autoRefreshVault).onChange(async (value) => {
@@ -784,7 +784,7 @@ export class SettingsTab extends PluginSettingTab {
         );
 
       new Setting(containerEl)
-        .setName('Audit Tool Usage')
+        .setName('Audit tool usage')
         .setDesc('Log all tool usage for debugging')
         .addToggle((toggle) =>
           toggle.setValue(this.plugin.settings.hooks.auditToolUsage).onChange(async (value) => {
@@ -794,7 +794,7 @@ export class SettingsTab extends PluginSettingTab {
         );
 
       new Setting(containerEl)
-        .setName('Show SDK Notifications')
+        .setName('Show SDK notifications')
         .setDesc('Display SDK notifications (may be verbose)')
         .addToggle((toggle) =>
           toggle.setValue(this.plugin.settings.hooks.showNotifications).onChange(async (value) => {
@@ -804,7 +804,7 @@ export class SettingsTab extends PluginSettingTab {
         );
 
       new Setting(containerEl)
-        .setName('Hook Blocked Tools')
+        .setName('Hook blocked tools')
         .setDesc('Tools to block via hooks (e.g., Bash,Write)')
         .addText((text) =>
           text
@@ -821,10 +821,10 @@ export class SettingsTab extends PluginSettingTab {
     }
 
     // Compaction settings
-    new Setting(containerEl).setName('Context Compaction').setHeading();
+    new Setting(containerEl).setName('Context compaction').setHeading();
 
     new Setting(containerEl)
-      .setName('Compaction Instructions')
+      .setName('Compaction instructions')
       .setDesc('Instructions to preserve info during compaction')
       .addTextArea((text) => {
         text
@@ -839,13 +839,13 @@ export class SettingsTab extends PluginSettingTab {
   }
 
   private addEmbeddingSettings(containerEl: HTMLElement): void {
-    new Setting(containerEl).setName('Semantic Search (RAG)').setHeading();
+    new Setting(containerEl).setName('Semantic search (RAG)').setHeading();
 
     const embedding = this.plugin.settings.embedding;
 
     // Enable embeddings
     new Setting(containerEl)
-      .setName('Enable Semantic Search')
+      .setName('Enable semantic search')
       .setDesc(
         'Index vault for semantic search. Claude can find relevant notes by meaning, not just keywords.'
       )
@@ -861,7 +861,7 @@ export class SettingsTab extends PluginSettingTab {
 
     // Provider selection
     new Setting(containerEl)
-      .setName('Embedding Provider')
+      .setName('Embedding provider')
       .setDesc('Choose local (free, offline) or remote (paid, higher quality)')
       .addDropdown((dropdown) =>
         dropdown
@@ -922,7 +922,7 @@ export class SettingsTab extends PluginSettingTab {
       }
 
       new Setting(containerEl)
-        .setName('Ollama Host')
+        .setName('Ollama host')
         .setDesc('Ollama server URL (requires Ollama running)')
         .addText((text) =>
           text
@@ -950,7 +950,7 @@ export class SettingsTab extends PluginSettingTab {
         );
     } else if (embedding.provider === 'openai') {
       new Setting(containerEl)
-        .setName('OpenAI API Key')
+        .setName('OpenAI API key')
         .setDesc('Your OpenAI API key')
         .addText((text) =>
           text
@@ -991,7 +991,7 @@ export class SettingsTab extends PluginSettingTab {
         );
     } else if (embedding.provider === 'voyage') {
       new Setting(containerEl)
-        .setName('Voyage AI API Key')
+        .setName('Voyage AI API key')
         .setDesc('Your Voyage AI API key')
         .addText((text) =>
           text
@@ -1020,10 +1020,10 @@ export class SettingsTab extends PluginSettingTab {
     }
 
     // Indexing settings
-    new Setting(containerEl).setName('Indexing Options').setHeading();
+    new Setting(containerEl).setName('Indexing options').setHeading();
 
     new Setting(containerEl)
-      .setName('Auto-Index')
+      .setName('Auto-index')
       .setDesc('Automatically index files when they change')
       .addToggle((toggle) =>
         toggle.setValue(embedding.autoIndex).onChange(async (value) => {
@@ -1033,7 +1033,7 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Chunk Size')
+      .setName('Chunk size')
       .setDesc('Characters per text chunk (smaller = more precise, larger = more context)')
       .addSlider((slider) =>
         slider
@@ -1047,7 +1047,7 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Chunk Overlap')
+      .setName('Chunk overlap')
       .setDesc('Character overlap between chunks')
       .addSlider((slider) =>
         slider
@@ -1061,7 +1061,7 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Excluded Folders')
+      .setName('Excluded folders')
       .setDesc('Folders to exclude from indexing (comma-separated)')
       .addText((text) =>
         text
@@ -1078,7 +1078,7 @@ export class SettingsTab extends PluginSettingTab {
 
     // Index management buttons
     new Setting(containerEl)
-      .setName('Index Actions')
+      .setName('Index actions')
       .setDesc('Manage the semantic search index')
       .addButton((button) =>
         button.setButtonText('Rebuild Index').onClick(async () => {
@@ -1135,7 +1135,7 @@ export class SettingsTab extends PluginSettingTab {
 
     // Add server button
     new Setting(clientSection)
-      .setName('Add MCP Server')
+      .setName('Add MCP server')
       .setDesc('Connect to external MCP servers for additional capabilities')
       .addButton((button) =>
         button.setButtonText('Add Server').onClick(() => {
@@ -1242,7 +1242,7 @@ export class SettingsTab extends PluginSettingTab {
   }
 
   private addToolSettings(containerEl: HTMLElement): void {
-    new Setting(containerEl).setName('Allowed Tools').setHeading();
+    new Setting(containerEl).setName('Allowed tools').setHeading();
     containerEl.createEl('p', {
       text: 'Select which tools Claude can use:',
       cls: 'setting-item-description',
@@ -1301,7 +1301,7 @@ export class SettingsTab extends PluginSettingTab {
     new Setting(containerEl).setName('Links').setHeading();
 
     new Setting(containerEl)
-      .setName('GitHub Repository')
+      .setName('GitHub repository')
       .setDesc('View source code, report issues, and contribute')
       .addButton((button) =>
         button.setButtonText('Open').onClick(() => {
@@ -1319,7 +1319,7 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Report Issue')
+      .setName('Report issue')
       .setDesc('Found a bug? Let us know!')
       .addButton((button) =>
         button.setButtonText('Report').onClick(() => {
@@ -1328,7 +1328,7 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     // System info section
-    new Setting(containerEl).setName('System Information').setHeading();
+    new Setting(containerEl).setName('System information').setHeading();
 
     const infoEl = containerEl.createDiv({ cls: 'obsidi-claude-sysinfo' });
 
@@ -1354,7 +1354,7 @@ export class SettingsTab extends PluginSettingTab {
 
     // Copy system info button
     new Setting(containerEl)
-      .setName('Copy System Info')
+      .setName('Copy system info')
       .setDesc('Copy system information for bug reports')
       .addButton((button) =>
         button.setButtonText('Copy').onClick(() => {
@@ -1386,7 +1386,7 @@ export class SettingsTab extends PluginSettingTab {
     new Setting(containerEl).setName('Reset').setHeading();
 
     new Setting(containerEl)
-      .setName('Reset to Defaults')
+      .setName('Reset to defaults')
       .setDesc('Reset all settings to their default values')
       .addButton((button) =>
         button.setButtonText('Reset').setWarning().onClick(async () => {
@@ -1446,11 +1446,11 @@ class AddMCPServerModal extends Modal {
     const { contentEl } = this;
     contentEl.empty();
 
-    this.setTitle(this.existing ? 'Edit MCP Server' : 'Add MCP Server');
+    this.setTitle(this.existing ? 'Edit MCP server' : 'Add MCP server');
 
     // Name
     new Setting(contentEl)
-      .setName('Server Name')
+      .setName('Server name')
       .setDesc('Unique name for this MCP server (e.g., "mouse", "media")')
       .addText((text) => {
         this.nameInput = text;
@@ -1486,7 +1486,7 @@ class AddMCPServerModal extends Modal {
 
     // Environment variables
     new Setting(contentEl)
-      .setName('Environment Variables')
+      .setName('Environment variables')
       .setDesc('One per line: KEY=value')
       .addTextArea((text) => {
         this.envInput = text;
@@ -1570,7 +1570,7 @@ class ApiKeyModal extends Modal {
   onOpen(): void {
     const { contentEl } = this;
     contentEl.empty();
-    this.setTitle('Enter Anthropic API Key');
+    this.setTitle('Enter Anthropic API key');
 
     const desc = contentEl.createEl('p', {
       text: 'Your API key will be stored securely and will not appear in plugin settings.',
