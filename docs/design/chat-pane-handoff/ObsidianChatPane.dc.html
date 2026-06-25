@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @keyframes blink{0%,49%{opacity:1}50%,100%{opacity:0}}
+  @keyframes pulsedot{0%,100%{opacity:.4;transform:scale(.85)}50%{opacity:1;transform:scale(1.05)}}
+  @keyframes fadein{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+  ::-webkit-scrollbar{width:9px;height:9px}
+  ::-webkit-scrollbar-thumb{background:var(--bd2);border-radius:6px;border:2px solid transparent;background-clip:padding-box}
+  ::-webkit-scrollbar-track{background:transparent}
+</style>
+</helmet>
+<div style="{{ root }}">
+
+  <sc-if value="{{ vChat }}" hint-placeholder-val="{{ true }}">
+  <div style="display:flex;flex-direction:column;height:100%;width:100%;overflow:hidden">
+
+  <div style="display:flex;align-items:center;gap:8px;height:42px;padding:0 8px 0 12px;border-bottom:1px solid var(--bd);flex:none">
+    <div style="width:18px;height:18px;border-radius:5px;background:var(--acc);display:flex;align-items:center;justify-content:center;flex:none">
+      <div style="width:7px;height:7px;border-radius:1.5px;background:#fff;transform:rotate(45deg)"></div>
+    </div>
+    <div style="font-weight:600;font-size:13px;letter-spacing:.1px">Claude Code</div>
+    <div style="font-size:11px;color:var(--fnt);font-family:var(--font-mono)">sonnet-4.5</div>
+    <div style="flex:1"></div>
+    <div style="display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:6px;color:var(--mut);cursor:pointer" style-hover="background:var(--bg3)">{{ iPlus }}</div>
+    <div style="position:relative;display:flex">
+      <div onClick="{{ tgMore }}" style="display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:6px;color:var(--mut);cursor:pointer" style-hover="background:var(--bg3)">{{ iMore }}</div>
+      <sc-if value="{{ menuMore }}" hint-placeholder-val="{{ false }}">
+        <div style="position:absolute;z-index:50;top:calc(100% + 7px);right:0;min-width:226px;background:var(--bg);border:1px solid var(--bd2);border-radius:10px;box-shadow:var(--shadow);padding:5px">
+          <div onClick="{{ closeMenu }}" style="display:flex;align-items:center;gap:11px;padding:6px 9px;border-radius:6px;cursor:pointer;color:var(--tx);font-size:12.5px" style-hover="background:var(--bg3)"><span style="color:var(--mut);display:flex;flex:none">{{ iPlus }}</span>New chat</div>
+          <div onClick="{{ goHistory }}" style="display:flex;align-items:center;gap:11px;padding:6px 9px;border-radius:6px;cursor:pointer;color:var(--tx);font-size:12.5px" style-hover="background:var(--bg3)"><span style="color:var(--mut);display:flex;flex:none">{{ iHistory }}</span>Chat history…</div>
+          <div style="height:1px;background:var(--bd);margin:5px 6px"></div>
+          <div style="padding:5px 9px 3px;font-size:10px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--fnt)">Vault</div>
+          <div onClick="{{ closeMenu }}" style="display:flex;align-items:center;gap:11px;padding:6px 9px;border-radius:6px;cursor:pointer;color:var(--tx);font-size:12.5px" style-hover="background:var(--bg3)"><span style="color:var(--mut);display:flex;flex:none">{{ iFolder }}</span>Working folder<span style="margin-left:auto;color:var(--fnt);font-size:11px;font-family:var(--font-mono)">/</span></div>
+          <div onClick="{{ closeMenu }}" style="display:flex;align-items:center;gap:11px;padding:6px 9px;border-radius:6px;cursor:pointer;color:var(--tx);font-size:12.5px" style-hover="background:var(--bg3)"><span style="color:var(--mut);display:flex;flex:none">{{ iCmd }}</span>Allowed tools…</div>
+          <div onClick="{{ closeMenu }}" style="display:flex;align-items:center;gap:11px;padding:6px 9px;border-radius:6px;cursor:pointer;color:var(--tx);font-size:12.5px" style-hover="background:var(--bg3)"><span style="color:var(--mut);display:flex;flex:none">{{ iExport }}</span>Move to main tab</div>
+          <div style="height:1px;background:var(--bd);margin:5px 6px"></div>
+          <div onClick="{{ closeMenu }}" style="display:flex;align-items:center;gap:11px;padding:6px 9px;border-radius:6px;cursor:pointer;color:var(--tx);font-size:12.5px" style-hover="background:var(--bg3)"><span style="color:var(--mut);display:flex;flex:none">{{ iExport }}</span>Export chat to note</div>
+          <div onClick="{{ closeMenu }}" style="display:flex;align-items:center;gap:11px;padding:6px 9px;border-radius:6px;cursor:pointer;color:var(--tx);font-size:12.5px" style-hover="background:var(--bg3)"><span style="color:var(--mut);display:flex;flex:none">{{ iCopy }}</span>Copy transcript</div>
+          <div style="height:1px;background:var(--bd);margin:5px 6px"></div>
+          <div onClick="{{ closeMenu }}" style="display:flex;align-items:center;gap:11px;padding:6px 9px;border-radius:6px;cursor:pointer;color:var(--red);font-size:12.5px" style-hover="background:var(--redb)"><span style="display:flex;flex:none">{{ iTrash }}</span>Clear conversation</div>
+          <div onClick="{{ goSettings }}" style="display:flex;align-items:center;gap:11px;padding:6px 9px;border-radius:6px;cursor:pointer;color:var(--tx);font-size:12.5px" style-hover="background:var(--bg3)"><span style="color:var(--mut);display:flex;flex:none">{{ iSliders }}</span>Settings</div>
+        </div>
+      </sc-if>
+    </div>
+  </div>
+
+  <sc-if value="{{ anyMenu }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ closeMenu }}" style="position:absolute;inset:0;z-index:40"></div>
+  </sc-if>
+
+  <div style="flex:1;overflow-y:auto;overflow-x:hidden;padding:16px 14px 10px">
+
+    <div style="margin:0 0 22px">
+      <div style="display:flex;align-items:center;gap:7px;margin-bottom:7px">
+        <div style="width:17px;height:17px;border-radius:50%;background:var(--bg3);border:1px solid var(--bd2);flex:none"></div>
+        <div style="font-size:11.5px;font-weight:600;color:var(--mut)">You</div>
+      </div>
+      <div style="background:var(--bg2);border:1px solid var(--bd);border-radius:10px;padding:9px 12px;font-size:13.5px;line-height:1.55;color:var(--tx)">I want to write a blog post — <em style="font-style:italic">Why I switched to plain-text note-taking</em>. I've got a few scattered notes about it in my vault. Can you pull them together into an outline?</div>
+    </div>
+
+    <div style="margin:0 0 22px">
+      <div style="display:flex;align-items:center;gap:7px;margin-bottom:9px">
+        <div style="width:17px;height:17px;border-radius:5px;background:var(--acc);display:flex;align-items:center;justify-content:center;flex:none"><div style="width:6px;height:6px;background:#fff;border-radius:1px;transform:rotate(45deg)"></div></div>
+        <div style="font-size:11.5px;font-weight:600;color:var(--mut)">Claude</div>
+      </div>
+
+      <div style="margin-bottom:2px">
+        <div onClick="{{ tgThink1 }}" style="display:flex;align-items:center;gap:7px;padding:4px 7px;margin-left:-4px;border-radius:6px;cursor:pointer;color:var(--mut);font-size:12.5px" style-hover="background:var(--bg3)">
+          {{ cThink1 }}<span style="color:var(--acc);display:flex">{{ iThink }}</span><span style="font-style:italic">Thought for 4s</span>
+        </div>
+        <sc-if value="{{ open.think1 }}" hint-placeholder-val="{{ false }}">
+          <div style="margin:3px 0 9px 23px;padding-left:11px;border-left:2px solid var(--bd);color:var(--mut);font-size:12.5px;font-style:italic;line-height:1.65">The notes on this are scattered. I'll search the vault for "plain text", "markdown" and the Notion migration, read the strongest few, then synthesise a structure that builds an argument rather than dumping quotes back at the user.</div>
+        </sc-if>
+      </div>
+
+      <div style="border:1px solid var(--bd);border-radius:9px;background:var(--bg2);margin-bottom:9px;overflow:hidden">
+        <div onClick="{{ tgPlan }}" style="display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;font-size:12.5px" style-hover="background:var(--bg3)">
+          {{ cPlan }}<span style="color:var(--mut);display:flex">{{ iPlanList }}</span><span style="font-weight:600;color:var(--tx)">Plan</span><span style="color:var(--fnt)">· 3 of 4 done</span>
+        </div>
+        <sc-if value="{{ open.plan }}" hint-placeholder-val="{{ true }}">
+          <div style="padding:1px 12px 11px 12px;display:flex;flex-direction:column;gap:8px">
+            <div style="display:flex;align-items:center;gap:9px;font-size:13px"><span style="color:var(--grn);display:flex;flex:none">{{ iCheck }}</span><span style="color:var(--mut);text-decoration:line-through">Search the vault for relevant notes</span></div>
+            <div style="display:flex;align-items:center;gap:9px;font-size:13px"><span style="color:var(--grn);display:flex;flex:none">{{ iCheck }}</span><span style="color:var(--mut);text-decoration:line-through">Read the strongest matches</span></div>
+            <div style="display:flex;align-items:center;gap:9px;font-size:13px"><span style="color:var(--grn);display:flex;flex:none">{{ iCheck }}</span><span style="color:var(--mut);text-decoration:line-through">Draft an outline structure</span></div>
+            <div style="display:flex;align-items:center;gap:9px;font-size:13px"><span style="color:var(--fnt);display:flex;flex:none">{{ iBox }}</span><span style="color:var(--tx)">Refine with the user</span></div>
+          </div>
+        </sc-if>
+      </div>
+
+      <div style="border:1px solid var(--bd);border-radius:9px;background:var(--bg2);margin-bottom:9px;overflow:hidden">
+        <div onClick="{{ tgSearch }}" style="display:flex;align-items:center;gap:8px;padding:7px 10px;cursor:pointer;font-size:12.5px" style-hover="background:var(--bg3)">
+          {{ cSearch }}<span style="color:var(--mut);display:flex">{{ iSearch }}</span><span style="color:var(--tx)">Searched vault</span><span style="color:var(--fnt);font-family:var(--font-mono);font-size:11.5px">"plain text"</span><span style="flex:1"></span><span style="color:var(--fnt)">4 notes</span>
+        </div>
+        <sc-if value="{{ open.search }}" hint-placeholder-val="{{ false }}">
+          <div style="padding:2px 12px 10px 32px;display:flex;flex-direction:column;gap:7px;font-size:12px">
+            <div style="display:flex;align-items:baseline;gap:8px"><span style="font-family:var(--font-mono);color:var(--acc)">Migrating from Notion.md</span><span style="color:var(--fnt)">6 matches</span></div>
+            <div style="display:flex;align-items:baseline;gap:8px"><span style="font-family:var(--font-mono);color:var(--acc)">Why Markdown.md</span><span style="color:var(--fnt)">4 matches</span></div>
+            <div style="display:flex;align-items:baseline;gap:8px"><span style="font-family:var(--font-mono);color:var(--acc)">Tool fatigue 2024.md</span><span style="color:var(--fnt)">2 matches</span></div>
+            <div style="display:flex;align-items:baseline;gap:8px"><span style="font-family:var(--font-mono);color:var(--acc)">2025 Goals.md</span><span style="color:var(--fnt)">1 match</span></div>
+          </div>
+        </sc-if>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:8px;padding:3px 7px;margin:0 0 12px -4px;color:var(--fnt);font-size:12px">
+        <span style="display:flex;flex:none">{{ iDoc }}</span><span>Read 3 notes · <span style="font-family:var(--font-mono);color:var(--mut)">Migrating from Notion.md, Why Markdown.md, Tool fatigue 2024.md</span></span>
+      </div>
+
+      <div style="font-size:13.5px;line-height:1.6;color:var(--tx)">
+        <p style="margin:0 0 4px">Here's a structure that builds an argument instead of just listing features:</p>
+
+        <div style="font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--fnt);margin:16px 0 4px">Working title</div>
+        <div style="font-size:15px;font-weight:650;line-height:1.35;margin-bottom:6px">Why I switched to plain-text note-taking (and stopped chasing apps)</div>
+
+        <div style="font-weight:650;margin:15px 0 4px">1 · The hook — tool fatigue</div>
+        <ul style="margin:0;padding-left:19px;display:flex;flex-direction:column;gap:3px">
+          <li>The Notion migration that ate a weekend</li>
+          <li>Three apps in two years — none of them really <em style="font-style:italic">mine</em></li>
+        </ul>
+
+        <div style="font-weight:650;margin:15px 0 4px">2 · What "plain text" actually buys you</div>
+        <ul style="margin:0;padding-left:19px;display:flex;flex-direction:column;gap:3px">
+          <li>Files you can still open in twenty years</li>
+          <li>grep, Git, and every editor ever made</li>
+        </ul>
+
+        <div style="border-left:3px solid var(--acc);padding:2px 0 2px 13px;margin:15px 0;font-style:italic;color:var(--mut);font-size:13.5px">"If I can't open it in a text editor, I don't really own it."</div>
+
+        <div style="font-weight:650;margin:15px 0 4px">3 · The setup, in plain Markdown</div>
+        <ul style="margin:0 0 8px;padding-left:19px;display:flex;flex-direction:column;gap:3px">
+          <li>One folder, front-matter for metadata:</li>
+        </ul>
+        <div style="background:var(--bgc);border:1px solid var(--bd);border-radius:7px;padding:9px 11px;font-family:var(--font-mono);font-size:11.5px;line-height:1.6;color:var(--tx);overflow-x:auto;white-space:pre">{{ frontmatter }}</div>
+
+        <p style="margin:13px 0 0;color:var(--mut)">Want me to save this as a note and flesh out any section?</p>
+      </div>
+    </div>
+
+    <div style="margin:0 0 22px">
+      <div style="display:flex;align-items:center;gap:7px;margin-bottom:7px">
+        <div style="width:17px;height:17px;border-radius:50%;background:var(--bg3);border:1px solid var(--bd2);flex:none"></div>
+        <div style="font-size:11.5px;font-weight:600;color:var(--mut)">You</div>
+      </div>
+      <div style="background:var(--bg2);border:1px solid var(--bd);border-radius:10px;padding:9px 12px;font-size:13.5px;line-height:1.55;color:var(--tx)">Love it. Save it as <span style="font-family:var(--font-mono);font-size:12.5px;background:var(--bg3);padding:1px 5px;border-radius:4px">Blog Outline.md</span> and add a section on version control with Git.</div>
+    </div>
+
+    <div style="margin:0 0 4px">
+      <div style="display:flex;align-items:center;gap:7px;margin-bottom:9px">
+        <div style="width:17px;height:17px;border-radius:5px;background:var(--acc);display:flex;align-items:center;justify-content:center;flex:none"><div style="width:6px;height:6px;background:#fff;border-radius:1px;transform:rotate(45deg)"></div></div>
+        <div style="font-size:11.5px;font-weight:600;color:var(--mut)">Claude</div>
+      </div>
+
+      <div style="margin-bottom:2px">
+        <div onClick="{{ tgThink2 }}" style="display:flex;align-items:center;gap:7px;padding:4px 7px;margin-left:-4px;border-radius:6px;cursor:pointer;color:var(--mut);font-size:12.5px" style-hover="background:var(--bg3)">
+          {{ cThink2 }}<span style="color:var(--acc);display:flex">{{ iThink }}</span><span style="font-style:italic">Thought for 2s</span>
+        </div>
+        <sc-if value="{{ open.think2 }}" hint-placeholder-val="{{ false }}">
+          <div style="margin:3px 0 9px 23px;padding-left:11px;border-left:2px solid var(--bd);color:var(--mut);font-size:12.5px;font-style:italic;line-height:1.65">A Git section fits the "you own your notes" thesis. I'll confirm the basics from git-scm before writing, create the note, then offer to commit it.</div>
+        </sc-if>
+      </div>
+
+      <div style="border:1px solid var(--bd);border-radius:9px;background:var(--bg2);margin-bottom:9px;overflow:hidden">
+        <div onClick="{{ tgFetch }}" style="display:flex;align-items:center;gap:8px;padding:7px 10px;cursor:pointer;font-size:12.5px" style-hover="background:var(--bg3)">
+          {{ cFetch }}<span style="color:var(--mut);display:flex">{{ iGlobe }}</span><span style="color:var(--tx)">Fetched</span><span style="color:var(--acc);font-family:var(--font-mono);font-size:11.5px">git-scm.com</span><span style="flex:1"></span><span style="color:var(--fnt)">About</span>
+        </div>
+        <sc-if value="{{ open.fetch }}" hint-placeholder-val="{{ false }}">
+          <div style="padding:2px 12px 11px 32px;color:var(--mut);font-size:12.5px;line-height:1.6">Git is a free, distributed version-control system that tracks every change as a snapshot — branch, diff, and roll back without a server. A plain-text vault drops straight into it.</div>
+        </sc-if>
+      </div>
+
+      <sc-if value="{{ editRunning }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;align-items:center;gap:9px;padding:7px 9px;margin:0 0 4px -4px;font-size:12.5px;color:var(--mut)">
+          <span style="width:12px;height:12px;border:2px solid var(--bd2);border-top-color:var(--acc);border-radius:50%;animation:spin .7s linear infinite;flex:none"></span>
+          <span>Writing <span style="font-family:var(--font-mono);color:var(--tx)">Blog Outline.md</span>…</span>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ diffShown }}" hint-placeholder-val="{{ true }}">
+        <div style="border:1px solid var(--bd);border-radius:9px;background:var(--bg2);margin-bottom:9px;overflow:hidden">
+          <div onClick="{{ tgDiff }}" style="display:flex;align-items:center;gap:8px;padding:7px 10px;cursor:pointer;font-size:12.5px" style-hover="background:var(--bg3)">
+            {{ cDiff }}<span style="color:var(--grn);display:flex">{{ iEdit }}</span><span style="font-family:var(--font-mono);font-size:12px;color:var(--tx)">Blog Outline.md</span><span style="font-size:10px;font-weight:600;color:var(--grn);background:var(--grnb);padding:1px 5px;border-radius:4px;letter-spacing:.02em">NEW</span><span style="flex:1"></span><span style="font-family:var(--font-mono);font-size:11px;color:var(--grn)">+12</span><span style="font-family:var(--font-mono);font-size:11px;color:var(--fnt)">−0</span>
+          </div>
+          <sc-if value="{{ open.diff }}" hint-placeholder-val="{{ true }}">
+            <div style="border-top:1px solid var(--bd);padding:6px 0">
+              <div style="display:flex;font-family:var(--font-mono);font-size:11.5px;line-height:1.8;background:var(--grnb)"><span style="width:24px;flex:none;text-align:center;color:var(--grn);opacity:.7;user-select:none">+</span><span style="white-space:pre;color:var(--tx);padding-right:10px"># Why I switched to plain-text note-taking</span></div>
+              <div style="display:flex;font-family:var(--font-mono);font-size:11.5px;line-height:1.8;background:var(--grnb)"><span style="width:24px;flex:none;text-align:center;color:var(--grn);opacity:.7;user-select:none">+</span><span style="white-space:pre;color:var(--tx);padding-right:10px"> </span></div>
+              <div style="display:flex;font-family:var(--font-mono);font-size:11.5px;line-height:1.8;background:var(--grnb)"><span style="width:24px;flex:none;text-align:center;color:var(--grn);opacity:.7;user-select:none">+</span><span style="white-space:pre;color:var(--tx);padding-right:10px">## 1. The hook — tool fatigue</span></div>
+              <div style="display:flex;font-family:var(--font-mono);font-size:11.5px;line-height:1.8;background:var(--grnb)"><span style="width:24px;flex:none;text-align:center;color:var(--grn);opacity:.7;user-select:none">+</span><span style="white-space:pre;color:var(--tx);padding-right:10px">- The Notion migration that ate a weekend</span></div>
+              <div style="display:flex;font-family:var(--font-mono);font-size:11.5px;line-height:1.8;background:var(--grnb)"><span style="width:24px;flex:none;text-align:center;color:var(--grn);opacity:.7;user-select:none">+</span><span style="white-space:pre;color:var(--tx);padding-right:10px"> </span></div>
+              <div style="display:flex;font-family:var(--font-mono);font-size:11.5px;line-height:1.8;background:var(--grnb)"><span style="width:24px;flex:none;text-align:center;color:var(--grn);opacity:.7;user-select:none">+</span><span style="white-space:pre;color:var(--tx);padding-right:10px">## 2. What plain text buys you</span></div>
+              <div style="display:flex;font-family:var(--font-mono);font-size:11.5px;line-height:1.8;background:var(--grnb)"><span style="width:24px;flex:none;text-align:center;color:var(--grn);opacity:.7;user-select:none">+</span><span style="white-space:pre;color:var(--tx);padding-right:10px">- Files you can open in twenty years</span></div>
+              <div style="display:flex;font-family:var(--font-mono);font-size:11.5px;line-height:1.8;background:var(--grnb)"><span style="width:24px;flex:none;text-align:center;color:var(--grn);opacity:.7;user-select:none">+</span><span style="white-space:pre;color:var(--tx);padding-right:10px"> </span></div>
+              <div style="display:flex;font-family:var(--font-mono);font-size:11.5px;line-height:1.8;background:var(--grnb)"><span style="width:24px;flex:none;text-align:center;color:var(--grn);opacity:.7;user-select:none">+</span><span style="white-space:pre;color:var(--tx);padding-right:10px">## 3. Version control with Git</span></div>
+              <div style="display:flex;font-family:var(--font-mono);font-size:11.5px;line-height:1.8;background:var(--grnb)"><span style="width:24px;flex:none;text-align:center;color:var(--grn);opacity:.7;user-select:none">+</span><span style="white-space:pre;color:var(--tx);padding-right:10px">- Your notes get an undo history</span></div>
+              <div style="display:flex;font-family:var(--font-mono);font-size:11.5px;line-height:1.8;background:var(--grnb)"><span style="width:24px;flex:none;text-align:center;color:var(--grn);opacity:.7;user-select:none">+</span><span style="white-space:pre;color:var(--tx);padding-right:10px">- Branching ideas, literally</span></div>
+              <div style="display:flex;font-family:var(--font-mono);font-size:11.5px;line-height:1.8;background:var(--grnb)"><span style="width:24px;flex:none;text-align:center;color:var(--grn);opacity:.7;user-select:none">+</span><span style="white-space:pre;color:var(--tx);padding-right:10px">- One folder, every change tracked</span></div>
+            </div>
+          </sc-if>
+        </div>
+      </sc-if>
+
+      <div style="font-size:13.5px;line-height:1.6;color:var(--tx);margin:6px 0 2px">{{ typedText }}<sc-if value="{{ showCaret }}" hint-placeholder-val="{{ false }}"><span style="display:inline-block;width:7px;height:15px;background:var(--acc);margin-left:1px;vertical-align:-2px;animation:blink 1s step-start infinite"></span></sc-if></div>
+
+      <sc-if value="{{ showPermission }}" hint-placeholder-val="{{ false }}">
+        <div style="border:1px solid var(--bd2);border-radius:10px;background:var(--bg2);overflow:hidden;margin-top:8px">
+          <div style="display:flex;align-items:center;gap:8px;padding:9px 11px 8px">
+            <span style="color:var(--ylw);display:flex">{{ iCmd }}</span><span style="font-size:12.5px;font-weight:600;color:var(--tx)">Run a terminal command?</span>
+          </div>
+          <div style="margin:0 11px;background:var(--bgc);border:1px solid var(--bd);border-radius:7px;padding:8px 10px;font-family:var(--font-mono);font-size:11.5px;color:var(--tx);overflow-x:auto;white-space:nowrap">
+            <span style="color:var(--fnt)">$ </span>git add <span style="color:var(--grn)">"Blog Outline.md"</span> &amp;&amp; git commit -m <span style="color:var(--grn)">"Add blog outline draft"</span>
+          </div>
+          <div style="display:flex;gap:7px;padding:10px 11px">
+            <div style="flex:none;text-align:center;padding:6px 14px;border-radius:7px;background:var(--acc);color:#fff;font-size:12px;font-weight:600;cursor:pointer">Allow once</div>
+            <div style="text-align:center;padding:6px 12px;border-radius:7px;background:var(--bg3);color:var(--tx);font-size:12px;cursor:pointer;border:1px solid var(--bd)">Always</div>
+            <div style="flex:1"></div>
+            <div style="text-align:center;padding:6px 14px;border-radius:7px;background:transparent;color:var(--mut);font-size:12px;cursor:pointer;border:1px solid var(--bd)">Deny</div>
+          </div>
+        </div>
+      </sc-if>
+    </div>
+
+  </div>
+
+  <div style="flex:none;padding:8px 12px 12px;border-top:1px solid var(--bd);background:var(--bg)">
+    <sc-if value="{{ working }}" hint-placeholder-val="{{ true }}">
+      <div style="display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--mut);margin:0 2px 8px">
+        <span style="width:7px;height:7px;border-radius:50%;background:var(--acc);animation:pulsedot 1.3s ease-in-out infinite;flex:none"></span>Claude is working… <span style="color:var(--fnt)">esc to interrupt</span>
+      </div>
+    </sc-if>
+    <div style="background:var(--bg2);border:1px solid var(--bd2);border-radius:12px;padding:10px 12px">
+      <div style="color:var(--fnt);font-size:13.5px;min-height:20px">Reply to Claude…</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:10px">
+
+        <div style="position:relative;display:flex">
+          <div onClick="{{ tgMode }}" style="display:flex;align-items:center;gap:5px;padding:3px 7px 3px 7px;border-radius:7px;background:var(--accb);color:var(--acc);font-size:11.5px;font-weight:600;cursor:pointer">{{ iSpark }}{{ modeLabel }}{{ iCaretD }}</div>
+          <sc-if value="{{ menuMode }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute;z-index:50;bottom:calc(100% + 8px);left:0;min-width:248px;background:var(--bg);border:1px solid var(--bd2);border-radius:10px;box-shadow:var(--shadow);padding:5px">
+              <div style="padding:5px 9px 3px;font-size:10px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--fnt)">Permission mode</div>
+              <div onClick="{{ setModeDefault }}" style="display:flex;align-items:center;gap:10px;padding:6px 9px;border-radius:6px;cursor:pointer;font-size:12.5px" style-hover="background:var(--bg3)"><span style="width:8px;height:8px;border-radius:50%;background:var(--mut);flex:none"></span><span style="color:var(--tx)">Default <span style="color:var(--fnt)">· ask before each edit</span></span><span style="flex:1"></span><sc-if value="{{ mDefault }}" hint-placeholder-val="{{ true }}"><span style="color:var(--acc);display:flex;flex:none">{{ iCheck }}</span></sc-if></div>
+              <div onClick="{{ setModePlan }}" style="display:flex;align-items:center;gap:10px;padding:6px 9px;border-radius:6px;cursor:pointer;font-size:12.5px" style-hover="background:var(--bg3)"><span style="width:8px;height:8px;border-radius:50%;background:var(--acc);flex:none"></span><span style="color:var(--tx)">Plan <span style="color:var(--fnt)">· read-only, propose first</span></span><span style="flex:1"></span><sc-if value="{{ mPlan }}" hint-placeholder-val="{{ false }}"><span style="color:var(--acc);display:flex;flex:none">{{ iCheck }}</span></sc-if></div>
+              <div onClick="{{ setModeAuto }}" style="display:flex;align-items:center;gap:10px;padding:6px 9px;border-radius:6px;cursor:pointer;font-size:12.5px" style-hover="background:var(--bg3)"><span style="width:8px;height:8px;border-radius:50%;background:var(--grn);flex:none"></span><span style="color:var(--tx)">Auto-accept edits <span style="color:var(--fnt)">· apply edits, ask for commands</span></span><span style="flex:1"></span><sc-if value="{{ mAuto }}" hint-placeholder-val="{{ false }}"><span style="color:var(--acc);display:flex;flex:none">{{ iCheck }}</span></sc-if></div>
+              <div onClick="{{ setModeFull }}" style="display:flex;align-items:center;gap:10px;padding:6px 9px;border-radius:6px;cursor:pointer;font-size:12.5px" style-hover="background:var(--bg3)"><span style="width:8px;height:8px;border-radius:50%;background:var(--ylw);flex:none"></span><span style="color:var(--tx)">Auto <span style="color:var(--fnt)">· run edits &amp; commands hands-free</span></span><span style="flex:1"></span><sc-if value="{{ mFull }}" hint-placeholder-val="{{ false }}"><span style="color:var(--acc);display:flex;flex:none">{{ iCheck }}</span></sc-if></div>
+              <div onClick="{{ setModeBypass }}" style="display:flex;align-items:center;gap:10px;padding:6px 9px;border-radius:6px;cursor:pointer;font-size:12.5px" style-hover="background:var(--redb)"><span style="width:8px;height:8px;border-radius:50%;background:var(--red);flex:none"></span><span style="color:var(--red)">Bypass permissions <span style="opacity:.7">· no prompts</span></span><span style="flex:1"></span><sc-if value="{{ mBypass }}" hint-placeholder-val="{{ false }}"><span style="color:var(--red);display:flex;flex:none">{{ iCheck }}</span></sc-if></div>
+            </div>
+          </sc-if>
+        </div>
+
+        <div style="position:relative;display:flex">
+          <div onClick="{{ tgAdd }}" style="display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:7px;color:var(--mut);cursor:pointer" style-hover="background:var(--bg3)">{{ iAttach }}</div>
+          <sc-if value="{{ menuAdd }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute;z-index:50;bottom:calc(100% + 8px);left:0;min-width:236px;background:var(--bg);border:1px solid var(--bd2);border-radius:10px;box-shadow:var(--shadow);padding:5px">
+              <div style="padding:5px 9px 3px;font-size:10px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--fnt)">Add to context</div>
+              <div onClick="{{ closeMenu }}" style="display:flex;align-items:center;gap:11px;padding:6px 9px;border-radius:6px;cursor:pointer;color:var(--tx);font-size:12.5px" style-hover="background:var(--bg3)"><span style="color:var(--mut);display:flex;flex:none">{{ iDoc }}</span>Current note<span style="margin-left:auto;color:var(--fnt);font-size:11px;font-family:var(--font-mono)">Notion.md</span></div>
+              <div onClick="{{ closeMenu }}" style="display:flex;align-items:center;gap:11px;padding:6px 9px;border-radius:6px;cursor:pointer;color:var(--tx);font-size:12.5px" style-hover="background:var(--bg3)"><span style="color:var(--mut);display:flex;flex:none">{{ iSel }}</span>Selection</div>
+              <div onClick="{{ closeMenu }}" style="display:flex;align-items:center;gap:11px;padding:6px 9px;border-radius:6px;cursor:pointer;color:var(--tx);font-size:12.5px" style-hover="background:var(--bg3)"><span style="color:var(--mut);display:flex;flex:none">{{ iSearch }}</span>Search vault…</div>
+              <div onClick="{{ closeMenu }}" style="display:flex;align-items:center;gap:11px;padding:6px 9px;border-radius:6px;cursor:pointer;color:var(--tx);font-size:12.5px" style-hover="background:var(--bg3)"><span style="color:var(--mut);display:flex;flex:none">{{ iLink }}</span>Linked notes &amp; backlinks</div>
+              <div onClick="{{ closeMenu }}" style="display:flex;align-items:center;gap:11px;padding:6px 9px;border-radius:6px;cursor:pointer;color:var(--tx);font-size:12.5px" style-hover="background:var(--bg3)"><span style="color:var(--mut);display:flex;flex:none">{{ iFolder }}</span>Folder…</div>
+              <div onClick="{{ closeMenu }}" style="display:flex;align-items:center;gap:11px;padding:6px 9px;border-radius:6px;cursor:pointer;color:var(--tx);font-size:12.5px" style-hover="background:var(--bg3)"><span style="color:var(--mut);display:flex;flex:none">{{ iCal }}</span>Today's daily note</div>
+              <div style="height:1px;background:var(--bd);margin:5px 6px"></div>
+              <div onClick="{{ closeMenu }}" style="display:flex;align-items:center;gap:11px;padding:6px 9px;border-radius:6px;cursor:pointer;color:var(--tx);font-size:12.5px" style-hover="background:var(--bg3)"><span style="color:var(--mut);display:flex;flex:none">{{ iImage }}</span>Image or screenshot</div>
+              <div onClick="{{ closeMenu }}" style="display:flex;align-items:center;gap:11px;padding:6px 9px;border-radius:6px;cursor:pointer;color:var(--tx);font-size:12.5px" style-hover="background:var(--bg3)"><span style="color:var(--mut);display:flex;flex:none">{{ iAttach }}</span>Attach file…</div>
+            </div>
+          </sc-if>
+        </div>
+
+        <div style="flex:1"></div>
+
+        <div style="position:relative;display:flex">
+          <div onClick="{{ tgModel }}" style="display:flex;align-items:center;gap:3px;font-family:var(--font-mono);font-size:11px;color:var(--fnt);cursor:pointer;padding:3px 4px;border-radius:6px" style-hover="background:var(--bg3)">{{ modelLabel }}{{ iCaretD }}</div>
+          <sc-if value="{{ menuModel }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute;z-index:50;bottom:calc(100% + 8px);right:0;min-width:230px;background:var(--bg);border:1px solid var(--bd2);border-radius:10px;box-shadow:var(--shadow);padding:5px">
+              <div style="padding:5px 9px 3px;font-size:10px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--fnt)">Model</div>
+              <div onClick="{{ setModelOpus }}" style="display:flex;align-items:center;gap:10px;padding:6px 9px;border-radius:6px;cursor:pointer;font-size:12.5px" style-hover="background:var(--bg3)"><span style="width:8px;height:8px;border-radius:2px;background:var(--acc);flex:none"></span><span style="color:var(--tx)">Opus 4.6 <span style="color:var(--fnt)">· deepest reasoning</span></span><span style="flex:1"></span><sc-if value="{{ mdOpus }}" hint-placeholder-val="{{ false }}"><span style="color:var(--acc);display:flex;flex:none">{{ iCheck }}</span></sc-if></div>
+              <div onClick="{{ setModelSonnet }}" style="display:flex;align-items:center;gap:10px;padding:6px 9px;border-radius:6px;cursor:pointer;font-size:12.5px" style-hover="background:var(--bg3)"><span style="width:8px;height:8px;border-radius:2px;background:var(--acc);flex:none"></span><span style="color:var(--tx)">Sonnet 4.5 <span style="color:var(--fnt)">· balanced default</span></span><span style="flex:1"></span><sc-if value="{{ mdSonnet }}" hint-placeholder-val="{{ true }}"><span style="color:var(--acc);display:flex;flex:none">{{ iCheck }}</span></sc-if></div>
+              <div onClick="{{ setModelHaiku }}" style="display:flex;align-items:center;gap:10px;padding:6px 9px;border-radius:6px;cursor:pointer;font-size:12.5px" style-hover="background:var(--bg3)"><span style="width:8px;height:8px;border-radius:2px;background:var(--acc);flex:none"></span><span style="color:var(--tx)">Haiku 4.5 <span style="color:var(--fnt)">· fastest</span></span><span style="flex:1"></span><sc-if value="{{ mdHaiku }}" hint-placeholder-val="{{ false }}"><span style="color:var(--acc);display:flex;flex:none">{{ iCheck }}</span></sc-if></div>
+            </div>
+          </sc-if>
+        </div>
+
+        <div style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:8px;background:var(--acc);color:#fff;cursor:pointer">{{ iSend }}</div>
+      </div>
+    </div>
+  </div>
+
+  </div>
+  </sc-if>
+
+  <sc-if value="{{ vHistory }}" hint-placeholder-val="{{ false }}">
+  <div style="display:flex;flex-direction:column;height:100%;width:100%;overflow:hidden">
+    <div style="display:flex;align-items:center;gap:5px;height:42px;padding:0 8px 0 5px;border-bottom:1px solid var(--bd);flex:none">
+      <div onClick="{{ goChat }}" style="display:flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:7px;color:var(--mut);cursor:pointer" style-hover="background:var(--bg3)">{{ iBack }}</div>
+      <div style="font-weight:600;font-size:13px">Chat history</div>
+      <div style="flex:1"></div>
+      <div onClick="{{ goChat }}" style="display:flex;align-items:center;gap:5px;padding:4px 10px 4px 7px;border-radius:7px;background:var(--accb);color:var(--acc);font-size:11.5px;font-weight:600;cursor:pointer">{{ iPlus }}New</div>
+    </div>
+    <div style="padding:10px 12px 4px;flex:none">
+      <div style="display:flex;align-items:center;gap:8px;background:var(--bg2);border:1px solid var(--bd2);border-radius:8px;padding:7px 10px;color:var(--fnt)"><span style="display:flex">{{ iSearch }}</span><span style="font-size:12.5px">Search chats…</span></div>
+    </div>
+    <div style="flex:1;overflow-y:auto;padding:2px 8px 16px">
+      <div style="font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--fnt);padding:9px 8px 3px">Pinned</div>
+      <div style="display:flex;flex-direction:column;gap:3px;padding:9px 10px;border-radius:9px;cursor:pointer" style-hover="background:var(--bg3)">
+        <div style="display:flex;align-items:baseline;gap:8px"><div style="font-size:13px;font-weight:550;color:var(--tx);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Vault MOC generator</div><div style="flex:1"></div><div style="font-size:10.5px;color:var(--fnt);font-family:var(--font-mono);flex:none">Jun 12</div></div>
+        <div style="font-size:12px;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Generates a Map of Content for each top-level folder and cross-links them.</div>
+        <div style="display:flex;align-items:center;gap:7px;font-size:10.5px;color:var(--fnt);margin-top:1px"><span>31 messages</span><span style="opacity:.5">·</span><span style="font-family:var(--font-mono)">Opus 4.6</span></div>
+      </div>
+
+      <div style="font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--fnt);padding:14px 8px 3px">Today</div>
+      <div style="display:flex;flex-direction:column;gap:3px;padding:9px 10px;border-radius:9px;cursor:pointer;background:var(--accb)">
+        <div style="display:flex;align-items:baseline;gap:8px"><div style="font-size:13px;font-weight:600;color:var(--acc);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Outline: plain-text note-taking</div><div style="flex:1"></div><div style="font-size:10.5px;color:var(--acc);font-family:var(--font-mono);flex:none">now</div></div>
+        <div style="font-size:12px;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Pulled scattered notes into a blog outline; saved Blog Outline.md.</div>
+        <div style="display:flex;align-items:center;gap:7px;font-size:10.5px;color:var(--fnt);margin-top:1px"><span>2 messages</span><span style="opacity:.5">·</span><span style="font-family:var(--font-mono)">Sonnet 4.5</span><span style="opacity:.5">·</span><span style="font-family:var(--font-mono)">/Writing</span></div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:3px;padding:9px 10px;border-radius:9px;cursor:pointer" style-hover="background:var(--bg3)">
+        <div style="display:flex;align-items:baseline;gap:8px"><div style="font-size:13px;font-weight:550;color:var(--tx);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Repair broken wikilinks</div><div style="flex:1"></div><div style="font-size:10.5px;color:var(--fnt);font-family:var(--font-mono);flex:none">2h</div></div>
+        <div style="font-size:12px;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Scanned 412 notes and fixed 27 broken internal links.</div>
+        <div style="display:flex;align-items:center;gap:7px;font-size:10.5px;color:var(--fnt);margin-top:1px"><span>14 messages</span><span style="opacity:.5">·</span><span style="font-family:var(--font-mono)">Sonnet 4.5</span></div>
+      </div>
+
+      <div style="font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--fnt);padding:14px 8px 3px">Yesterday</div>
+      <div style="display:flex;flex-direction:column;gap:3px;padding:9px 10px;border-radius:9px;cursor:pointer" style-hover="background:var(--bg3)">
+        <div style="display:flex;align-items:baseline;gap:8px"><div style="font-size:13px;font-weight:550;color:var(--tx);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Weekly review from daily notes</div><div style="flex:1"></div><div style="font-size:10.5px;color:var(--fnt);font-family:var(--font-mono);flex:none">Thu</div></div>
+        <div style="font-size:12px;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Summarised this week's daily notes into Review 2026-W25.</div>
+        <div style="display:flex;align-items:center;gap:7px;font-size:10.5px;color:var(--fnt);margin-top:1px"><span>9 messages</span><span style="opacity:.5">·</span><span style="font-family:var(--font-mono)">Sonnet 4.5</span><span style="opacity:.5">·</span><span style="font-family:var(--font-mono)">/Daily</span></div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:3px;padding:9px 10px;border-radius:9px;cursor:pointer" style-hover="background:var(--bg3)">
+        <div style="display:flex;align-items:baseline;gap:8px"><div style="font-size:13px;font-weight:550;color:var(--tx);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Tag taxonomy cleanup</div><div style="flex:1"></div><div style="font-size:10.5px;color:var(--fnt);font-family:var(--font-mono);flex:none">Thu</div></div>
+        <div style="font-size:12px;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Merged #task and #todo, normalised 60 tags across the vault.</div>
+        <div style="display:flex;align-items:center;gap:7px;font-size:10.5px;color:var(--fnt);margin-top:1px"><span>22 messages</span><span style="opacity:.5">·</span><span style="font-family:var(--font-mono)">Opus 4.6</span></div>
+      </div>
+
+      <div style="font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--fnt);padding:14px 8px 3px">Previous 7 days</div>
+      <div style="display:flex;flex-direction:column;gap:3px;padding:9px 10px;border-radius:9px;cursor:pointer" style-hover="background:var(--bg3)">
+        <div style="display:flex;align-items:baseline;gap:8px"><div style="font-size:13px;font-weight:550;color:var(--tx);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">README for Templater scripts</div><div style="flex:1"></div><div style="font-size:10.5px;color:var(--fnt);font-family:var(--font-mono);flex:none">Mon</div></div>
+        <div style="font-size:12px;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Documented 8 user scripts with usage examples.</div>
+        <div style="display:flex;align-items:center;gap:7px;font-size:10.5px;color:var(--fnt);margin-top:1px"><span>6 messages</span><span style="opacity:.5">·</span><span style="font-family:var(--font-mono)">Sonnet 4.5</span><span style="opacity:.5">·</span><span style="font-family:var(--font-mono)">/Scripts</span></div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:3px;padding:9px 10px;border-radius:9px;cursor:pointer" style-hover="background:var(--bg3)">
+        <div style="display:flex;align-items:baseline;gap:8px"><div style="font-size:13px;font-weight:550;color:var(--tx);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Summarise Meeting — Q3 planning</div><div style="flex:1"></div><div style="font-size:10.5px;color:var(--fnt);font-family:var(--font-mono);flex:none">Sun</div></div>
+        <div style="font-size:12px;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Extracted decisions and action items into a linked note.</div>
+        <div style="display:flex;align-items:center;gap:7px;font-size:10.5px;color:var(--fnt);margin-top:1px"><span>4 messages</span><span style="opacity:.5">·</span><span style="font-family:var(--font-mono)">Haiku 4.5</span><span style="opacity:.5">·</span><span style="font-family:var(--font-mono)">/Meetings</span></div>
+      </div>
+    </div>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{ vSettings }}" hint-placeholder-val="{{ false }}">
+  <div style="display:flex;flex-direction:column;height:100%;width:100%;overflow:hidden">
+    <div style="display:flex;align-items:center;gap:5px;height:42px;padding:0 8px 0 5px;border-bottom:1px solid var(--bd);flex:none">
+      <div onClick="{{ goChat }}" style="display:flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:7px;color:var(--mut);cursor:pointer" style-hover="background:var(--bg3)">{{ iBack }}</div>
+      <div style="font-weight:600;font-size:13px">Settings</div>
+    </div>
+    <div style="flex:1;overflow-y:auto;padding:0 14px 22px">
+
+      <div style="font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--acc);margin:18px 0 0;padding:0 4px">General</div>
+      <div style="display:flex;align-items:center;gap:14px;padding:12px 4px;border-top:1px solid var(--bd)"><div style="flex:1;min-width:0"><div style="font-size:13px;color:var(--tx);font-weight:500">Model</div><div style="font-size:11.5px;color:var(--mut);line-height:1.45;margin-top:2px">Default model for new conversations.</div></div><div style="display:flex;align-items:center;gap:5px;padding:5px 8px;border-radius:7px;background:var(--bg2);border:1px solid var(--bd2);color:var(--tx);font-size:12px;cursor:pointer;flex:none" style-hover="background:var(--bg3)">Sonnet 4.5{{ iCaretD }}</div></div>
+      <div style="display:flex;align-items:center;gap:14px;padding:12px 4px;border-top:1px solid var(--bd)"><div style="flex:1;min-width:0"><div style="font-size:13px;color:var(--tx);font-weight:500">Permission mode</div><div style="font-size:11.5px;color:var(--mut);line-height:1.45;margin-top:2px">How much Claude can do before asking.</div></div><div style="display:flex;align-items:center;gap:5px;padding:5px 8px;border-radius:7px;background:var(--bg2);border:1px solid var(--bd2);color:var(--tx);font-size:12px;cursor:pointer;flex:none" style-hover="background:var(--bg3)">Default{{ iCaretD }}</div></div>
+      <div style="display:flex;align-items:center;gap:14px;padding:12px 4px;border-top:1px solid var(--bd)"><div style="flex:1;min-width:0"><div style="font-size:13px;color:var(--tx);font-weight:500">Working folder</div><div style="font-size:11.5px;color:var(--mut);line-height:1.45;margin-top:2px">Folder Claude may read and write within.</div></div><div style="display:flex;align-items:center;gap:5px;padding:5px 8px;border-radius:7px;background:var(--bg2);border:1px solid var(--bd2);color:var(--tx);font-size:12px;cursor:pointer;flex:none" style-hover="background:var(--bg3)"><span style="font-family:var(--font-mono)">/</span> Vault root{{ iCaretD }}</div></div>
+
+      <div style="font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--acc);margin:22px 0 0;padding:0 4px">Permissions</div>
+      <div style="display:flex;align-items:flex-start;gap:14px;padding:12px 4px;border-top:1px solid var(--bd)"><div style="flex:1;min-width:0"><div style="font-size:13px;color:var(--tx);font-weight:500">Confirm before running commands</div><div style="font-size:11.5px;color:var(--mut);line-height:1.45;margin-top:2px">Pause for approval before any terminal command runs.</div></div><div style="flex:none;padding-top:1px"><sc-if value="{{ sCmds }}" hint-placeholder-val="{{ true }}"><div onClick="{{ tgCmds }}" style="width:36px;height:21px;border-radius:11px;background:var(--acc);position:relative;flex:none;cursor:pointer"><div style="position:absolute;top:2px;left:17px;width:17px;height:17px;border-radius:50%;background:#fff"></div></div></sc-if><sc-if value="{{ sCmdsOff }}" hint-placeholder-val="{{ false }}"><div onClick="{{ tgCmds }}" style="width:36px;height:21px;border-radius:11px;background:var(--bg3);border:1px solid var(--bd2);box-sizing:border-box;position:relative;flex:none;cursor:pointer"><div style="position:absolute;top:2px;left:2px;width:17px;height:17px;border-radius:50%;background:var(--mut)"></div></div></sc-if></div></div>
+      <div style="display:flex;align-items:flex-start;gap:14px;padding:12px 4px;border-top:1px solid var(--bd)"><div style="flex:1;min-width:0"><div style="font-size:13px;color:var(--tx);font-weight:500">Allow web fetch</div><div style="font-size:11.5px;color:var(--mut);line-height:1.45;margin-top:2px">Let Claude read external URLs for reference.</div></div><div style="flex:none;padding-top:1px"><sc-if value="{{ sWeb }}" hint-placeholder-val="{{ true }}"><div onClick="{{ tgWeb }}" style="width:36px;height:21px;border-radius:11px;background:var(--acc);position:relative;flex:none;cursor:pointer"><div style="position:absolute;top:2px;left:17px;width:17px;height:17px;border-radius:50%;background:#fff"></div></div></sc-if><sc-if value="{{ sWebOff }}" hint-placeholder-val="{{ false }}"><div onClick="{{ tgWeb }}" style="width:36px;height:21px;border-radius:11px;background:var(--bg3);border:1px solid var(--bd2);box-sizing:border-box;position:relative;flex:none;cursor:pointer"><div style="position:absolute;top:2px;left:2px;width:17px;height:17px;border-radius:50%;background:var(--mut)"></div></div></sc-if></div></div>
+      <div style="display:flex;align-items:center;gap:14px;padding:12px 4px;border-top:1px solid var(--bd)"><div style="flex:1;min-width:0"><div style="font-size:13px;color:var(--tx);font-weight:500">Allowed tools</div><div style="font-size:11.5px;color:var(--mut);line-height:1.45;margin-top:2px">Read, Edit, Bash, Grep, Glob, WebFetch.</div></div><div style="padding:5px 12px;border-radius:7px;background:var(--bg2);border:1px solid var(--bd2);color:var(--tx);font-size:12px;cursor:pointer;flex:none" style-hover="background:var(--bg3)">Manage</div></div>
+
+      <div style="font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--acc);margin:22px 0 0;padding:0 4px">Context</div>
+      <div style="display:flex;align-items:flex-start;gap:14px;padding:12px 4px;border-top:1px solid var(--bd)"><div style="flex:1;min-width:0"><div style="font-size:13px;color:var(--tx);font-weight:500">Index vault for search</div><div style="font-size:11.5px;color:var(--mut);line-height:1.45;margin-top:2px">Build a local index so Claude can grep notes fast.</div></div><div style="flex:none;padding-top:1px"><sc-if value="{{ sIndex }}" hint-placeholder-val="{{ true }}"><div onClick="{{ tgIndex }}" style="width:36px;height:21px;border-radius:11px;background:var(--acc);position:relative;flex:none;cursor:pointer"><div style="position:absolute;top:2px;left:17px;width:17px;height:17px;border-radius:50%;background:#fff"></div></div></sc-if><sc-if value="{{ sIndexOff }}" hint-placeholder-val="{{ false }}"><div onClick="{{ tgIndex }}" style="width:36px;height:21px;border-radius:11px;background:var(--bg3);border:1px solid var(--bd2);box-sizing:border-box;position:relative;flex:none;cursor:pointer"><div style="position:absolute;top:2px;left:2px;width:17px;height:17px;border-radius:50%;background:var(--mut)"></div></div></sc-if></div></div>
+      <div style="display:flex;align-items:flex-start;gap:14px;padding:12px 4px;border-top:1px solid var(--bd)"><div style="flex:1;min-width:0"><div style="font-size:13px;color:var(--tx);font-weight:500">Auto-add active note</div><div style="font-size:11.5px;color:var(--mut);line-height:1.45;margin-top:2px">Include the note you're viewing as context automatically.</div></div><div style="flex:none;padding-top:1px"><sc-if value="{{ sAutoadd }}" hint-placeholder-val="{{ false }}"><div onClick="{{ tgAutoadd }}" style="width:36px;height:21px;border-radius:11px;background:var(--acc);position:relative;flex:none;cursor:pointer"><div style="position:absolute;top:2px;left:17px;width:17px;height:17px;border-radius:50%;background:#fff"></div></div></sc-if><sc-if value="{{ sAutoaddOff }}" hint-placeholder-val="{{ true }}"><div onClick="{{ tgAutoadd }}" style="width:36px;height:21px;border-radius:11px;background:var(--bg3);border:1px solid var(--bd2);box-sizing:border-box;position:relative;flex:none;cursor:pointer"><div style="position:absolute;top:2px;left:2px;width:17px;height:17px;border-radius:50%;background:var(--mut)"></div></div></sc-if></div></div>
+      <div style="display:flex;align-items:flex-start;gap:14px;padding:12px 4px;border-top:1px solid var(--bd)"><div style="flex:1;min-width:0"><div style="font-size:13px;color:var(--tx);font-weight:500">Include backlinks</div><div style="font-size:11.5px;color:var(--mut);line-height:1.45;margin-top:2px">Pull in notes that link to a referenced note.</div></div><div style="flex:none;padding-top:1px"><sc-if value="{{ sBacklinks }}" hint-placeholder-val="{{ true }}"><div onClick="{{ tgBacklinks }}" style="width:36px;height:21px;border-radius:11px;background:var(--acc);position:relative;flex:none;cursor:pointer"><div style="position:absolute;top:2px;left:17px;width:17px;height:17px;border-radius:50%;background:#fff"></div></div></sc-if><sc-if value="{{ sBacklinksOff }}" hint-placeholder-val="{{ false }}"><div onClick="{{ tgBacklinks }}" style="width:36px;height:21px;border-radius:11px;background:var(--bg3);border:1px solid var(--bd2);box-sizing:border-box;position:relative;flex:none;cursor:pointer"><div style="position:absolute;top:2px;left:2px;width:17px;height:17px;border-radius:50%;background:var(--mut)"></div></div></sc-if></div></div>
+
+      <div style="font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--acc);margin:22px 0 0;padding:0 4px">Behaviour</div>
+      <div style="display:flex;align-items:flex-start;gap:14px;padding:12px 4px;border-top:1px solid var(--bd)"><div style="flex:1;min-width:0"><div style="font-size:13px;color:var(--tx);font-weight:500">Stream responses</div><div style="font-size:11.5px;color:var(--mut);line-height:1.45;margin-top:2px">Show tokens and tool activity as they arrive.</div></div><div style="flex:none;padding-top:1px"><sc-if value="{{ sStream }}" hint-placeholder-val="{{ true }}"><div onClick="{{ tgStream }}" style="width:36px;height:21px;border-radius:11px;background:var(--acc);position:relative;flex:none;cursor:pointer"><div style="position:absolute;top:2px;left:17px;width:17px;height:17px;border-radius:50%;background:#fff"></div></div></sc-if><sc-if value="{{ sStreamOff }}" hint-placeholder-val="{{ false }}"><div onClick="{{ tgStream }}" style="width:36px;height:21px;border-radius:11px;background:var(--bg3);border:1px solid var(--bd2);box-sizing:border-box;position:relative;flex:none;cursor:pointer"><div style="position:absolute;top:2px;left:2px;width:17px;height:17px;border-radius:50%;background:var(--mut)"></div></div></sc-if></div></div>
+      <div style="display:flex;align-items:flex-start;gap:14px;padding:12px 4px;border-top:1px solid var(--bd)"><div style="flex:1;min-width:0"><div style="font-size:13px;color:var(--tx);font-weight:500">Show thinking by default</div><div style="font-size:11.5px;color:var(--mut);line-height:1.45;margin-top:2px">Expand reasoning blocks instead of collapsing them.</div></div><div style="flex:none;padding-top:1px"><sc-if value="{{ sThinking }}" hint-placeholder-val="{{ false }}"><div onClick="{{ tgThinking }}" style="width:36px;height:21px;border-radius:11px;background:var(--acc);position:relative;flex:none;cursor:pointer"><div style="position:absolute;top:2px;left:17px;width:17px;height:17px;border-radius:50%;background:#fff"></div></div></sc-if><sc-if value="{{ sThinkingOff }}" hint-placeholder-val="{{ true }}"><div onClick="{{ tgThinking }}" style="width:36px;height:21px;border-radius:11px;background:var(--bg3);border:1px solid var(--bd2);box-sizing:border-box;position:relative;flex:none;cursor:pointer"><div style="position:absolute;top:2px;left:2px;width:17px;height:17px;border-radius:50%;background:var(--mut)"></div></div></sc-if></div></div>
+      <div style="display:flex;align-items:flex-start;gap:14px;padding:12px 4px;border-top:1px solid var(--bd)"><div style="flex:1;min-width:0"><div style="font-size:13px;color:var(--tx);font-weight:500">Save captures to daily note</div><div style="font-size:11.5px;color:var(--mut);line-height:1.45;margin-top:2px">Append quick captures to today's daily note.</div></div><div style="flex:none;padding-top:1px"><sc-if value="{{ sDaily }}" hint-placeholder-val="{{ false }}"><div onClick="{{ tgDaily }}" style="width:36px;height:21px;border-radius:11px;background:var(--acc);position:relative;flex:none;cursor:pointer"><div style="position:absolute;top:2px;left:17px;width:17px;height:17px;border-radius:50%;background:#fff"></div></div></sc-if><sc-if value="{{ sDailyOff }}" hint-placeholder-val="{{ true }}"><div onClick="{{ tgDaily }}" style="width:36px;height:21px;border-radius:11px;background:var(--bg3);border:1px solid var(--bd2);box-sizing:border-box;position:relative;flex:none;cursor:pointer"><div style="position:absolute;top:2px;left:2px;width:17px;height:17px;border-radius:50%;background:var(--mut)"></div></div></sc-if></div></div>
+
+      <div style="font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--acc);margin:22px 0 0;padding:0 4px">Connection</div>
+      <div style="display:flex;align-items:center;gap:14px;padding:12px 4px;border-top:1px solid var(--bd)"><div style="flex:1;min-width:0"><div style="font-size:13px;color:var(--tx);font-weight:500">Anthropic API key</div><div style="font-size:11.5px;color:var(--mut);line-height:1.45;margin-top:2px">Used by the Claude Agent SDK.</div></div><div style="display:flex;align-items:center;gap:9px;flex:none"><span style="font-family:var(--font-mono);font-size:12px;color:var(--mut)">•••• 4f2a</span><div style="padding:5px 12px;border-radius:7px;background:var(--bg2);border:1px solid var(--bd2);color:var(--tx);font-size:12px;cursor:pointer" style-hover="background:var(--bg3)">Manage</div></div></div>
+      <div style="display:flex;align-items:center;gap:14px;padding:12px 4px;border-top:1px solid var(--bd)"><div style="flex:1;min-width:0"><div style="font-size:13px;color:var(--tx);font-weight:500">Claude Code CLI</div><div style="font-size:11.5px;color:var(--mut);line-height:1.45;margin-top:2px">Local agent runtime.</div></div><div style="display:flex;align-items:center;gap:7px;flex:none"><span style="width:7px;height:7px;border-radius:50%;background:var(--grn)"></span><span style="font-size:12px;color:var(--mut);font-family:var(--font-mono)">v1.9 · detected</span></div></div>
+
+      <div style="font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--acc);margin:22px 0 0;padding:0 4px">Appearance</div>
+      <div style="display:flex;align-items:flex-start;gap:14px;padding:12px 4px;border-top:1px solid var(--bd)"><div style="flex:1;min-width:0"><div style="font-size:13px;color:var(--tx);font-weight:500">Match Obsidian theme</div><div style="font-size:11.5px;color:var(--mut);line-height:1.45;margin-top:2px">Follow the active theme's colours automatically.</div></div><div style="flex:none;padding-top:1px"><sc-if value="{{ sTheme }}" hint-placeholder-val="{{ true }}"><div onClick="{{ tgTheme }}" style="width:36px;height:21px;border-radius:11px;background:var(--acc);position:relative;flex:none;cursor:pointer"><div style="position:absolute;top:2px;left:17px;width:17px;height:17px;border-radius:50%;background:#fff"></div></div></sc-if><sc-if value="{{ sThemeOff }}" hint-placeholder-val="{{ false }}"><div onClick="{{ tgTheme }}" style="width:36px;height:21px;border-radius:11px;background:var(--bg3);border:1px solid var(--bd2);box-sizing:border-box;position:relative;flex:none;cursor:pointer"><div style="position:absolute;top:2px;left:2px;width:17px;height:17px;border-radius:50%;background:var(--mut)"></div></div></sc-if></div></div>
+      <div style="display:flex;align-items:center;gap:14px;padding:12px 4px;border-top:1px solid var(--bd)"><div style="flex:1;min-width:0"><div style="font-size:13px;color:var(--tx);font-weight:500">Accent colour</div><div style="font-size:11.5px;color:var(--mut);line-height:1.45;margin-top:2px">Tint for Claude's UI within the pane.</div></div><div style="display:flex;gap:8px;align-items:center;flex:none"><div style="width:18px;height:18px;border-radius:50%;background:#8a7cf2;box-shadow:0 0 0 2px var(--bg),0 0 0 4px #8a7cf2;cursor:pointer"></div><div style="width:18px;height:18px;border-radius:50%;background:#3b82f6;cursor:pointer"></div><div style="width:18px;height:18px;border-radius:50%;background:#27a567;cursor:pointer"></div><div style="width:18px;height:18px;border-radius:50%;background:#e0617a;cursor:pointer"></div></div></div>
+
+    </div>
+  </div>
+  </sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:440,&quot;height&quot;:860},&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;dark&quot;,&quot;light&quot;],&quot;default&quot;:&quot;dark&quot;,&quot;tsType&quot;:&quot;\&quot;dark\&quot;|\&quot;light\&quot;&quot;},&quot;view&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;chat&quot;,&quot;history&quot;,&quot;settings&quot;],&quot;default&quot;:&quot;chat&quot;,&quot;tsType&quot;:&quot;\&quot;chat\&quot;|\&quot;history\&quot;|\&quot;settings\&quot;&quot;}}">
+class Component extends DCLogic {
+  state = {
+    open: { think1:false, plan:true, search:false, fetch:false, diff:true, think2:false },
+    phase: 2, typed: 9999, streaming: false,
+    menu: null, mode: 'Default', model: 'Sonnet 4.5',
+    view: (this.props.view || 'chat'),
+    settings: { cmds:true, web:true, index:true, autoadd:false, backlinks:true, stream:true, thinking:false, daily:false, theme:true }
+  };
+  streamText = "Done \u2014 I saved the outline as Blog Outline.md and added a Version control with Git section that ties the \u201Cplain-text\u201D argument together. I\u2019d like to commit it to your vault now:";
+  componentDidMount(){
+    // Default state is already the COMPLETED resting state (phase 2). The live
+    // sequence is a progressive enhancement that only plays while visible, and is
+    // guaranteed to resolve back to completed via a watchdog + visibility snap.
+    this._play = () => { if(this._played) return; this._played = true; this.startAnim(); };
+    if(typeof document !== 'undefined' && document.visibilityState === 'hidden'){
+      this._vis = () => { if(document.visibilityState === 'visible') this._play(); };
+      document.addEventListener('visibilitychange', this._vis);
+    } else {
+      this._play();
+    }
+  }
+  startAnim(){
+    clearTimeout(this._t); clearInterval(this._iv); clearTimeout(this._wd);
+    this.setState({phase:0, typed:0, streaming:false});
+    this._t = setTimeout(()=>{
+      this.setState({phase:1, streaming:true});
+      this._start = Date.now();
+      const DUR = 1800;
+      this._iv = setInterval(()=>{
+        const el = Date.now() - this._start;
+        const n = Math.min(this.streamText.length, Math.round(this.streamText.length * el / DUR));
+        if(n >= this.streamText.length) this.complete();
+        else this.setState({typed:n});
+      }, 45);
+      this._vis2 = () => { if(document.visibilityState === 'hidden') this.complete(); };
+      document.addEventListener('visibilitychange', this._vis2);
+      this._wd = setTimeout(()=>this.complete(), 4200);
+    }, 1400);
+  }
+  complete(){
+    clearInterval(this._iv); clearTimeout(this._wd);
+    if(this._vis2){ document.removeEventListener('visibilitychange', this._vis2); this._vis2 = null; }
+    this.setState({phase:2, typed:this.streamText.length, streaming:false});
+  }
+  componentWillUnmount(){
+    clearTimeout(this._t); clearInterval(this._iv); clearTimeout(this._wd);
+    if(this._vis) document.removeEventListener('visibilitychange', this._vis);
+    if(this._vis2) document.removeEventListener('visibilitychange', this._vis2);
+  }
+  mkMenu(name){ return (e)=>{ if(e&&e.stopPropagation) e.stopPropagation(); this.setState(s=>({menu: s.menu===name?null:name})); }; }
+  pick(field,val){ return (e)=>{ if(e&&e.stopPropagation) e.stopPropagation(); this.setState({[field]:val, menu:null}); }; }
+  goView(v){ return (e)=>{ if(e&&e.stopPropagation) e.stopPropagation(); this.setState({menu:null, view:v}); }; }
+  mk(k){ return () => this.setState(s=>({open:{...s.open,[k]:!s.open[k]}})); }
+  chev(o){ return React.createElement('svg',{width:10,height:10,viewBox:'0 0 24 24',fill:'none',stroke:'currentColor',strokeWidth:3,strokeLinecap:'round',strokeLinejoin:'round',style:{transform:o?'rotate(90deg)':'rotate(0deg)',transition:'transform .15s ease',flexShrink:0,opacity:.5}},React.createElement('polyline',{points:'9 6 15 12 9 18'})); }
+  renderVals(){
+    const S = (ch,o={}) => React.createElement('svg',{width:o.s||14,height:o.s||14,viewBox:'0 0 24 24',fill:o.f||'none',stroke:o.k||'currentColor',strokeWidth:o.w||2,strokeLinecap:'round',strokeLinejoin:'round',style:Object.assign({flexShrink:0,display:'block'},o.st)},ch);
+    const E = (t,a) => React.createElement(t,a);
+    const dark = (this.props.theme||'dark') !== 'light';
+    const d={bg:'#1e1e1e',bg2:'#1a1a1b',bg3:'#27272a',bgc:'#151516',bd:'rgba(255,255,255,0.09)',bd2:'rgba(255,255,255,0.15)',tx:'#dcddde',mut:'#9a9aa0',fnt:'#6a6a72',acc:'#a08bf5',accb:'rgba(160,139,245,0.15)',grn:'#54cf90',grnb:'rgba(84,207,144,0.14)',red:'#f0697a',redb:'rgba(240,105,122,0.12)',ylw:'#e6b450',sh:'0 12px 32px rgba(0,0,0,.5),0 3px 10px rgba(0,0,0,.34)'};
+    const l={bg:'#ffffff',bg2:'#f7f7f8',bg3:'#ececee',bgc:'#f4f4f6',bd:'rgba(0,0,0,0.10)',bd2:'rgba(0,0,0,0.16)',tx:'#2e2e32',mut:'#6a6a72',fnt:'#9a9aa2',acc:'#6c4ce0',accb:'rgba(108,76,224,0.10)',grn:'#1f9c64',grnb:'rgba(31,156,100,0.11)',red:'#d6394b',redb:'rgba(214,57,75,0.09)',ylw:'#bd8a1e',sh:'0 12px 32px rgba(0,0,0,.17),0 3px 10px rgba(0,0,0,.09)'};
+    const v = dark ? d : l;
+    const root = {
+      '--bg':v.bg,'--bg2':v.bg2,'--bg3':v.bg3,'--bgc':v.bgc,'--bd':v.bd,'--bd2':v.bd2,'--tx':v.tx,'--mut':v.mut,'--fnt':v.fnt,'--acc':v.acc,'--accb':v.accb,'--grn':v.grn,'--grnb':v.grnb,'--red':v.red,'--redb':v.redb,'--ylw':v.ylw,'--shadow':v.sh,
+      '--font-ui':'-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif',
+      '--font-mono':'ui-monospace,"SFMono-Regular","JetBrains Mono",Menlo,Consolas,monospace',
+      position:'relative',display:'flex',flexDirection:'column',height:'100%',width:'100%',overflow:'hidden',background:'var(--bg)',color:'var(--tx)',fontFamily:'var(--font-ui)',fontSize:'14px',lineHeight:'1.5'
+    };
+
+    const frontmatter = '---\ntags: [blog, note-taking]\nstatus: draft\n---';
+
+    const o = this.state.open;
+    const sv = this.state.settings; const setEx = {};
+    Object.keys(sv).forEach(k=>{ const C=k[0].toUpperCase()+k.slice(1); setEx['s'+C]=sv[k]; setEx['s'+C+'Off']=!sv[k]; setEx['tg'+C]=()=>this.setState(st=>({settings:{...st.settings,[k]:!st.settings[k]}})); });
+    return {
+      ...setEx,
+      vChat:this.state.view==='chat', vHistory:this.state.view==='history', vSettings:this.state.view==='settings',
+      goChat:this.goView('chat'), goHistory:this.goView('history'), goSettings:this.goView('settings'),
+      setModeFull:this.pick('mode','Auto'), mFull:this.state.mode==='Auto',
+      root, open:o, frontmatter,
+      cThink1:this.chev(o.think1), cThink2:this.chev(o.think2), cPlan:this.chev(o.plan), cSearch:this.chev(o.search), cFetch:this.chev(o.fetch), cDiff:this.chev(o.diff),
+      tgThink1:this.mk('think1'), tgThink2:this.mk('think2'), tgPlan:this.mk('plan'), tgSearch:this.mk('search'), tgFetch:this.mk('fetch'), tgDiff:this.mk('diff'),
+      editRunning: this.state.phase < 1,
+      diffShown: this.state.phase >= 1,
+      typedText: this.streamText.slice(0, this.state.typed),
+      showCaret: this.state.streaming,
+      showPermission: this.state.phase >= 2,
+      working: this.state.phase < 2,
+      menuMore:this.state.menu==='more', menuAdd:this.state.menu==='add', menuMode:this.state.menu==='mode', menuModel:this.state.menu==='model', anyMenu:!!this.state.menu,
+      tgMore:this.mkMenu('more'), tgAdd:this.mkMenu('add'), tgMode:this.mkMenu('mode'), tgModel:this.mkMenu('model'),
+      closeMenu:()=>this.setState({menu:null}),
+      modeLabel:this.state.mode, modelLabel:this.state.model,
+      setModeDefault:this.pick('mode','Default'), setModePlan:this.pick('mode','Plan'), setModeAuto:this.pick('mode','Auto-accept'), setModeBypass:this.pick('mode','Bypass'),
+      mDefault:this.state.mode==='Default', mPlan:this.state.mode==='Plan', mAuto:this.state.mode==='Auto-accept', mBypass:this.state.mode==='Bypass',
+      setModelOpus:this.pick('model','Opus 4.6'), setModelSonnet:this.pick('model','Sonnet 4.5'), setModelHaiku:this.pick('model','Haiku 4.5'),
+      mdOpus:this.state.model==='Opus 4.6', mdSonnet:this.state.model==='Sonnet 4.5', mdHaiku:this.state.model==='Haiku 4.5',
+      iFolder:S([E('path',{key:1,d:'M3 7.5a2 2 0 0 1 2-2h3.6l2 2H19a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z'})],{s:14}),
+      iImage:S([E('rect',{key:1,x:3,y:4,width:18,height:16,rx:2}),E('circle',{key:2,cx:8.5,cy:9.5,r:1.7}),E('path',{key:3,d:'M4 18l5-5 4 4 3-3 4 4'})],{s:14}),
+      iCal:S([E('rect',{key:1,x:4,y:5,width:16,height:15,rx:2}),E('line',{key:2,x1:4,y1:9,x2:20,y2:9}),E('line',{key:3,x1:9,y1:3,x2:9,y2:6}),E('line',{key:4,x1:15,y1:3,x2:15,y2:6})],{s:14}),
+      iLink:S([E('path',{key:1,d:'M9.5 13.5a3.5 3.5 0 0 0 5 .3l2.3-2.3a3.5 3.5 0 1 0-5-5l-1.3 1.3'}),E('path',{key:2,d:'M14.5 10.5a3.5 3.5 0 0 0-5-.3l-2.3 2.3a3.5 3.5 0 1 0 5 5l1.3-1.3'})],{s:14}),
+      iHistory:S([E('path',{key:1,d:'M3.5 9a9 9 0 1 1-1 5'}),E('polyline',{key:2,points:'3 4 3 9 8 9'}),E('polyline',{key:3,points:'12 8 12 12 15 14'})],{s:14}),
+      iExport:S([E('path',{key:1,d:'M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4'}),E('polyline',{key:2,points:'8 8 12 4 16 8'}),E('line',{key:3,x1:12,y1:4,x2:12,y2:15})],{s:14}),
+      iCopy:S([E('rect',{key:1,x:8,y:8,width:12,height:12,rx:2}),E('path',{key:2,d:'M4 16V6a2 2 0 0 1 2-2h10'})],{s:13}),
+      iTrash:S([E('polyline',{key:1,points:'4 7 20 7'}),E('path',{key:2,d:'M6.5 7l.8 12a2 2 0 0 0 2 1.9h5.4a2 2 0 0 0 2-1.9l.8-12'}),E('path',{key:3,d:'M9.5 7V5a1.5 1.5 0 0 1 1.5-1.5h2A1.5 1.5 0 0 1 14.5 5v2'})],{s:14}),
+      iSliders:S([E('line',{key:1,x1:4,y1:8,x2:20,y2:8}),E('line',{key:2,x1:4,y1:16,x2:20,y2:16}),E('circle',{key:3,cx:9,cy:8,r:2.4,fill:'var(--bg)'}),E('circle',{key:4,cx:15,cy:16,r:2.4,fill:'var(--bg)'})],{s:14}),
+      iSel:S([E('path',{key:1,d:'M5 4h2M5 20h2M17 4h2M17 20h2M5 4v2M5 18v2M19 4v2M19 18v2'}),E('line',{key:2,x1:9,y1:9,x2:15,y2:9}),E('line',{key:3,x1:9,y1:13,x2:13,y2:13})],{s:14}),
+      iCaretD:S([E('polyline',{key:1,points:'6 9 12 15 18 9'})],{s:10,w:2.4,st:{opacity:.55}}),
+      iBack:S([E('line',{key:1,x1:19,y1:12,x2:6,y2:12}),E('polyline',{key:2,points:'12 6 6 12 12 18'})],{s:17,w:2}),
+      iPlus:S([E('line',{key:1,x1:12,y1:5,x2:12,y2:19}),E('line',{key:2,x1:5,y1:12,x2:19,y2:12})],{s:16}),
+      iMore:S([E('circle',{key:1,cx:5,cy:12,r:1.5,fill:'currentColor',stroke:'none'}),E('circle',{key:2,cx:12,cy:12,r:1.5,fill:'currentColor',stroke:'none'}),E('circle',{key:3,cx:19,cy:12,r:1.5,fill:'currentColor',stroke:'none'})],{s:16}),
+      iThink:S([E('circle',{key:1,cx:12,cy:12,r:5})],{s:10,f:'currentColor',k:'none'}),
+      iPlanList:S([E('line',{key:1,x1:9,y1:6,x2:20,y2:6}),E('line',{key:2,x1:9,y1:12,x2:20,y2:12}),E('line',{key:3,x1:9,y1:18,x2:20,y2:18}),E('circle',{key:4,cx:4.5,cy:6,r:1.1,fill:'currentColor',stroke:'none'}),E('circle',{key:5,cx:4.5,cy:12,r:1.1,fill:'currentColor',stroke:'none'}),E('circle',{key:6,cx:4.5,cy:18,r:1.1,fill:'currentColor',stroke:'none'})],{s:14}),
+      iCheck:S([E('polyline',{key:1,points:'20 6 9 17 4 12'})],{s:13,w:2.6}),
+      iBox:S([E('circle',{key:1,cx:12,cy:12,r:8})],{s:13,w:2,st:{opacity:.7}}),
+      iSearch:S([E('circle',{key:1,cx:11,cy:11,r:7}),E('line',{key:2,x1:16.5,y1:16.5,x2:21,y2:21})],{s:13}),
+      iDoc:S([E('rect',{key:1,x:5,y:3,width:14,height:18,rx:2}),E('line',{key:2,x1:8.5,y1:8,x2:15.5,y2:8}),E('line',{key:3,x1:8.5,y1:12,x2:15.5,y2:12}),E('line',{key:4,x1:8.5,y1:16,x2:12.5,y2:16})],{s:13}),
+      iGlobe:S([E('circle',{key:1,cx:12,cy:12,r:8.5}),E('line',{key:2,x1:3.5,y1:12,x2:20.5,y2:12}),E('path',{key:3,d:'M12 3.5c2.4 2.3 3.7 5.3 3.7 8.5s-1.3 6.2-3.7 8.5c-2.4-2.3-3.7-5.3-3.7-8.5s1.3-6.2 3.7-8.5z'})],{s:13.5}),
+      iEdit:S([E('rect',{key:1,x:5,y:3,width:14,height:18,rx:2}),E('line',{key:2,x1:8.5,y1:8,x2:15.5,y2:8}),E('line',{key:3,x1:8.5,y1:12,x2:15.5,y2:12}),E('line',{key:4,x1:8.5,y1:16,x2:12.5,y2:16})],{s:14}),
+      iSend:S([E('line',{key:1,x1:12,y1:19,x2:12,y2:6}),E('polyline',{key:2,points:'6 12 12 6 18 12'})],{s:16,w:2.2}),
+      iSpark:S([E('path',{key:1,d:'M12 3l1.7 6.3L20 11l-6.3 1.7L12 19l-1.7-6.3L4 11l6.3-1.7z'})],{s:12,f:'currentColor',k:'none'}),
+      iAttach:S([E('line',{key:1,x1:12,y1:6,x2:12,y2:18}),E('line',{key:2,x1:6,y1:12,x2:18,y2:12})],{s:15}),
+      iCmd:S([E('polyline',{key:1,points:'7 9 10 12 7 15'}),E('line',{key:2,x1:12,y1:15,x2:16,y2:15})],{s:14})
+    };
+  }
+}
+</script>
+</body>
+</html>

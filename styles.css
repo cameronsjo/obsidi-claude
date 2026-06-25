@@ -67,6 +67,63 @@ body {
   height: 100%;
   padding: 0;
   overflow-x: hidden;
+
+  /* ===== Chat-pane semantic token layer (handoff → Obsidian) ===== */
+  /* Surfaces */
+  --occ-bg: var(--background-primary);
+  --occ-bg2: var(--background-secondary);
+  --occ-bg3: var(--background-modifier-hover);
+  --occ-bgc: var(--background-primary-alt);
+  /* Borders */
+  --occ-bd: var(--background-modifier-border);
+  --occ-bd2: var(--background-modifier-border-hover);
+  /* Text */
+  --occ-tx: var(--text-normal);
+  --occ-mut: var(--text-muted);
+  --occ-fnt: var(--text-faint);
+  /* Accent (Claude purple in handoff → user's theme accent) */
+  --occ-acc: var(--interactive-accent);
+  --occ-acc-text: var(--text-on-accent);
+  --occ-acc-tint: color-mix(in srgb, var(--interactive-accent) 15%, transparent);
+  --occ-acc-tint-strong: color-mix(in srgb, var(--interactive-accent) 24%, transparent);
+  /* Status */
+  --occ-grn: var(--color-green);
+  --occ-grn-tint: color-mix(in srgb, var(--color-green) 14%, transparent);
+  --occ-red: var(--color-red);
+  --occ-red-tint: color-mix(in srgb, var(--color-red) 12%, transparent);
+  --occ-ylw: var(--color-yellow);
+  --occ-ylw-tint: color-mix(in srgb, var(--color-yellow) 14%, transparent);
+  /* Fonts */
+  --occ-font: var(--font-interface);
+  --occ-mono: var(--font-monospace);
+  /* Type scale (handoff Design Tokens) */
+  --occ-fs-body: 13.5px;
+  --occ-fs-label: 11.5px;
+  --occ-fs-meta: 10.5px;
+  --occ-fs-eyebrow: 10.5px;
+  --occ-fs-title: 15px;
+  --occ-fs-code: 11.5px;
+  --occ-lh-body: 1.55;
+  /* Radii */
+  --occ-r-card: 9px;
+  --occ-r-bubble: 10px;
+  --occ-r-shell: 12px;
+  --occ-r-btn: 6px;
+  --occ-r-chip: 7px;
+  --occ-r-code: 7px;
+  --occ-r-toggle: 11px;
+  /* Geometry */
+  --occ-header-h: 42px;
+  --occ-avatar: 17px;
+  --occ-iconbtn: 26px;
+  --occ-gap-block: 22px;
+  /* Menu surface + shadow (dark default; light overridden below) */
+  --occ-menu-shadow: 0 12px 32px rgba(0, 0, 0, 0.5), 0 3px 10px rgba(0, 0, 0, 0.34);
+}
+
+/* Light-theme menu shadow softening (handoff Design Tokens) */
+.theme-light .obsidi-claude-container {
+  --occ-menu-shadow: 0 12px 32px rgba(0, 0, 0, 0.17), 0 3px 10px rgba(0, 0, 0, 0.09);
 }
 
 /* Header - Clean 3-section layout */
