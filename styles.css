@@ -55,8 +55,10 @@ settings:
 /* Custom properties with Style Settings support */
 /* Style Settings plugin injects variables at :root, we reference them with fallbacks */
 body {
-  --obsidi-claude-user-bg: var(--user-message-background, var(--interactive-accent));
-  --obsidi-claude-user-text: var(--user-message-text, var(--text-on-accent));
+  /* Defaults follow the handoff (neutral bg2 bubble); Style Settings still
+     overrides via --user-message-* when the user opts in. */
+  --obsidi-claude-user-bg: var(--user-message-background, var(--background-secondary));
+  --obsidi-claude-user-text: var(--user-message-text, var(--text-normal));
   --obsidi-claude-assistant-bg: var(--assistant-message-background, var(--background-secondary));
   --obsidi-claude-assistant-text: var(--assistant-message-text, var(--text-normal));
 }
@@ -3029,4 +3031,184 @@ pre:hover .code-copy-btn {
 .obsidi-claude-container .chat-stop-btn.composer-send-btn svg {
   width: 14px;
   height: 14px;
+}
+
+/* ============================================================
+   Phase 2 — messages & avatars
+   ============================================================ */
+.obsidi-claude-container .chat-messages {
+  padding: 16px 14px 10px;
+  gap: var(--occ-gap-block);
+}
+
+/* Both roles left-aligned in a vertical thread (handoff layout) */
+.obsidi-claude-container .chat-message {
+  max-width: 100%;
+  gap: 5px;
+}
+
+.obsidi-claude-container .user-message,
+.obsidi-claude-container .assistant-message {
+  align-self: stretch;
+  align-items: stretch;
+}
+
+.obsidi-claude-container .assistant-message {
+  margin-bottom: 0;
+}
+
+.obsidi-claude-container .message-header {
+  gap: 7px;
+  padding: 0;
+  align-items: center;
+}
+
+.message-avatar {
+  width: var(--occ-avatar);
+  height: var(--occ-avatar);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.message-avatar-user {
+  border-radius: 50%;
+  background-color: var(--occ-bg3);
+  color: var(--occ-mut);
+}
+
+.message-avatar-user svg {
+  width: 11px;
+  height: 11px;
+}
+
+/* Claude avatar: accent square + rotated diamond (matches header glyph) */
+.message-avatar-claude {
+  position: relative;
+  border-radius: 5px;
+  background-color: var(--occ-acc);
+}
+
+.message-avatar-claude::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 6px;
+  height: 6px;
+  background-color: var(--occ-acc-text);
+  transform: rotate(45deg);
+  border-radius: 1px;
+}
+
+.obsidi-claude-container .message-role {
+  font-size: 11.5px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--occ-mut);
+}
+
+.obsidi-claude-container .message-time {
+  font-size: var(--occ-fs-meta);
+  color: var(--occ-fnt);
+  margin-left: auto;
+}
+
+/* User bubble: bg2 fill, 1px border, 10px radius */
+.obsidi-claude-container .message-bubble {
+  border-radius: var(--occ-r-bubble);
+  padding: 9px 12px;
+  font-size: var(--occ-fs-body);
+  line-height: var(--occ-lh-body);
+  max-width: 100%;
+}
+
+.obsidi-claude-container .user-message .message-bubble {
+  background-color: var(--obsidi-claude-user-bg);
+  color: var(--obsidi-claude-user-text);
+  border: 1px solid var(--occ-bd);
+  border-bottom-right-radius: var(--occ-r-bubble);
+}
+
+/* Claude: blocks stack directly, no surrounding bubble */
+.obsidi-claude-container .assistant-message .message-bubble {
+  background-color: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+}
+
+.obsidi-claude-container .assistant-message .message-content {
+  font-size: var(--occ-fs-body);
+  line-height: 1.6;
+  color: var(--occ-tx);
+}
+
+/* Tools-followed-by-content divider, restyled */
+.obsidi-claude-container .message-tools + .message-content:not(:empty) {
+  padding-top: 8px;
+  border-top: 1px solid var(--occ-bd);
+}
+
+.obsidi-claude-container .assistant-message .message-tools + .message-content:not(:empty) {
+  border-top: none;
+  padding-top: 4px;
+}
+
+/* Inline file mentions → mono chips */
+.obsidi-claude-container .message-content a.internal-link {
+  font-family: var(--occ-mono);
+  font-size: 0.92em;
+  background-color: var(--occ-bg3);
+  border-radius: 4px;
+  padding: 1px 5px;
+  text-decoration: none;
+  color: var(--occ-acc);
+}
+
+/* Prose tokens */
+.obsidi-claude-container .message-content code {
+  background-color: var(--occ-bgc);
+  font-size: 0.92em;
+  border-radius: 4px;
+  padding: 0.1em 0.3em;
+}
+
+.obsidi-claude-container .message-content pre {
+  background-color: var(--occ-bgc);
+  border: 1px solid var(--occ-bd);
+  border-radius: var(--occ-r-code);
+  font-size: var(--occ-fs-code);
+}
+
+.obsidi-claude-container .message-content blockquote {
+  border-left: 3px solid var(--occ-acc);
+  color: var(--occ-mut);
+  font-style: italic;
+  margin-left: 0;
+}
+
+/* Message actions row */
+.obsidi-claude-container .message-actions {
+  gap: 4px;
+  opacity: 0.55;
+  margin-top: 6px;
+}
+
+.obsidi-claude-container .message-action-btn {
+  color: var(--occ-fnt);
+  border-radius: var(--occ-r-btn);
+  padding: 3px;
+}
+
+.obsidi-claude-container .message-action-btn:hover {
+  background-color: var(--occ-bg3);
+  color: var(--occ-tx);
+}
+
+.obsidi-claude-container .message-action-btn svg {
+  width: 13px;
+  height: 13px;
 }

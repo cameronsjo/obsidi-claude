@@ -65,9 +65,15 @@ export function createMessageRenderer(
     // Message header (avatar + role + time) - outside the bubble
     const headerDiv = msgDiv.createDiv('message-header');
 
-    // Avatar icon
+    // Avatar: round user glyph, or accent square + rotated diamond for Claude.
     const avatar = headerDiv.createSpan('message-avatar');
-    setIcon(avatar, message.role === 'user' ? 'user' : 'bot');
+    if (message.role === 'user') {
+      avatar.addClass('message-avatar-user');
+      setIcon(avatar, 'user');
+    } else {
+      // Claude avatar is drawn purely in CSS (square + diamond), no icon.
+      avatar.addClass('message-avatar-claude');
+    }
 
     const roleLabel = headerDiv.createSpan('message-role');
     roleLabel.textContent = message.role === 'user' ? 'You' : 'Claude';
