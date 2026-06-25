@@ -3936,3 +3936,36 @@ pre:hover .code-copy-btn {
   font-size: var(--occ-fs-label);
   font-style: italic;
 }
+
+/* ============================================================
+   Phase 6 — streaming polish
+   (CSS-only cues; the completed/rendered state remains authoritative
+   and never depends on an animation firing)
+   ============================================================ */
+
+/* Streaming cue → blinking accent caret block (replaces the dot pulse) */
+.obsidi-claude-container .typing-indicator {
+  padding: 2px 0;
+}
+
+.obsidi-claude-container .typing-indicator::before {
+  width: 7px;
+  height: 15px;
+  border-radius: 1px;
+  background-color: var(--occ-acc);
+  animation: occ-caret-blink 1s steps(1) infinite;
+}
+
+.obsidi-claude-container .typing-indicator::after {
+  display: none;
+}
+
+@keyframes occ-caret-blink {
+  0%, 50% { opacity: 1; }
+  50.01%, 100% { opacity: 0; }
+}
+
+/* Running tool cards spin their icon ("writing…" cue) until they resolve */
+.obsidi-claude-container .occ-card.occ-card-status-running .occ-card-icon svg {
+  animation: spin 1s linear infinite;
+}
