@@ -46,23 +46,6 @@ export interface HistoryPanelHandle extends ModuleHandle {
 }
 
 /**
- * Format a timestamp as relative date string (used for group label logic).
- */
-function formatRelativeDate(timestamp: number): string {
-  const now = Date.now();
-  const diff = now - timestamp;
-  const days = Math.floor(diff / 86400000);
-
-  if (days === 0) {
-    return 'Today';
-  } else if (days === 1) {
-    return 'Yesterday';
-  } else {
-    return `${days} days ago`;
-  }
-}
-
-/**
  * Format a timestamp as a short relative time string for inline display.
  * e.g. "now", "5m", "3h", "2d", "1w", "3mo"
  */

@@ -292,6 +292,8 @@ export function createMessageRenderer(
   function renderSearchCard(parent: HTMLElement, tool: ToolCallInfo): void {
     const input = tool.input as Record<string, unknown>;
     const query = String(input.query ?? input.pattern ?? input.q ?? '');
+    // Approximate result count by non-blank output lines (good enough for the
+    // header chip; not a match-exact count for multi-line/context output).
     const count = tool.result ? tool.result.split('\n').filter((l) => l.trim()).length : 0;
     const { body } = createCardShell(parent, {
       icon: 'search',
@@ -330,30 +332,39 @@ export function createMessageRenderer(
     text: string;
   }
 
+  /** Max diff rows rendered in a diff card body (counts stay accurate beyond it). */
+  const MAX_DIFF_LINES = 120;
+
   function computeDiff(tool: ToolCallInfo): { additions: number; deletions: number; lines: DiffLine[] } {
     const input = tool.input as Record<string, unknown>;
     const oldStr = input.old_string ?? input.oldString;
     const newStr = input.new_string ?? input.newString;
     const content = input.content ?? input.text ?? input.data;
+    // Count every changed line for the +N/−N stats, but only materialize line
+    // objects up to the render cap so a huge file write doesn't allocate
+    // thousands of objects we'd immediately discard.
     const lines: DiffLine[] = [];
     let additions = 0;
     let deletions = 0;
+    const pushCapped = (sign: DiffLine['sign'], text: string): void => {
+      if (lines.length < MAX_DIFF_LINES) lines.push({ sign, text });
+    };
     if (typeof oldStr === 'string' || typeof newStr === 'string') {
       if (typeof oldStr === 'string' && oldStr.length) {
         for (const l of oldStr.split('\n')) {
-          lines.push({ sign: '-', text: l });
+          pushCapped('-', l);
           deletions++;
         }
       }
       if (typeof newStr === 'string' && newStr.length) {
         for (const l of newStr.split('\n')) {
-          lines.push({ sign: '+', text: l });
+          pushCapped('+', l);
           additions++;
         }
       }
     } else if (typeof content === 'string') {
       for (const l of content.split('\n')) {
-        lines.push({ sign: '+', text: l });
+        pushCapped('+', l);
         additions++;
       }
     }
@@ -386,15 +397,17 @@ export function createMessageRenderer(
       renderResultBody(body, tool);
       return;
     }
-    const MAX_DIFF_LINES = 120;
-    for (const dl of lines.slice(0, MAX_DIFF_LINES)) {
+    // `lines` is already capped at MAX_DIFF_LINES by computeDiff; the true total
+    // comes from the additions/deletions counts.
+    for (const dl of lines) {
       const row = body.createDiv('occ-diff-row');
       row.addClass(dl.sign === '+' ? 'is-add' : 'is-del');
       row.createSpan({ cls: 'occ-diff-gutter', text: dl.sign });
       row.createSpan({ cls: 'occ-diff-code', text: dl.text });
     }
-    if (lines.length > MAX_DIFF_LINES) {
-      body.createDiv({ cls: 'occ-card-running', text: `… ${lines.length - MAX_DIFF_LINES} more lines` });
+    const total = additions + deletions;
+    if (total > lines.length) {
+      body.createDiv({ cls: 'occ-card-running', text: `… ${total - lines.length} more lines` });
     }
   }
 
@@ -555,9 +568,12 @@ export function createMessageRenderer(
       if (content) bubble.insertBefore(tools, content);
     }
 
-    const card = tools.createDiv('occ-card occ-card-permission is-open');
+    const card = tools.createDiv('occ-card');
+    card.addClass('occ-card-permission');
+    card.addClass('is-open');
     const header = card.createDiv('occ-card-header');
-    const icon = header.createSpan('occ-card-icon is-yellow');
+    const icon = header.createSpan('occ-card-icon');
+    icon.addClass('is-yellow');
     setIcon(icon, 'terminal');
     header.createSpan({ cls: 'occ-card-title', text: title });
 
@@ -565,7 +581,10 @@ export function createMessageRenderer(
     cmdBox.textContent = command;
 
     const actions = card.createDiv('occ-permission-actions');
+    let resolved = false;
     const decide = (decision: 'once' | 'always' | 'deny'): void => {
+      if (resolved) return; // guard against rapid double-click duplicating the result span
+      resolved = true;
       card.addClass('is-resolved');
       actions.empty();
       actions.createSpan({

@@ -787,20 +787,29 @@ export class ChatView extends ItemView {
   private openPluginSettings(): void {
     const setting = (this.app as unknown as { setting?: { open(): void; openTabById(id: string): void } }).setting;
     if (setting) {
+      log.debug('Opening plugin settings');
       setting.open();
       setting.openTabById(this.plugin.manifest.id);
     } else {
+      log.debug('Settings modal not available; showing fallback notice');
       new Notice('Open Settings → Community plugins → Obsidi-Claude', 4000);
     }
   }
 
   /** Move this chat from the sidebar into a main-area tab (conversation persists). */
   private async moveToMainTab(): Promise<void> {
-    await this.saveConversation();
-    const leaf = this.app.workspace.getLeaf('tab');
-    await leaf.setViewState({ type: CHAT_VIEW_TYPE, active: true });
-    this.app.workspace.revealLeaf(leaf);
-    this.leaf.detach();
+    log.debug('Preparing to move chat to main tab', { conversationId: this.conversation.id });
+    try {
+      await this.saveConversation();
+      const leaf = this.app.workspace.getLeaf('tab');
+      await leaf.setViewState({ type: CHAT_VIEW_TYPE, active: true });
+      this.app.workspace.revealLeaf(leaf);
+      this.leaf.detach();
+      log.debug('Successfully moved chat to main tab');
+    } catch (error) {
+      log.error('Failed to move chat to main tab', { error: error instanceof Error ? error.message : String(error) });
+      throw error;
+    }
   }
 
   // ===== Composer dropdowns (mode / model / add-context) =====
@@ -845,11 +854,18 @@ export class ChatView extends ItemView {
   }
 
   private async applyPermissionMode(mode: ChatViewPermissionMode): Promise<void> {
-    this.plugin.settings.permissionMode = mode;
-    await this.plugin.saveSettings();
-    this.refreshComposerLabels();
-    const meta = ChatView.PERMISSION_MODES.find(m => m.mode === mode);
-    this.showTemporaryStatus(`Mode: ${meta?.label ?? mode}`, 'info', 1500);
+    log.debug('Applying permission mode', { mode });
+    try {
+      this.plugin.settings.permissionMode = mode;
+      await this.plugin.saveSettings();
+      this.refreshComposerLabels();
+      const meta = ChatView.PERMISSION_MODES.find(m => m.mode === mode);
+      this.showTemporaryStatus(`Mode: ${meta?.label ?? mode}`, 'info', 1500);
+      log.debug('Permission mode applied successfully');
+    } catch (error) {
+      log.error('Failed to apply permission mode', { mode, error: error instanceof Error ? error.message : String(error) });
+      throw error;
+    }
   }
 
   private showModelMenu(trigger: HTMLElement): void {
@@ -866,11 +882,18 @@ export class ChatView extends ItemView {
   }
 
   private async applyModel(model: string): Promise<void> {
-    this.plugin.settings.model = model as ObsidiClaudeModel;
-    await this.plugin.saveSettings();
-    this.refreshComposerLabels();
-    this.updateHeaderModel();
-    this.showTemporaryStatus(`Model: ${this.modelShortLabel(model)}`, 'info', 1500);
+    log.debug('Applying model', { model });
+    try {
+      this.plugin.settings.model = model as ObsidiClaudeModel;
+      await this.plugin.saveSettings();
+      this.refreshComposerLabels();
+      this.updateHeaderModel();
+      this.showTemporaryStatus(`Model: ${this.modelShortLabel(model)}`, 'info', 1500);
+      log.debug('Model applied successfully');
+    } catch (error) {
+      log.error('Failed to apply model', { model, error: error instanceof Error ? error.message : String(error) });
+      throw error;
+    }
   }
 
   private showContextMenu(trigger: HTMLElement): void {
@@ -891,36 +914,59 @@ export class ChatView extends ItemView {
   }
 
   private addContext(kind: 'note' | 'selection' | 'search' | 'links' | 'daily' | 'image' | 'attach'): void {
+    log.debug('Adding context to input', { kind });
     const active = this.plugin.app.workspace.getActiveFile();
     switch (kind) {
       case 'note':
-        if (active) this.inputModule?.insertText(`[[${active.basename}]] `);
-        else this.showTemporaryStatus('No active note', 'info', 1500);
+        if (active) {
+          this.inputModule?.insertText(`[[${active.basename}]] `);
+          log.debug('Added note to context', { file: active.basename });
+        } else {
+          this.showTemporaryStatus('No active note', 'info', 1500);
+          log.debug('No active note for context');
+        }
         break;
       case 'selection': {
         const sel = this.plugin.app.workspace.getActiveViewOfType(MarkdownView)?.editor.getSelection();
-        if (sel) this.inputModule?.insertText(`\n> ${sel.replace(/\n/g, '\n> ')}\n`);
-        else this.showTemporaryStatus('No text selected', 'info', 1500);
+        if (sel) {
+          this.inputModule?.insertText(`\n> ${sel.replace(/\n/g, '\n> ')}\n`);
+          log.debug('Added selection to context', { length: sel.length });
+        } else {
+          this.showTemporaryStatus('No text selected', 'info', 1500);
+          log.debug('No text selected for context');
+        }
         break;
       }
       case 'search':
+        log.debug('Opening vault search for context');
         this.searchBarModule?.show();
         break;
       case 'links': {
-        if (!active) { this.showTemporaryStatus('No active note', 'info', 1500); break; }
+        if (!active) {
+          this.showTemporaryStatus('No active note', 'info', 1500);
+          log.debug('No active note for links context');
+          break;
+        }
         const links = this.plugin.app.metadataCache.getFileCache(active)?.links ?? [];
-        if (links.length) this.inputModule?.insertText(links.map(l => `[[${l.link}]]`).join(' ') + ' ');
-        else this.showTemporaryStatus('No links in active note', 'info', 1500);
+        if (links.length) {
+          this.inputModule?.insertText(links.map(l => `[[${l.link}]]`).join(' ') + ' ');
+          log.debug('Added links to context', { count: links.length });
+        } else {
+          this.showTemporaryStatus('No links in active note', 'info', 1500);
+          log.debug('No links found in active note');
+        }
         break;
       }
       case 'daily': {
         const moment = (window as unknown as { moment?: () => { format(f: string): string } }).moment;
         const date = moment ? moment().format('YYYY-MM-DD') : new Date().toISOString().slice(0, 10);
         this.inputModule?.insertText(`[[${date}]] `);
+        log.debug('Added daily note to context', { date });
         break;
       }
       case 'image':
       case 'attach':
+        log.debug('Opening image/file picker for context', { kind });
         this.inputModule?.pickImage();
         break;
     }
@@ -970,7 +1016,13 @@ export class ChatView extends ItemView {
           const rendered = this.activeAssistantMsgId
             ? this.messageModule?.renderPermissionCard(this.activeAssistantMsgId, command, title, toDecision)
             : false;
-          if (!rendered) {
+          if (rendered) {
+            log.debug('Permission card rendered inline', { msgId: this.activeAssistantMsgId, tool: ctx.toolName });
+          } else {
+            log.debug('Permission card not rendered; falling back to modal', {
+              reason: !this.activeAssistantMsgId ? 'no active assistant message' : 'renderPermissionCard failed',
+              tool: ctx.toolName
+            });
             new PermissionModal(this.plugin.app, ctx, settle).open();
           }
         });
