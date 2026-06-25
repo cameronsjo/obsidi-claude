@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.3.0](https://github.com/cameronsjo/obsidi-claude/compare/1.2.0...1.3.0) (2026-06-25)
+
+
+### Features
+
+* add Claude Code plugin with onboarding skill ([de77d30](https://github.com/cameronsjo/obsidi-claude/commit/de77d30e2242c6e4359ec094e51a38124473c9cf))
+* **cli-bridge:** add Obsidian CLI bridge for Sync history, file recovery, and diff ([e2dfbe9](https://github.com/cameronsjo/obsidi-claude/commit/e2dfbe9c4bf3f3ea50fbcc5ce9bda7d9413bde15))
+
+
+### Bug Fixes
+
+* **ci:** use env variables for GitHub Actions expressions in run blocks ([4d73e20](https://github.com/cameronsjo/obsidi-claude/commit/4d73e2089820785f02d579a73d65159a383e98ff))
+* **cli-bridge:** add minimum version check (&gt;= 1.12.0) during initialization ([e4f46dd](https://github.com/cameronsjo/obsidi-claude/commit/e4f46dd3524f25cf816c19877c34e2669c90771b))
+* **cli-bridge:** gate on running Obsidian app version before CLI init ([14cb482](https://github.com/cameronsjo/obsidi-claude/commit/14cb482c3bc4ff3ddb0ca3a79ea9c4fd784d2794))
+
 ## [1.2.0](https://github.com/cameronsjo/obsidi-claude/compare/1.1.0...1.2.0) (2026-02-08)
 
 
