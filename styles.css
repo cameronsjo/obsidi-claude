@@ -3212,3 +3212,441 @@ pre:hover .code-copy-btn {
   width: 13px;
   height: 13px;
 }
+
+/* ============================================================
+   Phase 3 — tool-call card vocabulary
+   ============================================================ */
+.obsidi-claude-container .message-tools {
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+/* ----- Shared card shell ----- */
+.obsidi-claude-container .occ-card {
+  border: 1px solid var(--occ-bd);
+  border-radius: var(--occ-r-card);
+  background-color: var(--occ-bg2);
+  overflow: hidden;
+  font-size: 12.5px;
+}
+
+.occ-card-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 7px 10px;
+  cursor: pointer;
+}
+
+.occ-card-header:hover {
+  background-color: var(--occ-bg3);
+}
+
+.occ-card-chevron {
+  display: flex;
+  flex-shrink: 0;
+  color: var(--occ-fnt);
+  transition: transform 0.15s ease;
+}
+
+.occ-card-chevron svg {
+  width: 13px;
+  height: 13px;
+}
+
+.occ-card.is-open > .occ-card-header .occ-card-chevron {
+  transform: rotate(90deg);
+}
+
+.occ-card-icon {
+  display: flex;
+  flex-shrink: 0;
+  color: var(--occ-mut);
+}
+
+.occ-card-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.occ-card-icon.is-green {
+  color: var(--occ-grn);
+}
+
+.occ-card-icon.is-yellow {
+  color: var(--occ-ylw);
+}
+
+.occ-card-icon.occ-card-icon-running {
+  color: var(--occ-acc);
+}
+
+.occ-card-icon.occ-card-icon-running svg {
+  animation: spin 1s linear infinite;
+}
+
+.occ-card-icon.occ-card-icon-error {
+  color: var(--occ-red);
+}
+
+.occ-card-title {
+  font-weight: 600;
+  color: var(--occ-tx);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.occ-card-meta {
+  color: var(--occ-fnt);
+  font-size: 11.5px;
+  flex-shrink: 0;
+}
+
+.occ-card-query {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-family: var(--occ-mono);
+  font-size: 11px;
+  color: var(--occ-fnt);
+  background-color: var(--occ-bgc);
+  border-radius: 4px;
+  padding: 1px 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.occ-card-query.is-accent {
+  color: var(--occ-acc);
+  background-color: var(--occ-acc-tint);
+}
+
+.occ-card-trailing {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--occ-mut);
+  font-size: 11px;
+}
+
+.occ-card-body {
+  border-top: 1px solid var(--occ-bd);
+  padding: 8px 10px;
+}
+
+.occ-card-running {
+  color: var(--occ-fnt);
+  font-style: italic;
+  font-size: 11.5px;
+}
+
+.occ-card-pre {
+  margin: 0;
+  font-family: var(--occ-mono);
+  font-size: var(--occ-fs-code);
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--occ-mut);
+  max-height: 320px;
+  overflow: auto;
+}
+
+.occ-card-section + .occ-card-section {
+  margin-top: 8px;
+}
+
+.occ-card-section-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--occ-fnt);
+  margin-bottom: 4px;
+}
+
+/* ----- Plan / todo ----- */
+.occ-card-plan .occ-card-body {
+  padding: 6px 10px 8px;
+}
+
+.occ-plan-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 3px 0;
+  font-size: 13px;
+}
+
+.occ-plan-mark {
+  display: flex;
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--occ-mut);
+}
+
+.occ-plan-mark svg {
+  width: 14px;
+  height: 14px;
+}
+
+.occ-plan-mark.is-done {
+  color: var(--occ-grn);
+}
+
+.occ-plan-mark.is-active {
+  color: var(--occ-acc);
+}
+
+.occ-plan-mark.is-active svg {
+  animation: spin 1s linear infinite;
+}
+
+.occ-plan-label {
+  color: var(--occ-tx);
+}
+
+.occ-plan-label.is-done {
+  color: var(--occ-mut);
+  text-decoration: line-through;
+}
+
+/* ----- File-edit diff ----- */
+.occ-badge-new {
+  flex-shrink: 0;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--occ-grn);
+  background-color: var(--occ-grn-tint);
+  border-radius: 3px;
+  padding: 1px 4px;
+}
+
+.occ-diff-stats {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+  font-family: var(--occ-mono);
+  font-size: 11px;
+}
+
+.occ-diff-add {
+  color: var(--occ-grn);
+}
+
+.occ-diff-del {
+  color: var(--occ-fnt);
+}
+
+.occ-card-diff .occ-card-body {
+  padding: 0;
+}
+
+.occ-diff-row {
+  display: flex;
+  font-family: var(--occ-mono);
+  font-size: var(--occ-fs-code);
+  line-height: 1.5;
+}
+
+.occ-diff-gutter {
+  width: 24px;
+  flex-shrink: 0;
+  text-align: center;
+  color: var(--occ-fnt);
+  user-select: none;
+}
+
+.occ-diff-code {
+  flex: 1;
+  min-width: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding-right: 10px;
+}
+
+.occ-diff-row.is-add {
+  background-color: var(--occ-grn-tint);
+}
+
+.occ-diff-row.is-add .occ-diff-gutter {
+  color: var(--occ-grn);
+}
+
+.occ-diff-row.is-del {
+  background-color: var(--occ-red-tint);
+}
+
+.occ-diff-row.is-del .occ-diff-gutter {
+  color: var(--occ-red);
+}
+
+/* ----- Quiet read line (not a card) ----- */
+.occ-read-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px;
+  font-family: var(--occ-mono);
+  font-size: 11.5px;
+  color: var(--occ-fnt);
+  min-width: 0;
+}
+
+.occ-read-icon {
+  display: flex;
+  flex-shrink: 0;
+}
+
+.occ-read-icon svg {
+  width: 13px;
+  height: 13px;
+}
+
+.occ-read-files {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ----- Thinking block ----- */
+.occ-think {
+  font-size: 12.5px;
+}
+
+.occ-think-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px;
+  cursor: pointer;
+  color: var(--occ-mut);
+}
+
+.occ-think-chevron {
+  display: flex;
+  color: var(--occ-fnt);
+  transition: transform 0.15s ease;
+}
+
+.occ-think-chevron svg {
+  width: 13px;
+  height: 13px;
+}
+
+.occ-think.is-open .occ-think-chevron {
+  transform: rotate(90deg);
+}
+
+.occ-think-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: var(--occ-acc);
+  flex-shrink: 0;
+}
+
+.occ-think-label {
+  font-style: italic;
+  color: var(--occ-mut);
+}
+
+.occ-think-body {
+  margin-top: 2px;
+  margin-left: 6px;
+  padding: 4px 0 4px 11px;
+  border-left: 2px solid var(--occ-bd);
+}
+
+.occ-think-text {
+  font-style: italic;
+  color: var(--occ-mut);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+/* ----- Permission prompt (inline) ----- */
+.occ-card-permission {
+  border: 1px solid var(--occ-bd2);
+  border-radius: 10px;
+}
+
+.occ-card-permission .occ-card-header {
+  cursor: default;
+}
+
+.occ-card-permission .occ-card-header:hover {
+  background: none;
+}
+
+.occ-permission-cmd {
+  margin: 0 10px;
+  padding: 8px 10px;
+  background-color: var(--occ-bgc);
+  border: 1px solid var(--occ-bd);
+  border-radius: var(--occ-r-code);
+  font-family: var(--occ-mono);
+  font-size: var(--occ-fs-code);
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--occ-tx);
+}
+
+.occ-permission-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+}
+
+.occ-perm-btn {
+  border-radius: var(--occ-r-code);
+  padding: 6px 13px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid var(--occ-bd2);
+  background-color: transparent;
+  color: var(--occ-tx);
+}
+
+.occ-perm-allow {
+  background-color: var(--occ-acc);
+  color: var(--occ-acc-text);
+  border-color: var(--occ-acc);
+}
+
+.occ-perm-allow:hover {
+  background-color: var(--interactive-accent-hover);
+}
+
+.occ-perm-always {
+  background-color: var(--occ-bg3);
+}
+
+.occ-perm-always:hover {
+  background-color: var(--occ-bd2);
+}
+
+.occ-perm-deny {
+  color: var(--occ-mut);
+}
+
+.occ-perm-deny:hover {
+  background-color: var(--occ-red-tint);
+  color: var(--occ-red);
+  border-color: var(--occ-red);
+}
+
+.occ-permission-result {
+  font-size: 12px;
+  font-style: italic;
+  color: var(--occ-mut);
+}
+
+.occ-card-permission.is-resolved {
+  opacity: 0.75;
+}

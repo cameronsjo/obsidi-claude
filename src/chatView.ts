@@ -102,6 +102,8 @@ export class ChatView extends ItemView {
   private inputWrapper!: HTMLElement;
   private headerModelEl: HTMLElement | null = null;
   private menuController: MenuController | null = null;
+  /** Id of the assistant message currently streaming (for inline permission cards). */
+  private activeAssistantMsgId: string | null = null;
 
   // State
   private conversation!: Conversation;
@@ -557,7 +559,7 @@ export class ChatView extends ItemView {
         this.conversation.messages.push(msg);
         this.renderMessage(msg);
         this.updateTokenCounter();
-        if (msg.role === 'assistant') currentAssistantMsgId = msg.id;
+        if (msg.role === 'assistant') { currentAssistantMsgId = msg.id; this.activeAssistantMsgId = msg.id; }
         if (msg.role === 'user') this.scrollModule?.resetScrollState();
         this.scrollModule?.scrollToBottom();
       },
@@ -949,7 +951,30 @@ export class ChatView extends ItemView {
       onNotification: (title, message, type) => { log.debug('Hook notification', { title, message, type }); new Notice(`${title}: ${message}`, type === 'error' ? 5000 : 3000); },
       onToolBlocked: (toolName, reason) => { log.warn('Hook blocked tool', { toolName, reason }); new Notice(`Blocked: ${toolName} - ${reason}`, 3000); },
       onAuditLog: (toolName, input, output) => log.info('Tool audit', { tool: toolName, inputPreview: JSON.stringify(input).slice(0, 100), outputPreview: JSON.stringify(output).slice(0, 100) }),
-      onPermissionRequest: async (ctx: PermissionRequestContext): Promise<PermissionResponse> => { log.info('Permission request', { toolName: ctx.toolName, toolUseID: ctx.toolUseID }); return new Promise<PermissionResponse>(r => { let d = false; const s = (res: PermissionResponse) => { if (!d) { d = true; r(res); } }; new PermissionModal(this.plugin.app, ctx, s).open(); }); },
+      onPermissionRequest: async (ctx: PermissionRequestContext): Promise<PermissionResponse> => {
+        log.info('Permission request', { toolName: ctx.toolName, toolUseID: ctx.toolUseID });
+        return new Promise<PermissionResponse>(r => {
+          let d = false;
+          const settle = (res: PermissionResponse) => { if (!d) { d = true; r(res); } };
+          const toDecision = (decision: 'once' | 'always' | 'deny') => settle(
+            decision === 'deny' ? { allowed: false }
+              : decision === 'always' ? { allowed: true, applyAlwaysAllow: true }
+              : { allowed: true }
+          );
+          const isBash = ctx.toolName.toLowerCase() === 'bash';
+          const command = isBash
+            ? String((ctx.input as Record<string, unknown>).command ?? '')
+            : `${ctx.toolName} ${JSON.stringify(ctx.input)}`;
+          const title = isBash ? 'Run a terminal command?' : `Allow ${ctx.toolName}?`;
+          // Prefer the inline permission card; fall back to the modal.
+          const rendered = this.activeAssistantMsgId
+            ? this.messageModule?.renderPermissionCard(this.activeAssistantMsgId, command, title, toDecision)
+            : false;
+          if (!rendered) {
+            new PermissionModal(this.plugin.app, ctx, settle).open();
+          }
+        });
+      },
     });
   }
 
