@@ -3697,3 +3697,242 @@ pre:hover .code-copy-btn {
   line-height: 1.45;
   color: var(--text-muted);
 }
+
+/* ============================================================
+   Phase 4 — history panel restyle
+   ============================================================ */
+
+/* Panel chrome */
+.obsidi-claude-container .chat-history-panel {
+  background: var(--occ-bg);
+  border-bottom: none;
+  max-height: none;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Header bar */
+.obsidi-claude-container .history-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--occ-bg);
+  border-bottom: 1px solid var(--occ-bd);
+  flex-shrink: 0;
+}
+
+/* Search pill — bg2 fill, bd2 border, 8px radius */
+.obsidi-claude-container .occ-hist-search-pill {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--occ-bg2);
+  border: 1px solid var(--occ-bd2);
+  border-radius: 8px;
+  padding: 5px 9px;
+  min-width: 0;
+}
+
+.obsidi-claude-container .occ-hist-search-icon {
+  color: var(--occ-mut);
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  line-height: 0;
+}
+
+.obsidi-claude-container .occ-hist-search-icon svg {
+  width: 12px;
+  height: 12px;
+}
+
+.obsidi-claude-container .history-search-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  box-shadow: none;
+  padding: 0;
+  color: var(--occ-tx);
+  font-size: var(--occ-fs-body);
+}
+
+.obsidi-claude-container .history-search-input:focus {
+  outline: none;
+  box-shadow: none;
+  border-color: transparent;
+}
+
+.obsidi-claude-container .history-search-input::placeholder {
+  color: var(--occ-mut);
+}
+
+/* List container — scrollable, fills panel */
+.obsidi-claude-container .history-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 6px 16px;
+}
+
+/* Group eyebrow headers — uppercase, faint, spaced */
+.obsidi-claude-container .occ-hist-group-header {
+  font-size: var(--occ-fs-eyebrow);
+  color: var(--occ-fnt);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  padding: 14px 6px 4px;
+  user-select: none;
+}
+
+.obsidi-claude-container .occ-hist-group-header:first-child {
+  padding-top: 6px;
+}
+
+/* Session rows */
+.obsidi-claude-container .history-item {
+  display: flex;
+  align-items: flex-start;
+  padding: 9px 10px;
+  margin-bottom: 1px;
+  border-radius: var(--occ-r-card);
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+
+.obsidi-claude-container .history-item:hover {
+  background: var(--occ-bg3);
+}
+
+/* Active session — accent tint background */
+.obsidi-claude-container .history-item.current {
+  background: var(--occ-acc-tint);
+}
+
+/* Content wrapper */
+.obsidi-claude-container .history-item-content {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Title row: title + right-aligned timestamp */
+.obsidi-claude-container .history-item-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+/* Session title — 13px, weight 550, ellipsized */
+.obsidi-claude-container .occ-hist-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--occ-tx);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.obsidi-claude-container .history-item.current .occ-hist-title {
+  color: var(--occ-acc);
+}
+
+/* Relative timestamp — mono, faint, right-aligned */
+.obsidi-claude-container .occ-hist-time {
+  flex-shrink: 0;
+  font-size: var(--occ-fs-meta);
+  font-family: var(--occ-mono);
+  color: var(--occ-fnt);
+  white-space: nowrap;
+}
+
+.obsidi-claude-container .history-item.current .occ-hist-time {
+  color: var(--occ-acc);
+}
+
+/* One-line muted summary */
+.obsidi-claude-container .occ-hist-summary {
+  font-size: var(--occ-fs-label);
+  color: var(--occ-mut);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.4;
+  margin-bottom: 2px;
+}
+
+/* Meta line — message count, mono, faint */
+.obsidi-claude-container .occ-hist-meta {
+  font-size: var(--occ-fs-meta);
+  font-family: var(--occ-mono);
+  color: var(--occ-fnt);
+  line-height: 1.3;
+}
+
+/* Pin icon — accent, compact */
+.obsidi-claude-container .history-item-pin {
+  display: flex;
+  align-items: center;
+  color: var(--occ-acc);
+  flex-shrink: 0;
+  margin-right: 6px;
+  margin-top: 1px;
+}
+
+.obsidi-claude-container .history-item-pin svg {
+  width: 11px;
+  height: 11px;
+}
+
+/* Tag filter bar */
+.obsidi-claude-container .history-tag-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px 10px;
+  background: var(--occ-bg);
+  border-bottom: 1px solid var(--occ-bd);
+  flex-shrink: 0;
+}
+
+.obsidi-claude-container .history-tag-bar:empty {
+  display: none;
+}
+
+/* Tag filter chips */
+.obsidi-claude-container .history-tag-btn {
+  font-size: var(--occ-fs-meta);
+  padding: 2px 8px;
+  border-radius: var(--occ-r-chip);
+  background: var(--occ-bg2);
+  border: 1px solid var(--occ-bd);
+  color: var(--occ-mut);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.obsidi-claude-container .history-tag-btn:hover {
+  background: var(--occ-bg3);
+  color: var(--occ-tx);
+}
+
+.obsidi-claude-container .history-tag-btn.selected {
+  background: var(--occ-acc-tint);
+  border-color: var(--occ-acc);
+  color: var(--occ-acc);
+}
+
+/* Empty state */
+.obsidi-claude-container .history-empty {
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--occ-mut);
+  font-size: var(--occ-fs-label);
+  font-style: italic;
+}

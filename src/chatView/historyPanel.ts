@@ -46,7 +46,7 @@ export interface HistoryPanelHandle extends ModuleHandle {
 }
 
 /**
- * Format a timestamp as relative date string.
+ * Format a timestamp as relative date string (used for group label logic).
  */
 function formatRelativeDate(timestamp: number): string {
   const now = Date.now();
@@ -60,6 +60,24 @@ function formatRelativeDate(timestamp: number): string {
   } else {
     return `${days} days ago`;
   }
+}
+
+/**
+ * Format a timestamp as a short relative time string for inline display.
+ * e.g. "now", "5m", "3h", "2d", "1w", "3mo"
+ */
+function formatRelativeTime(timestamp: number): string {
+  const diff = Date.now() - timestamp;
+  const minutes = Math.floor(diff / 60000);
+  const hours = Math.floor(diff / 3600000);
+  const days = Math.floor(diff / 86400000);
+
+  if (minutes < 1) return 'now';
+  if (minutes < 60) return `${minutes}m`;
+  if (hours < 24) return `${hours}h`;
+  if (days < 7) return `${days}d`;
+  if (days < 30) return `${Math.floor(days / 7)}w`;
+  return `${Math.floor(days / 30)}mo`;
 }
 
 /**
@@ -89,14 +107,17 @@ export function createHistoryPanel(
   const panel = container.createDiv('chat-history-panel');
   panel.addClass('hidden');
 
-  // Header with search and bulk controls
+  // Header with search pill and bulk controls
   const header = panel.createDiv('history-header');
 
-  const searchInput = header.createEl('input', {
+  const searchPill = header.createDiv('occ-hist-search-pill');
+  const searchIconEl = searchPill.createSpan('occ-hist-search-icon');
+  setIcon(searchIconEl, 'search');
+  const searchInput = searchPill.createEl('input', {
     cls: 'history-search-input',
     attr: {
       type: 'text',
-      placeholder: 'Search conversations...',
+      placeholder: 'Search chats…',
     },
   });
 
@@ -225,66 +246,127 @@ export function createHistoryPanel(
   }
 
   /**
-   * Render the conversation list.
+   * Render a single conversation row into listContainer.
+   */
+  function renderItem(conv: ConversationMeta, currentId: string): void {
+    const item = listContainer.createDiv('history-item');
+    item.setAttribute('data-id', conv.id);
+
+    if (conv.id === currentId) {
+      item.addClass('current');
+    }
+
+    // Checkbox for bulk select
+    if (state.bulkSelectMode) {
+      const checkbox = item.createEl('input', {
+        cls: 'history-item-checkbox',
+        attr: { type: 'checkbox' },
+      }) as HTMLInputElement;
+      checkbox.checked = state.selectedIds.has(conv.id);
+      checkbox.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (checkbox.checked) {
+          state.selectedIds.add(conv.id);
+        } else {
+          state.selectedIds.delete(conv.id);
+        }
+      });
+    }
+
+    // Pin icon
+    if (conv.pinned) {
+      const pinIcon = item.createSpan('history-item-pin');
+      setIcon(pinIcon, 'pin');
+    }
+
+    // Content wrapper
+    const content = item.createDiv('history-item-content');
+
+    // Title row: title (left) + relative timestamp (right)
+    const titleRow = content.createDiv('history-item-title-row');
+    const titleEl = titleRow.createDiv('occ-hist-title');
+    titleEl.setText(conv.title);
+    const timeEl = titleRow.createDiv('occ-hist-time');
+    timeEl.setText(formatRelativeTime(conv.updatedAt));
+
+    // One-line muted summary from preview, if available
+    if (conv.preview) {
+      const summaryEl = content.createDiv('occ-hist-summary');
+      summaryEl.setText(conv.preview);
+    }
+
+    // Meta line: message count (model and folder omitted — not in ConversationMeta)
+    const metaEl = content.createDiv('occ-hist-meta');
+    const msgWord = conv.messageCount === 1 ? 'message' : 'messages';
+    metaEl.setText(`${conv.messageCount} ${msgWord}`);
+
+    // Click handler
+    item.addEventListener('click', async () => {
+      if (state.bulkSelectMode) return;
+      await callbacks.onSelect(conv.id);
+    });
+
+    // Context menu
+    item.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      showContextMenu(e, conv);
+    });
+  }
+
+  /**
+   * Render the conversation list, grouped by recency.
+   * Groups: Pinned / Today / Yesterday / Previous 7 days / Older
    */
   function renderList(): void {
     listContainer.empty();
 
     const filtered = getFilteredConversations();
     const currentId = callbacks.getCurrentId();
+    const now = Date.now();
 
-    filtered.forEach((conv) => {
-      const item = listContainer.createDiv('history-item');
-      item.setAttribute('data-id', conv.id);
+    type Group = { label: string; items: ConversationMeta[] };
+    const pinnedGroup: Group = { label: 'Pinned', items: [] };
+    const todayGroup: Group = { label: 'Today', items: [] };
+    const yesterdayGroup: Group = { label: 'Yesterday', items: [] };
+    const weekGroup: Group = { label: 'Previous 7 days', items: [] };
+    const olderGroup: Group = { label: 'Older', items: [] };
 
-      if (conv.id === currentId) {
-        item.addClass('current');
-      }
-
-      // Checkbox for bulk select
-      if (state.bulkSelectMode) {
-        const checkbox = item.createEl('input', {
-          cls: 'history-item-checkbox',
-          attr: { type: 'checkbox' },
-        }) as HTMLInputElement;
-        checkbox.checked = state.selectedIds.has(conv.id);
-        checkbox.addEventListener('click', (e) => {
-          e.stopPropagation();
-          if (checkbox.checked) {
-            state.selectedIds.add(conv.id);
-          } else {
-            state.selectedIds.delete(conv.id);
-          }
-        });
-      }
-
-      // Pin icon
+    for (const conv of filtered) {
       if (conv.pinned) {
-        const pinIcon = item.createSpan('history-item-pin');
-        setIcon(pinIcon, 'pin');
+        pinnedGroup.items.push(conv);
+        continue;
       }
+      const days = Math.floor((now - conv.updatedAt) / 86400000);
+      if (days === 0) {
+        todayGroup.items.push(conv);
+      } else if (days === 1) {
+        yesterdayGroup.items.push(conv);
+      } else if (days <= 7) {
+        weekGroup.items.push(conv);
+      } else {
+        olderGroup.items.push(conv);
+      }
+    }
 
-      // Content
-      const content = item.createDiv('history-item-content');
+    const groups: Group[] = [pinnedGroup, todayGroup, yesterdayGroup, weekGroup, olderGroup];
+    let hasAny = false;
 
-      const title = content.createDiv('history-item-title');
-      title.setText(conv.title);
+    for (const group of groups) {
+      if (group.items.length === 0) continue;
+      hasAny = true;
 
-      const meta = content.createDiv('history-item-meta');
-      meta.setText(`${conv.messageCount} messages • ${formatRelativeDate(conv.updatedAt)}`);
+      const groupHeader = listContainer.createDiv('occ-hist-group-header');
+      groupHeader.setText(group.label);
 
-      // Click handler
-      item.addEventListener('click', async () => {
-        if (state.bulkSelectMode) return;
-        await callbacks.onSelect(conv.id);
-      });
+      for (const conv of group.items) {
+        renderItem(conv, currentId);
+      }
+    }
 
-      // Context menu
-      item.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        showContextMenu(e, conv);
-      });
-    });
+    if (!hasAny) {
+      const empty = listContainer.createDiv('history-empty');
+      empty.setText('No conversations found');
+    }
   }
 
   /**
