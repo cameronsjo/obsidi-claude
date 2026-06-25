@@ -3650,3 +3650,50 @@ pre:hover .code-copy-btn {
 .occ-card-permission.is-resolved {
   opacity: 0.75;
 }
+
+/* ============================================================
+   Phase 5 — settings tab accent-heading treatment
+   (settings render OUTSIDE .obsidi-claude-container, so these use
+   Obsidian base variables, scoped to .obsidi-claude-settings)
+   ============================================================ */
+
+/* Collapsible section titles: uppercase accent eyebrow labels */
+.obsidi-claude-settings .settings-section-title {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--interactive-accent);
+}
+
+.obsidi-claude-settings .settings-section-chevron {
+  color: var(--interactive-accent);
+  opacity: 0.75;
+}
+
+/* .setHeading() settings: match the eyebrow label treatment */
+.obsidi-claude-settings .setting-item-heading {
+  padding-top: 20px;
+  padding-bottom: 4px;
+}
+
+.obsidi-claude-settings .setting-item-heading .setting-item-name {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--interactive-accent);
+}
+
+/* Setting row type scale — scoped to this plugin's tab only */
+.obsidi-claude-settings .setting-item:not(.setting-item-heading) .setting-item-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-normal);
+}
+
+.obsidi-claude-settings .setting-item-description {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
