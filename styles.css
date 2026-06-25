@@ -2581,3 +2581,452 @@ pre:hover .code-copy-btn {
   font-size: 11px;
   margin: 0 2px;
 }
+
+/* ============================================================
+   CHAT-PANE REDESIGN (design handoff)
+   Phase 1 — header, dropdown menus, composer chrome
+   These rules sit after the originals so equal-specificity ties
+   resolve to the redesign; tokens come from the Phase 0 layer.
+   ============================================================ */
+
+/* ----- Header: 42px identity bar ----- */
+.obsidi-claude-container .chat-header {
+  height: var(--occ-header-h);
+  min-height: var(--occ-header-h);
+  padding: 0 10px;
+  gap: 8px;
+  background-color: var(--occ-bg);
+  border-bottom: 1px solid var(--occ-bd);
+}
+
+.obsidi-claude-container .header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* App glyph: accent rounded square + rotated diamond (CSS, no asset) */
+.cc-glyph {
+  position: relative;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  background-color: var(--occ-acc);
+  flex-shrink: 0;
+}
+
+.cc-glyph::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 6px;
+  height: 6px;
+  background-color: var(--occ-acc-text);
+  transform: translate(-50%, -50%) rotate(45deg);
+  border-radius: 1px;
+}
+
+.cc-ident {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+  min-width: 0;
+}
+
+.cc-wordmark {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--occ-tx);
+  white-space: nowrap;
+}
+
+.cc-model {
+  font-family: var(--occ-mono);
+  font-size: 11px;
+  color: var(--occ-fnt);
+  white-space: nowrap;
+}
+
+.obsidi-claude-container .header-center {
+  flex: 1;
+  min-width: 0;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.obsidi-claude-container .chat-title {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--occ-mut);
+  text-align: right;
+  max-width: 100%;
+  padding: 2px 6px;
+  margin: 0;
+}
+
+.obsidi-claude-container .chat-title:hover {
+  background-color: var(--occ-bg3);
+}
+
+.obsidi-claude-container .header-status {
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+/* Icon buttons: 26px square, hover bg3 (no accent fill on new-chat) */
+.obsidi-claude-container .chat-action-btn {
+  width: var(--occ-iconbtn);
+  height: var(--occ-iconbtn);
+  padding: 0;
+  border-radius: var(--occ-r-btn);
+  color: var(--occ-mut);
+}
+
+.obsidi-claude-container .chat-action-btn:hover {
+  background-color: var(--occ-bg3);
+  color: var(--occ-tx);
+}
+
+.obsidi-claude-container .chat-action-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.obsidi-claude-container .chat-new-btn {
+  color: var(--occ-mut);
+}
+
+.obsidi-claude-container .chat-new-btn:hover {
+  background-color: var(--occ-bg3);
+  color: var(--occ-tx);
+}
+
+/* ----- Dropdown menus (shared helper) ----- */
+.occ-menu-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+}
+
+.occ-menu {
+  position: absolute;
+  z-index: 50;
+  background-color: var(--occ-bg2);
+  border: 1px solid var(--occ-bd2);
+  border-radius: var(--occ-r-card);
+  box-shadow: var(--occ-menu-shadow);
+  padding: 5px;
+  max-width: calc(100% - 12px);
+  max-height: 72%;
+  overflow-y: auto;
+  color: var(--occ-tx);
+}
+
+.occ-menu-eyebrow {
+  font-size: var(--occ-fs-eyebrow);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  color: var(--occ-acc);
+  padding: 6px 9px 4px;
+}
+
+.occ-menu-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.occ-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 9px;
+  border-radius: var(--occ-r-btn);
+  cursor: pointer;
+}
+
+.occ-menu-item:hover {
+  background-color: var(--occ-bg3);
+}
+
+.occ-menu-item.is-active {
+  color: var(--occ-acc);
+}
+
+.occ-menu-item.is-danger {
+  color: var(--occ-red);
+}
+
+.occ-menu-item.is-danger:hover {
+  background-color: var(--occ-red-tint);
+}
+
+.occ-menu-icon {
+  display: flex;
+  flex-shrink: 0;
+  color: var(--occ-mut);
+}
+
+.occ-menu-icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+.occ-menu-item.is-danger .occ-menu-icon {
+  color: var(--occ-red);
+}
+
+.occ-menu-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.occ-menu-chip {
+  position: relative;
+  width: 15px;
+  height: 15px;
+  border-radius: 4px;
+  background-color: var(--occ-acc);
+  flex-shrink: 0;
+}
+
+.occ-menu-chip::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 5px;
+  height: 5px;
+  background-color: var(--occ-acc-text);
+  transform: rotate(45deg);
+  border-radius: 1px;
+}
+
+.occ-menu-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.occ-menu-label {
+  font-size: 12.5px;
+  color: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.occ-menu-desc {
+  font-size: 11px;
+  color: var(--occ-fnt);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.occ-menu-trailing {
+  font-family: var(--occ-mono);
+  font-size: 11px;
+  color: var(--occ-fnt);
+  flex-shrink: 0;
+}
+
+.occ-menu-check {
+  display: flex;
+  color: var(--occ-acc);
+  flex-shrink: 0;
+}
+
+.occ-menu-check svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* ----- Composer chrome ----- */
+.composer-working {
+  align-items: center;
+  gap: 7px;
+  padding: 0 4px 7px;
+  font-size: 11.5px;
+  color: var(--occ-mut);
+}
+
+.composer-working-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: var(--occ-acc);
+  animation: occ-pulse 1.4s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+@keyframes occ-pulse {
+  0%, 100% { opacity: 0.3; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+.obsidi-claude-container .chat-input-area {
+  background-color: var(--occ-bg);
+  border-top: 1px solid var(--occ-bd);
+  padding: 8px 12px 12px;
+}
+
+.obsidi-claude-container .chat-input-wrapper {
+  background-color: var(--occ-bg2);
+  border: 1px solid var(--occ-bd2);
+  border-radius: var(--occ-r-shell);
+  padding: 8px 10px;
+  gap: 6px;
+}
+
+.obsidi-claude-container .chat-input {
+  font-size: var(--occ-fs-body);
+  min-height: 24px;
+  padding: 2px;
+  line-height: var(--occ-lh-body);
+}
+
+.composer-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.composer-controls .chat-buttons-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.composer-spacer {
+  flex: 1;
+}
+
+.composer-mode-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background-color: var(--occ-acc-tint);
+  color: var(--occ-acc);
+  border: none;
+  border-radius: 999px;
+  padding: 3px 9px;
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.composer-mode-chip:hover {
+  background-color: var(--occ-acc-tint-strong);
+}
+
+.composer-mode-spark {
+  display: flex;
+}
+
+.composer-mode-spark svg {
+  width: 13px;
+  height: 13px;
+}
+
+.composer-caret {
+  display: flex;
+  opacity: 0.75;
+}
+
+.composer-caret svg {
+  width: 12px;
+  height: 12px;
+}
+
+.composer-add-btn,
+.obsidi-claude-container .chat-voice-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  background: transparent;
+  border-radius: var(--occ-r-btn);
+  color: var(--occ-mut);
+  cursor: pointer;
+}
+
+.composer-add-btn:hover,
+.obsidi-claude-container .chat-voice-btn:hover {
+  background-color: var(--occ-bg3);
+  color: var(--occ-tx);
+}
+
+.composer-add-btn svg,
+.obsidi-claude-container .chat-voice-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.composer-model-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: transparent;
+  border: none;
+  color: var(--occ-fnt);
+  font-family: var(--occ-mono);
+  font-size: 11px;
+  padding: 3px 6px;
+  border-radius: var(--occ-r-btn);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.composer-model-btn:hover {
+  background-color: var(--occ-bg3);
+  color: var(--occ-mut);
+}
+
+.obsidi-claude-container .composer-send-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.obsidi-claude-container .chat-send-btn.composer-send-btn {
+  background-color: var(--occ-acc);
+  color: var(--occ-acc-text);
+}
+
+.obsidi-claude-container .chat-send-btn.composer-send-btn:hover {
+  background-color: var(--interactive-accent-hover);
+}
+
+.obsidi-claude-container .chat-send-btn.composer-send-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.obsidi-claude-container .chat-stop-btn.composer-send-btn {
+  background-color: var(--occ-bg3);
+  color: var(--occ-tx);
+}
+
+.obsidi-claude-container .chat-stop-btn.composer-send-btn svg {
+  width: 14px;
+  height: 14px;
+}

@@ -19,6 +19,12 @@ export interface InputAreaCallbacks {
   onKeyDown: (e: KeyboardEvent) => boolean; // Return true if handled (to prevent default)
   getCommands: () => CommandInfo[];
   isVoiceAvailable: () => boolean;
+  /** Open the permission-mode dropdown anchored to the given trigger. */
+  onModeClick?: (trigger: HTMLElement) => void;
+  /** Open the add-context dropdown anchored to the given trigger. */
+  onContextClick?: (trigger: HTMLElement) => void;
+  /** Open the model picker dropdown anchored to the given trigger. */
+  onModelClick?: (trigger: HTMLElement) => void;
 }
 
 /**
@@ -40,6 +46,14 @@ export interface InputAreaHandle extends ModuleHandle {
   getInputElement(): HTMLTextAreaElement;
   getWrapper(): HTMLElement;
   getButtonContainer(): HTMLElement;
+  /** Update the composer mode-chip label. */
+  setModeLabel(label: string): void;
+  /** Update the composer model-picker label. */
+  setModelLabel(label: string): void;
+  /** Open the native image file picker (routes through the image path). */
+  pickImage(): void;
+  /** Insert text at the caret. */
+  insertText(text: string): void;
 }
 
 const MAX_TEXTAREA_HEIGHT = 180;
@@ -63,6 +77,12 @@ export function createInputArea(
   let historyIndex = -1;
   let savedInput = '';
 
+  // Working indicator (above the shell): "Claude is working… esc to interrupt".
+  const workingEl = container.createDiv('composer-working');
+  workingEl.createSpan('composer-working-dot');
+  workingEl.createSpan({ cls: 'composer-working-text', text: 'Claude is working… esc to interrupt' });
+  workingEl.style.display = 'none';
+
   // Input wrapper for textarea and buttons
   const inputWrapper = container.createDiv('chat-input-wrapper');
 
@@ -70,7 +90,7 @@ export function createInputArea(
   const textarea = inputWrapper.createEl('textarea', {
     cls: 'chat-input',
     attr: {
-      placeholder: 'Ask Claude anything...',
+      placeholder: 'Reply to Claude…',
     },
   });
 
@@ -78,26 +98,42 @@ export function createInputArea(
   const imagePreview = inputWrapper.createDiv('chat-image-preview');
   imagePreview.style.display = 'none';
 
-  // Button container
-  const buttonContainer = inputWrapper.createDiv('chat-buttons');
+  // Control row (handoff composer): mode chip · + add-context · spacer · model · send.
+  const buttonContainer = inputWrapper.createDiv('chat-buttons composer-controls');
 
-  // Left side: hint and token counter (populated by status bar module)
+  // Left cluster: mode chip + add-context + (token counter injected by status bar).
   const leftArea = buttonContainer.createDiv('chat-buttons-left');
 
-  // Keyboard hint
-  const hintEl = leftArea.createSpan('chat-input-hint');
-  hintEl.setText('Enter to send · Queue when busy · /help');
-
-  // Stop button (hidden by default)
-  const stopButton = buttonContainer.createEl('button', {
-    cls: 'chat-stop-btn',
+  // Permission-mode chip (dropdown opens upward).
+  const modeChip = leftArea.createEl('button', {
+    cls: 'composer-mode-chip',
+    attr: { 'aria-label': 'Permission mode' },
   });
-  setIcon(stopButton, 'circle-stop');
-  stopButton.createSpan({ text: 'Stop' });
-  stopButton.style.display = 'none';
-  stopButton.onclick = (): void => callbacks.onStop();
+  const modeSpark = modeChip.createSpan('composer-mode-spark');
+  setIcon(modeSpark, 'sparkles');
+  const modeLabelEl = modeChip.createSpan({ cls: 'composer-mode-label', text: 'Default' });
+  const modeCaret = modeChip.createSpan('composer-caret');
+  setIcon(modeCaret, 'chevron-down');
+  modeChip.onclick = (e): void => {
+    e.stopPropagation();
+    callbacks.onModeClick?.(modeChip);
+  };
 
-  // Voice button
+  // Add-context button (dropdown opens upward).
+  const addBtn = leftArea.createEl('button', {
+    cls: 'composer-add-btn',
+    attr: { 'aria-label': 'Add to context' },
+  });
+  setIcon(addBtn, 'plus');
+  addBtn.onclick = (e): void => {
+    e.stopPropagation();
+    callbacks.onContextClick?.(addBtn);
+  };
+
+  // Spacer.
+  buttonContainer.createDiv('composer-spacer');
+
+  // Voice button.
   const voiceButton = buttonContainer.createEl('button', {
     cls: 'chat-voice-btn',
     attr: { 'aria-label': 'Voice input' },
@@ -106,12 +142,34 @@ export function createInputArea(
   voiceButton.style.display = callbacks.isVoiceAvailable() ? '' : 'none';
   voiceButton.onclick = (): void => callbacks.onVoiceToggle();
 
-  // Send button
-  const sendButton = buttonContainer.createEl('button', {
-    cls: 'chat-send-btn mod-cta',
+  // Model label (dropdown opens upward).
+  const modelBtn = buttonContainer.createEl('button', {
+    cls: 'composer-model-btn',
+    attr: { 'aria-label': 'Model' },
   });
-  setIcon(sendButton, 'send');
-  sendButton.createSpan({ text: 'Send' });
+  const modelLabelEl = modelBtn.createSpan({ cls: 'composer-model-label', text: 'model' });
+  const modelCaret = modelBtn.createSpan('composer-caret');
+  setIcon(modelCaret, 'chevron-down');
+  modelBtn.onclick = (e): void => {
+    e.stopPropagation();
+    callbacks.onModelClick?.(modelBtn);
+  };
+
+  // Stop button (hidden by default, replaces send while processing).
+  const stopButton = buttonContainer.createEl('button', {
+    cls: 'chat-stop-btn composer-send-btn',
+    attr: { 'aria-label': 'Stop generating' },
+  });
+  setIcon(stopButton, 'square');
+  stopButton.style.display = 'none';
+  stopButton.onclick = (): void => callbacks.onStop();
+
+  // Send button (filled accent, up-arrow).
+  const sendButton = buttonContainer.createEl('button', {
+    cls: 'chat-send-btn composer-send-btn mod-cta',
+    attr: { 'aria-label': 'Send message' },
+  });
+  setIcon(sendButton, 'arrow-up');
   sendButton.onclick = (): void => handleSend();
 
   // Debounce timer for input resize
@@ -216,6 +274,31 @@ export function createInputArea(
     callbacks.onSend(content);
   }
 
+  /** Open the native file picker for an image, routing through the image path. */
+  function pickImage(): void {
+    const picker = document.createElement('input');
+    picker.type = 'file';
+    picker.accept = 'image/*';
+    picker.onchange = (): void => {
+      const file = picker.files?.[0];
+      if (file) handleImageFile(file);
+    };
+    picker.click();
+  }
+
+  /** Insert text at the textarea caret, then resize + focus. */
+  function insertText(text: string): void {
+    const start = textarea.selectionStart ?? textarea.value.length;
+    const end = textarea.selectionEnd ?? textarea.value.length;
+    textarea.value = textarea.value.slice(0, start) + text + textarea.value.slice(end);
+    const caret = start + text.length;
+    textarea.selectionStart = caret;
+    textarea.selectionEnd = caret;
+    resize();
+    textarea.focus();
+    callbacks.onInputChange(textarea.value);
+  }
+
   function getValue(): string {
     return textarea.value;
   }
@@ -241,7 +324,16 @@ export function createInputArea(
     // Keep input enabled during processing to allow message queuing
     sendButton.style.display = isProcessing ? 'none' : 'inline-flex';
     stopButton.style.display = isProcessing ? 'inline-flex' : 'none';
+    workingEl.style.display = isProcessing ? 'flex' : 'none';
     inputWrapper.toggleClass('is-processing', isProcessing);
+  }
+
+  function setModeLabel(label: string): void {
+    modeLabelEl.setText(label);
+  }
+
+  function setModelLabel(label: string): void {
+    modelLabelEl.setText(label);
   }
 
   function setRecording(isRecording: boolean): void {
@@ -399,6 +491,10 @@ export function createInputArea(
     getInputElement,
     getWrapper,
     getButtonContainer,
+    setModeLabel,
+    setModelLabel,
+    pickImage,
+    insertText,
     destroy,
   };
 }
