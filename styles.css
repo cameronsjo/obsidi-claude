@@ -55,8 +55,10 @@ settings:
 /* Custom properties with Style Settings support */
 /* Style Settings plugin injects variables at :root, we reference them with fallbacks */
 body {
-  --obsidi-claude-user-bg: var(--user-message-background, var(--interactive-accent));
-  --obsidi-claude-user-text: var(--user-message-text, var(--text-on-accent));
+  /* Defaults follow the handoff (neutral bg2 bubble); Style Settings still
+     overrides via --user-message-* when the user opts in. */
+  --obsidi-claude-user-bg: var(--user-message-background, var(--background-secondary));
+  --obsidi-claude-user-text: var(--user-message-text, var(--text-normal));
   --obsidi-claude-assistant-bg: var(--assistant-message-background, var(--background-secondary));
   --obsidi-claude-assistant-text: var(--assistant-message-text, var(--text-normal));
 }
@@ -67,6 +69,63 @@ body {
   height: 100%;
   padding: 0;
   overflow-x: hidden;
+
+  /* ===== Chat-pane semantic token layer (handoff → Obsidian) ===== */
+  /* Surfaces */
+  --occ-bg: var(--background-primary);
+  --occ-bg2: var(--background-secondary);
+  --occ-bg3: var(--background-modifier-hover);
+  --occ-bgc: var(--background-primary-alt);
+  /* Borders */
+  --occ-bd: var(--background-modifier-border);
+  --occ-bd2: var(--background-modifier-border-hover);
+  /* Text */
+  --occ-tx: var(--text-normal);
+  --occ-mut: var(--text-muted);
+  --occ-fnt: var(--text-faint);
+  /* Accent (Claude purple in handoff → user's theme accent) */
+  --occ-acc: var(--interactive-accent);
+  --occ-acc-text: var(--text-on-accent);
+  --occ-acc-tint: color-mix(in srgb, var(--interactive-accent) 15%, transparent);
+  --occ-acc-tint-strong: color-mix(in srgb, var(--interactive-accent) 24%, transparent);
+  /* Status */
+  --occ-grn: var(--color-green);
+  --occ-grn-tint: color-mix(in srgb, var(--color-green) 14%, transparent);
+  --occ-red: var(--color-red);
+  --occ-red-tint: color-mix(in srgb, var(--color-red) 12%, transparent);
+  --occ-ylw: var(--color-yellow);
+  --occ-ylw-tint: color-mix(in srgb, var(--color-yellow) 14%, transparent);
+  /* Fonts */
+  --occ-font: var(--font-interface);
+  --occ-mono: var(--font-monospace);
+  /* Type scale (handoff Design Tokens) */
+  --occ-fs-body: 13.5px;
+  --occ-fs-label: 11.5px;
+  --occ-fs-meta: 10.5px;
+  --occ-fs-eyebrow: 10.5px;
+  --occ-fs-title: 15px;
+  --occ-fs-code: 11.5px;
+  --occ-lh-body: 1.55;
+  /* Radii */
+  --occ-r-card: 9px;
+  --occ-r-bubble: 10px;
+  --occ-r-shell: 12px;
+  --occ-r-btn: 6px;
+  --occ-r-chip: 7px;
+  --occ-r-code: 7px;
+  --occ-r-toggle: 11px;
+  /* Geometry */
+  --occ-header-h: 42px;
+  --occ-avatar: 17px;
+  --occ-iconbtn: 26px;
+  --occ-gap-block: 22px;
+  /* Menu surface + shadow (dark default; light overridden below) */
+  --occ-menu-shadow: 0 12px 32px rgba(0, 0, 0, 0.5), 0 3px 10px rgba(0, 0, 0, 0.34);
+}
+
+/* Light-theme menu shadow softening (handoff Design Tokens) */
+.theme-light .obsidi-claude-container {
+  --occ-menu-shadow: 0 12px 32px rgba(0, 0, 0, 0.17), 0 3px 10px rgba(0, 0, 0, 0.09);
 }
 
 /* Header - Clean 3-section layout */
@@ -2523,4 +2582,1390 @@ pre:hover .code-copy-btn {
   font-family: var(--font-monospace);
   font-size: 11px;
   margin: 0 2px;
+}
+
+/* ============================================================
+   CHAT-PANE REDESIGN (design handoff)
+   Phase 1 — header, dropdown menus, composer chrome
+   These rules sit after the originals so equal-specificity ties
+   resolve to the redesign; tokens come from the Phase 0 layer.
+   ============================================================ */
+
+/* ----- Header: 42px identity bar ----- */
+.obsidi-claude-container .chat-header {
+  height: var(--occ-header-h);
+  min-height: var(--occ-header-h);
+  padding: 0 10px;
+  gap: 8px;
+  background-color: var(--occ-bg);
+  border-bottom: 1px solid var(--occ-bd);
+}
+
+.obsidi-claude-container .header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* App glyph: accent rounded square + rotated diamond (CSS, no asset) */
+.cc-glyph {
+  position: relative;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  background-color: var(--occ-acc);
+  flex-shrink: 0;
+}
+
+.cc-glyph::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 6px;
+  height: 6px;
+  background-color: var(--occ-acc-text);
+  transform: translate(-50%, -50%) rotate(45deg);
+  border-radius: 1px;
+}
+
+.cc-ident {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+  min-width: 0;
+}
+
+.cc-wordmark {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--occ-tx);
+  white-space: nowrap;
+}
+
+.cc-model {
+  font-family: var(--occ-mono);
+  font-size: 11px;
+  color: var(--occ-fnt);
+  white-space: nowrap;
+}
+
+.obsidi-claude-container .header-center {
+  flex: 1;
+  min-width: 0;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.obsidi-claude-container .chat-title {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--occ-mut);
+  text-align: right;
+  max-width: 100%;
+  padding: 2px 6px;
+  margin: 0;
+}
+
+.obsidi-claude-container .chat-title:hover {
+  background-color: var(--occ-bg3);
+}
+
+.obsidi-claude-container .header-status {
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+/* Icon buttons: 26px square, hover bg3 (no accent fill on new-chat) */
+.obsidi-claude-container .chat-action-btn {
+  width: var(--occ-iconbtn);
+  height: var(--occ-iconbtn);
+  padding: 0;
+  border-radius: var(--occ-r-btn);
+  color: var(--occ-mut);
+}
+
+.obsidi-claude-container .chat-action-btn:hover {
+  background-color: var(--occ-bg3);
+  color: var(--occ-tx);
+}
+
+.obsidi-claude-container .chat-action-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.obsidi-claude-container .chat-new-btn {
+  color: var(--occ-mut);
+}
+
+.obsidi-claude-container .chat-new-btn:hover {
+  background-color: var(--occ-bg3);
+  color: var(--occ-tx);
+}
+
+/* ----- Dropdown menus (shared helper) ----- */
+.occ-menu-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+}
+
+.occ-menu {
+  position: absolute;
+  z-index: 50;
+  background-color: var(--occ-bg2);
+  border: 1px solid var(--occ-bd2);
+  border-radius: var(--occ-r-card);
+  box-shadow: var(--occ-menu-shadow);
+  padding: 5px;
+  max-width: calc(100% - 12px);
+  max-height: 72%;
+  overflow-y: auto;
+  color: var(--occ-tx);
+}
+
+.occ-menu-eyebrow {
+  font-size: var(--occ-fs-eyebrow);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  color: var(--occ-acc);
+  padding: 6px 9px 4px;
+}
+
+.occ-menu-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.occ-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 9px;
+  border-radius: var(--occ-r-btn);
+  cursor: pointer;
+}
+
+.occ-menu-item:hover {
+  background-color: var(--occ-bg3);
+}
+
+.occ-menu-item.is-active {
+  color: var(--occ-acc);
+}
+
+.occ-menu-item.is-danger {
+  color: var(--occ-red);
+}
+
+.occ-menu-item.is-danger:hover {
+  background-color: var(--occ-red-tint);
+}
+
+.occ-menu-icon {
+  display: flex;
+  flex-shrink: 0;
+  color: var(--occ-mut);
+}
+
+.occ-menu-icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+.occ-menu-item.is-danger .occ-menu-icon {
+  color: var(--occ-red);
+}
+
+.occ-menu-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.occ-menu-chip {
+  position: relative;
+  width: 15px;
+  height: 15px;
+  border-radius: 4px;
+  background-color: var(--occ-acc);
+  flex-shrink: 0;
+}
+
+.occ-menu-chip::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 5px;
+  height: 5px;
+  background-color: var(--occ-acc-text);
+  transform: rotate(45deg);
+  border-radius: 1px;
+}
+
+.occ-menu-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.occ-menu-label {
+  font-size: 12.5px;
+  color: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.occ-menu-desc {
+  font-size: 11px;
+  color: var(--occ-fnt);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.occ-menu-trailing {
+  font-family: var(--occ-mono);
+  font-size: 11px;
+  color: var(--occ-fnt);
+  flex-shrink: 0;
+}
+
+.occ-menu-check {
+  display: flex;
+  color: var(--occ-acc);
+  flex-shrink: 0;
+}
+
+.occ-menu-check svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* ----- Composer chrome ----- */
+.composer-working {
+  align-items: center;
+  gap: 7px;
+  padding: 0 4px 7px;
+  font-size: 11.5px;
+  color: var(--occ-mut);
+}
+
+.composer-working-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: var(--occ-acc);
+  animation: occ-pulse 1.4s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+@keyframes occ-pulse {
+  0%, 100% { opacity: 0.3; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+.obsidi-claude-container .chat-input-area {
+  background-color: var(--occ-bg);
+  border-top: 1px solid var(--occ-bd);
+  padding: 8px 12px 12px;
+}
+
+.obsidi-claude-container .chat-input-wrapper {
+  background-color: var(--occ-bg2);
+  border: 1px solid var(--occ-bd2);
+  border-radius: var(--occ-r-shell);
+  padding: 8px 10px;
+  gap: 6px;
+}
+
+.obsidi-claude-container .chat-input {
+  font-size: var(--occ-fs-body);
+  min-height: 24px;
+  padding: 2px;
+  line-height: var(--occ-lh-body);
+}
+
+.composer-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.composer-controls .chat-buttons-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.composer-spacer {
+  flex: 1;
+}
+
+.composer-mode-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background-color: var(--occ-acc-tint);
+  color: var(--occ-acc);
+  border: none;
+  border-radius: 999px;
+  padding: 3px 9px;
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.composer-mode-chip:hover {
+  background-color: var(--occ-acc-tint-strong);
+}
+
+.composer-mode-spark {
+  display: flex;
+}
+
+.composer-mode-spark svg {
+  width: 13px;
+  height: 13px;
+}
+
+.composer-caret {
+  display: flex;
+  opacity: 0.75;
+}
+
+.composer-caret svg {
+  width: 12px;
+  height: 12px;
+}
+
+.composer-add-btn,
+.obsidi-claude-container .chat-voice-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  background: transparent;
+  border-radius: var(--occ-r-btn);
+  color: var(--occ-mut);
+  cursor: pointer;
+}
+
+.composer-add-btn:hover,
+.obsidi-claude-container .chat-voice-btn:hover {
+  background-color: var(--occ-bg3);
+  color: var(--occ-tx);
+}
+
+.composer-add-btn svg,
+.obsidi-claude-container .chat-voice-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.composer-model-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: transparent;
+  border: none;
+  color: var(--occ-fnt);
+  font-family: var(--occ-mono);
+  font-size: 11px;
+  padding: 3px 6px;
+  border-radius: var(--occ-r-btn);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.composer-model-btn:hover {
+  background-color: var(--occ-bg3);
+  color: var(--occ-mut);
+}
+
+.obsidi-claude-container .composer-send-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.obsidi-claude-container .chat-send-btn.composer-send-btn {
+  background-color: var(--occ-acc);
+  color: var(--occ-acc-text);
+}
+
+.obsidi-claude-container .chat-send-btn.composer-send-btn:hover {
+  background-color: var(--interactive-accent-hover);
+}
+
+.obsidi-claude-container .chat-send-btn.composer-send-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.obsidi-claude-container .chat-stop-btn.composer-send-btn {
+  background-color: var(--occ-bg3);
+  color: var(--occ-tx);
+}
+
+.obsidi-claude-container .chat-stop-btn.composer-send-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* ============================================================
+   Phase 2 — messages & avatars
+   ============================================================ */
+.obsidi-claude-container .chat-messages {
+  padding: 16px 14px 10px;
+  gap: var(--occ-gap-block);
+}
+
+/* Both roles left-aligned in a vertical thread (handoff layout) */
+.obsidi-claude-container .chat-message {
+  max-width: 100%;
+  gap: 5px;
+}
+
+.obsidi-claude-container .user-message,
+.obsidi-claude-container .assistant-message {
+  align-self: stretch;
+  align-items: stretch;
+}
+
+.obsidi-claude-container .assistant-message {
+  margin-bottom: 0;
+}
+
+.obsidi-claude-container .message-header {
+  gap: 7px;
+  padding: 0;
+  align-items: center;
+}
+
+.message-avatar {
+  width: var(--occ-avatar);
+  height: var(--occ-avatar);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.message-avatar-user {
+  border-radius: 50%;
+  background-color: var(--occ-bg3);
+  color: var(--occ-mut);
+}
+
+.message-avatar-user svg {
+  width: 11px;
+  height: 11px;
+}
+
+/* Claude avatar: accent square + rotated diamond (matches header glyph) */
+.message-avatar-claude {
+  position: relative;
+  border-radius: 5px;
+  background-color: var(--occ-acc);
+}
+
+.message-avatar-claude::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 6px;
+  height: 6px;
+  background-color: var(--occ-acc-text);
+  transform: rotate(45deg);
+  border-radius: 1px;
+}
+
+.obsidi-claude-container .message-role {
+  font-size: 11.5px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--occ-mut);
+}
+
+.obsidi-claude-container .message-time {
+  font-size: var(--occ-fs-meta);
+  color: var(--occ-fnt);
+  margin-left: auto;
+}
+
+/* User bubble: bg2 fill, 1px border, 10px radius */
+.obsidi-claude-container .message-bubble {
+  border-radius: var(--occ-r-bubble);
+  padding: 9px 12px;
+  font-size: var(--occ-fs-body);
+  line-height: var(--occ-lh-body);
+  max-width: 100%;
+}
+
+.obsidi-claude-container .user-message .message-bubble {
+  background-color: var(--obsidi-claude-user-bg);
+  color: var(--obsidi-claude-user-text);
+  border: 1px solid var(--occ-bd);
+  border-bottom-right-radius: var(--occ-r-bubble);
+}
+
+/* Claude: blocks stack directly, no surrounding bubble */
+.obsidi-claude-container .assistant-message .message-bubble {
+  background-color: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+}
+
+.obsidi-claude-container .assistant-message .message-content {
+  font-size: var(--occ-fs-body);
+  line-height: 1.6;
+  color: var(--occ-tx);
+}
+
+/* Tools-followed-by-content divider, restyled */
+.obsidi-claude-container .message-tools + .message-content:not(:empty) {
+  padding-top: 8px;
+  border-top: 1px solid var(--occ-bd);
+}
+
+.obsidi-claude-container .assistant-message .message-tools + .message-content:not(:empty) {
+  border-top: none;
+  padding-top: 4px;
+}
+
+/* Inline file mentions → mono chips */
+.obsidi-claude-container .message-content a.internal-link {
+  font-family: var(--occ-mono);
+  font-size: 0.92em;
+  background-color: var(--occ-bg3);
+  border-radius: 4px;
+  padding: 1px 5px;
+  text-decoration: none;
+  color: var(--occ-acc);
+}
+
+/* Prose tokens */
+.obsidi-claude-container .message-content code {
+  background-color: var(--occ-bgc);
+  font-size: 0.92em;
+  border-radius: 4px;
+  padding: 0.1em 0.3em;
+}
+
+.obsidi-claude-container .message-content pre {
+  background-color: var(--occ-bgc);
+  border: 1px solid var(--occ-bd);
+  border-radius: var(--occ-r-code);
+  font-size: var(--occ-fs-code);
+}
+
+.obsidi-claude-container .message-content blockquote {
+  border-left: 3px solid var(--occ-acc);
+  color: var(--occ-mut);
+  font-style: italic;
+  margin-left: 0;
+}
+
+/* Message actions row */
+.obsidi-claude-container .message-actions {
+  gap: 4px;
+  opacity: 0.55;
+  margin-top: 6px;
+}
+
+.obsidi-claude-container .message-action-btn {
+  color: var(--occ-fnt);
+  border-radius: var(--occ-r-btn);
+  padding: 3px;
+}
+
+.obsidi-claude-container .message-action-btn:hover {
+  background-color: var(--occ-bg3);
+  color: var(--occ-tx);
+}
+
+.obsidi-claude-container .message-action-btn svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* ============================================================
+   Phase 3 — tool-call card vocabulary
+   ============================================================ */
+.obsidi-claude-container .message-tools {
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+/* ----- Shared card shell ----- */
+.obsidi-claude-container .occ-card {
+  border: 1px solid var(--occ-bd);
+  border-radius: var(--occ-r-card);
+  background-color: var(--occ-bg2);
+  overflow: hidden;
+  font-size: 12.5px;
+}
+
+.occ-card-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 7px 10px;
+  cursor: pointer;
+}
+
+.occ-card-header:hover {
+  background-color: var(--occ-bg3);
+}
+
+.occ-card-chevron {
+  display: flex;
+  flex-shrink: 0;
+  color: var(--occ-fnt);
+  transition: transform 0.15s ease;
+}
+
+.occ-card-chevron svg {
+  width: 13px;
+  height: 13px;
+}
+
+.occ-card.is-open > .occ-card-header .occ-card-chevron {
+  transform: rotate(90deg);
+}
+
+.occ-card-icon {
+  display: flex;
+  flex-shrink: 0;
+  color: var(--occ-mut);
+}
+
+.occ-card-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.occ-card-icon.is-green {
+  color: var(--occ-grn);
+}
+
+.occ-card-icon.is-yellow {
+  color: var(--occ-ylw);
+}
+
+.occ-card-icon.occ-card-icon-running {
+  color: var(--occ-acc);
+}
+
+.occ-card-icon.occ-card-icon-running svg {
+  animation: spin 1s linear infinite;
+}
+
+.occ-card-icon.occ-card-icon-error {
+  color: var(--occ-red);
+}
+
+.occ-card-title {
+  font-weight: 600;
+  color: var(--occ-tx);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.occ-card-meta {
+  color: var(--occ-fnt);
+  font-size: 11.5px;
+  flex-shrink: 0;
+}
+
+.occ-card-query {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-family: var(--occ-mono);
+  font-size: 11px;
+  color: var(--occ-fnt);
+  background-color: var(--occ-bgc);
+  border-radius: 4px;
+  padding: 1px 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.occ-card-query.is-accent {
+  color: var(--occ-acc);
+  background-color: var(--occ-acc-tint);
+}
+
+.occ-card-trailing {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--occ-mut);
+  font-size: 11px;
+}
+
+.occ-card-body {
+  border-top: 1px solid var(--occ-bd);
+  padding: 8px 10px;
+}
+
+.occ-card-running {
+  color: var(--occ-fnt);
+  font-style: italic;
+  font-size: 11.5px;
+}
+
+.occ-card-pre {
+  margin: 0;
+  font-family: var(--occ-mono);
+  font-size: var(--occ-fs-code);
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--occ-mut);
+  max-height: 320px;
+  overflow: auto;
+}
+
+.occ-card-section + .occ-card-section {
+  margin-top: 8px;
+}
+
+.occ-card-section-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--occ-fnt);
+  margin-bottom: 4px;
+}
+
+/* ----- Plan / todo ----- */
+.occ-card-plan .occ-card-body {
+  padding: 6px 10px 8px;
+}
+
+.occ-plan-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 3px 0;
+  font-size: 13px;
+}
+
+.occ-plan-mark {
+  display: flex;
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--occ-mut);
+}
+
+.occ-plan-mark svg {
+  width: 14px;
+  height: 14px;
+}
+
+.occ-plan-mark.is-done {
+  color: var(--occ-grn);
+}
+
+.occ-plan-mark.is-active {
+  color: var(--occ-acc);
+}
+
+.occ-plan-mark.is-active svg {
+  animation: spin 1s linear infinite;
+}
+
+.occ-plan-label {
+  color: var(--occ-tx);
+}
+
+.occ-plan-label.is-done {
+  color: var(--occ-mut);
+  text-decoration: line-through;
+}
+
+/* ----- File-edit diff ----- */
+.occ-badge-new {
+  flex-shrink: 0;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--occ-grn);
+  background-color: var(--occ-grn-tint);
+  border-radius: 3px;
+  padding: 1px 4px;
+}
+
+.occ-diff-stats {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+  font-family: var(--occ-mono);
+  font-size: 11px;
+}
+
+.occ-diff-add {
+  color: var(--occ-grn);
+}
+
+.occ-diff-del {
+  color: var(--occ-fnt);
+}
+
+.occ-card-diff .occ-card-body {
+  padding: 0;
+}
+
+.occ-diff-row {
+  display: flex;
+  font-family: var(--occ-mono);
+  font-size: var(--occ-fs-code);
+  line-height: 1.5;
+}
+
+.occ-diff-gutter {
+  width: 24px;
+  flex-shrink: 0;
+  text-align: center;
+  color: var(--occ-fnt);
+  user-select: none;
+}
+
+.occ-diff-code {
+  flex: 1;
+  min-width: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding-right: 10px;
+}
+
+.occ-diff-row.is-add {
+  background-color: var(--occ-grn-tint);
+}
+
+.occ-diff-row.is-add .occ-diff-gutter {
+  color: var(--occ-grn);
+}
+
+.occ-diff-row.is-del {
+  background-color: var(--occ-red-tint);
+}
+
+.occ-diff-row.is-del .occ-diff-gutter {
+  color: var(--occ-red);
+}
+
+/* ----- Quiet read line (not a card) ----- */
+.occ-read-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px;
+  font-family: var(--occ-mono);
+  font-size: 11.5px;
+  color: var(--occ-fnt);
+  min-width: 0;
+}
+
+.occ-read-icon {
+  display: flex;
+  flex-shrink: 0;
+}
+
+.occ-read-icon svg {
+  width: 13px;
+  height: 13px;
+}
+
+.occ-read-files {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ----- Thinking block ----- */
+.occ-think {
+  font-size: 12.5px;
+}
+
+.occ-think-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px;
+  cursor: pointer;
+  color: var(--occ-mut);
+}
+
+.occ-think-chevron {
+  display: flex;
+  color: var(--occ-fnt);
+  transition: transform 0.15s ease;
+}
+
+.occ-think-chevron svg {
+  width: 13px;
+  height: 13px;
+}
+
+.occ-think.is-open .occ-think-chevron {
+  transform: rotate(90deg);
+}
+
+.occ-think-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: var(--occ-acc);
+  flex-shrink: 0;
+}
+
+.occ-think-label {
+  font-style: italic;
+  color: var(--occ-mut);
+}
+
+.occ-think-body {
+  margin-top: 2px;
+  margin-left: 6px;
+  padding: 4px 0 4px 11px;
+  border-left: 2px solid var(--occ-bd);
+}
+
+.occ-think-text {
+  font-style: italic;
+  color: var(--occ-mut);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+/* ----- Permission prompt (inline) ----- */
+.occ-card-permission {
+  border: 1px solid var(--occ-bd2);
+  border-radius: 10px;
+}
+
+.occ-card-permission .occ-card-header {
+  cursor: default;
+}
+
+.occ-card-permission .occ-card-header:hover {
+  background: none;
+}
+
+.occ-permission-cmd {
+  margin: 0 10px;
+  padding: 8px 10px;
+  background-color: var(--occ-bgc);
+  border: 1px solid var(--occ-bd);
+  border-radius: var(--occ-r-code);
+  font-family: var(--occ-mono);
+  font-size: var(--occ-fs-code);
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--occ-tx);
+}
+
+.occ-permission-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+}
+
+.occ-perm-btn {
+  border-radius: var(--occ-r-code);
+  padding: 6px 13px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid var(--occ-bd2);
+  background-color: transparent;
+  color: var(--occ-tx);
+}
+
+.occ-perm-allow {
+  background-color: var(--occ-acc);
+  color: var(--occ-acc-text);
+  border-color: var(--occ-acc);
+}
+
+.occ-perm-allow:hover {
+  background-color: var(--interactive-accent-hover);
+}
+
+.occ-perm-always {
+  background-color: var(--occ-bg3);
+}
+
+.occ-perm-always:hover {
+  background-color: var(--occ-bd2);
+}
+
+.occ-perm-deny {
+  color: var(--occ-mut);
+}
+
+.occ-perm-deny:hover {
+  background-color: var(--occ-red-tint);
+  color: var(--occ-red);
+  border-color: var(--occ-red);
+}
+
+.occ-permission-result {
+  font-size: 12px;
+  font-style: italic;
+  color: var(--occ-mut);
+}
+
+.occ-card-permission.is-resolved {
+  opacity: 0.75;
+}
+
+/* ============================================================
+   Phase 5 — settings tab accent-heading treatment
+   (settings render OUTSIDE .obsidi-claude-container, so these use
+   Obsidian base variables, scoped to .obsidi-claude-settings)
+   ============================================================ */
+
+/* Collapsible section titles: uppercase accent eyebrow labels */
+.obsidi-claude-settings .settings-section-title {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--interactive-accent);
+}
+
+.obsidi-claude-settings .settings-section-chevron {
+  color: var(--interactive-accent);
+  opacity: 0.75;
+}
+
+/* .setHeading() settings: match the eyebrow label treatment */
+.obsidi-claude-settings .setting-item-heading {
+  padding-top: 20px;
+  padding-bottom: 4px;
+}
+
+.obsidi-claude-settings .setting-item-heading .setting-item-name {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--interactive-accent);
+}
+
+/* Setting row type scale — scoped to this plugin's tab only */
+.obsidi-claude-settings .setting-item:not(.setting-item-heading) .setting-item-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-normal);
+}
+
+.obsidi-claude-settings .setting-item-description {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+/* ============================================================
+   Phase 4 — history panel restyle
+   ============================================================ */
+
+/* Panel chrome */
+.obsidi-claude-container .chat-history-panel {
+  background: var(--occ-bg);
+  border-bottom: none;
+  max-height: none;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Header bar */
+.obsidi-claude-container .history-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--occ-bg);
+  border-bottom: 1px solid var(--occ-bd);
+  flex-shrink: 0;
+}
+
+/* Search pill — bg2 fill, bd2 border, 8px radius */
+.obsidi-claude-container .occ-hist-search-pill {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--occ-bg2);
+  border: 1px solid var(--occ-bd2);
+  border-radius: 8px;
+  padding: 5px 9px;
+  min-width: 0;
+}
+
+.obsidi-claude-container .occ-hist-search-icon {
+  color: var(--occ-mut);
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  line-height: 0;
+}
+
+.obsidi-claude-container .occ-hist-search-icon svg {
+  width: 12px;
+  height: 12px;
+}
+
+.obsidi-claude-container .history-search-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  box-shadow: none;
+  padding: 0;
+  color: var(--occ-tx);
+  font-size: var(--occ-fs-body);
+}
+
+.obsidi-claude-container .history-search-input:focus {
+  outline: none;
+  box-shadow: none;
+  border-color: transparent;
+}
+
+.obsidi-claude-container .history-search-input::placeholder {
+  color: var(--occ-mut);
+}
+
+/* List container — scrollable, fills panel */
+.obsidi-claude-container .history-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 6px 16px;
+}
+
+/* Group eyebrow headers — uppercase, faint, spaced */
+.obsidi-claude-container .occ-hist-group-header {
+  font-size: var(--occ-fs-eyebrow);
+  color: var(--occ-fnt);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  padding: 14px 6px 4px;
+  user-select: none;
+}
+
+.obsidi-claude-container .occ-hist-group-header:first-child {
+  padding-top: 6px;
+}
+
+/* Session rows */
+.obsidi-claude-container .history-item {
+  display: flex;
+  align-items: flex-start;
+  padding: 9px 10px;
+  margin-bottom: 1px;
+  border-radius: var(--occ-r-card);
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+
+.obsidi-claude-container .history-item:hover {
+  background: var(--occ-bg3);
+}
+
+/* Active session — accent tint background */
+.obsidi-claude-container .history-item.current {
+  background: var(--occ-acc-tint);
+}
+
+/* Content wrapper */
+.obsidi-claude-container .history-item-content {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Title row: title + right-aligned timestamp */
+.obsidi-claude-container .history-item-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+/* Session title — 13px, weight 550, ellipsized */
+.obsidi-claude-container .occ-hist-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--occ-tx);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.obsidi-claude-container .history-item.current .occ-hist-title {
+  color: var(--occ-acc);
+}
+
+/* Relative timestamp — mono, faint, right-aligned */
+.obsidi-claude-container .occ-hist-time {
+  flex-shrink: 0;
+  font-size: var(--occ-fs-meta);
+  font-family: var(--occ-mono);
+  color: var(--occ-fnt);
+  white-space: nowrap;
+}
+
+.obsidi-claude-container .history-item.current .occ-hist-time {
+  color: var(--occ-acc);
+}
+
+/* One-line muted summary */
+.obsidi-claude-container .occ-hist-summary {
+  font-size: var(--occ-fs-label);
+  color: var(--occ-mut);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.4;
+  margin-bottom: 2px;
+}
+
+/* Meta line — message count, mono, faint */
+.obsidi-claude-container .occ-hist-meta {
+  font-size: var(--occ-fs-meta);
+  font-family: var(--occ-mono);
+  color: var(--occ-fnt);
+  line-height: 1.3;
+}
+
+/* Pin icon — accent, compact */
+.obsidi-claude-container .history-item-pin {
+  display: flex;
+  align-items: center;
+  color: var(--occ-acc);
+  flex-shrink: 0;
+  margin-right: 6px;
+  margin-top: 1px;
+}
+
+.obsidi-claude-container .history-item-pin svg {
+  width: 11px;
+  height: 11px;
+}
+
+/* Tag filter bar */
+.obsidi-claude-container .history-tag-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px 10px;
+  background: var(--occ-bg);
+  border-bottom: 1px solid var(--occ-bd);
+  flex-shrink: 0;
+}
+
+.obsidi-claude-container .history-tag-bar:empty {
+  display: none;
+}
+
+/* Tag filter chips */
+.obsidi-claude-container .history-tag-btn {
+  font-size: var(--occ-fs-meta);
+  padding: 2px 8px;
+  border-radius: var(--occ-r-chip);
+  background: var(--occ-bg2);
+  border: 1px solid var(--occ-bd);
+  color: var(--occ-mut);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.obsidi-claude-container .history-tag-btn:hover {
+  background: var(--occ-bg3);
+  color: var(--occ-tx);
+}
+
+.obsidi-claude-container .history-tag-btn.selected {
+  background: var(--occ-acc-tint);
+  border-color: var(--occ-acc);
+  color: var(--occ-acc);
+}
+
+/* Empty state */
+.obsidi-claude-container .history-empty {
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--occ-mut);
+  font-size: var(--occ-fs-label);
+  font-style: italic;
+}
+
+/* ============================================================
+   Phase 6 — streaming polish
+   (CSS-only cues; the completed/rendered state remains authoritative
+   and never depends on an animation firing)
+   ============================================================ */
+
+/* Streaming cue → blinking accent caret block (replaces the dot pulse) */
+.obsidi-claude-container .typing-indicator {
+  padding: 2px 0;
+}
+
+.obsidi-claude-container .typing-indicator::before {
+  width: 7px;
+  height: 15px;
+  border-radius: 1px;
+  background-color: var(--occ-acc);
+  animation: occ-caret-blink 1s steps(1) infinite;
+}
+
+.obsidi-claude-container .typing-indicator::after {
+  display: none;
+}
+
+@keyframes occ-caret-blink {
+  0%, 50% { opacity: 1; }
+  50.01%, 100% { opacity: 0; }
+}
+
+/* Running tool cards spin their icon ("writing…" cue) until they resolve */
+.obsidi-claude-container .occ-card.occ-card-status-running .occ-card-icon svg {
+  animation: spin 1s linear infinite;
 }

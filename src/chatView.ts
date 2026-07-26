@@ -7,13 +7,16 @@ import {
   WorkspaceLeaf,
   setIcon,
   Notice,
-  Menu,
+  MarkdownView,
 } from 'obsidian';
 import { PermissionModal } from './chatViewModals';
 import { executeCommand, getCommandList, type ChatViewCommandContext } from './chatViewCommands';
 import type ObsidiClaudePlugin from '../main';
-import type { ChatMessage, ToolCallInfo, Conversation, ChatTab } from './types';
+import type { ChatMessage, ToolCallInfo, Conversation, ChatTab, ObsidiClaudeSettings } from './types';
 import { generateId, calculateCost, calculateConversationUsage } from './types';
+
+type ChatViewPermissionMode = ObsidiClaudeSettings['permissionMode'];
+type ObsidiClaudeModel = ObsidiClaudeSettings['model'];
 import type { AgentBackend, AgentCallbacks } from './backends';
 import type { PermissionRequestContext, PermissionResponse } from './backends/sdkAgentBackend';
 import { createLogger } from './logger';
@@ -36,6 +39,9 @@ import {
   createKeyboardHandler,
   createVoiceInput,
   createScrollManager,
+  createMenuController,
+  type MenuController,
+  type MenuSectionSpec,
   type SearchBarHandle,
   type QueuePanelHandle,
   type StatusBarHandle,
@@ -94,6 +100,10 @@ export class ChatView extends ItemView {
   private statusBadgesContainer: HTMLElement | null = null;
   private inputEl!: HTMLTextAreaElement;
   private inputWrapper!: HTMLElement;
+  private headerModelEl: HTMLElement | null = null;
+  private menuController: MenuController | null = null;
+  /** Id of the assistant message currently streaming (for inline permission cards). */
+  private activeAssistantMsgId: string | null = null;
 
   // State
   private conversation!: Conversation;
@@ -142,6 +152,7 @@ export class ChatView extends ItemView {
     const container = this.containerEl.children[1] as HTMLElement;
     container.empty();
     container.addClass('obsidi-claude-container');
+    this.menuController = createMenuController(container);
 
     this.conversation = this.createNewConversation();
     const deps = { app: this.plugin.app, plugin: this.plugin };
@@ -179,20 +190,24 @@ export class ChatView extends ItemView {
 
   private buildHeader(container: HTMLElement): void {
     const header = container.createDiv('chat-header');
-    const leftSection = header.createDiv('header-left');
-    const historyBtn = leftSection.createEl('button', {
-      cls: 'chat-action-btn chat-history-btn',
-      attr: { 'aria-label': 'Conversation history' },
-    });
-    setIcon(historyBtn, 'menu');
-    historyBtn.onclick = () => this.historyModule?.toggle();
 
+    // Identity cluster: app glyph + "Claude Code" wordmark + active model.
+    const leftSection = header.createDiv('header-left');
+    leftSection.createDiv('cc-glyph');
+    const ident = leftSection.createDiv('cc-ident');
+    ident.createDiv({ cls: 'cc-wordmark', text: 'Claude Code' });
+    this.headerModelEl = ident.createDiv('cc-model');
+    this.updateHeaderModel();
+
+    // Center: conversation title (subtle, opens history) + status badges row.
     const centerSection = header.createDiv('header-center');
     this.chatTitleEl = centerSection.createDiv('chat-title');
-    this.chatTitleEl.setText('Claude Chat');
+    this.chatTitleEl.setText('New conversation');
+    this.chatTitleEl.setAttr('aria-label', 'Open chat history');
     this.chatTitleEl.onclick = () => this.historyModule?.toggle();
     this.statusBadgesContainer = centerSection.createDiv('header-status');
 
+    // Right: new chat + overflow menu.
     const rightSection = header.createDiv('header-right');
     const newBtn = rightSection.createEl('button', {
       cls: 'chat-action-btn chat-new-btn',
@@ -205,8 +220,27 @@ export class ChatView extends ItemView {
       cls: 'chat-action-btn',
       attr: { 'aria-label': 'More options' },
     });
-    setIcon(moreBtn, 'more-vertical');
-    moreBtn.onclick = (e) => this.showHeaderMenu(e);
+    setIcon(moreBtn, 'more-horizontal');
+    moreBtn.onclick = (e) => {
+      e.stopPropagation();
+      this.showHeaderMenu(moreBtn);
+    };
+  }
+
+  /** Friendly short model label (mono, faint) for the header + composer. */
+  private modelShortLabel(model: string): string {
+    const map: Record<string, string> = {
+      'claude-opus-4-5': 'opus-4.5',
+      'claude-sonnet-4-5': 'sonnet-4.5',
+      'claude-opus-4': 'opus-4',
+      'claude-haiku-3-5': 'haiku-3.5',
+      'claude-3-5-sonnet-20241022': 'sonnet-3.5',
+    };
+    return map[model] ?? model.replace(/^claude-/, '');
+  }
+
+  private updateHeaderModel(): void {
+    this.headerModelEl?.setText(this.modelShortLabel(this.plugin.settings.model));
   }
 
   private buildTabBar(container: HTMLElement, deps: { app: typeof this.plugin.app; plugin: typeof this.plugin }): void {
@@ -304,8 +338,12 @@ export class ChatView extends ItemView {
       onSend: (content) => this.sendMessage(content), onStop: () => this.stopGeneration(), onVoiceToggle: () => this.voiceModule?.toggle(),
       onImageAdd: () => {}, onImageRemove: () => {}, onInputChange: (value) => this.autocompleteModule?.update(value),
       onKeyDown: (e) => this.handleInputKeyDown(e), getCommands: () => getCommandList(), isVoiceAvailable: () => this.voiceModule?.isAvailable() ?? false,
+      onModeClick: (trigger) => this.showModeMenu(trigger),
+      onContextClick: (trigger) => this.showContextMenu(trigger),
+      onModelClick: (trigger) => this.showModelMenu(trigger),
     });
     this.inputEl = this.inputModule.getInputElement(); this.inputWrapper = this.inputModule.getWrapper();
+    this.refreshComposerLabels();
   }
 
   private buildAutocomplete(deps: { app: typeof this.plugin.app; plugin: typeof this.plugin }): void {
@@ -521,7 +559,7 @@ export class ChatView extends ItemView {
         this.conversation.messages.push(msg);
         this.renderMessage(msg);
         this.updateTokenCounter();
-        if (msg.role === 'assistant') currentAssistantMsgId = msg.id;
+        if (msg.role === 'assistant') { currentAssistantMsgId = msg.id; this.activeAssistantMsgId = msg.id; }
         if (msg.role === 'user') this.scrollModule?.resetScrollState();
         this.scrollModule?.scrollToBottom();
       },
@@ -711,13 +749,227 @@ export class ChatView extends ItemView {
   private handleRenamePrompt(): void { promptRenameConversation(this.conversation.id, this.conversation.title, this.getCommandHandlerDeps(), (t) => { this.conversation.title = t; this.updateTitle(); }); }
   private handleManageTags(id: string, tags: string[]): void { promptManageTags(id, tags, this.getCommandHandlerDeps(), (t) => { if (this.conversation.id === id) this.conversation.tags = t; }); }
 
-  private showHeaderMenu(e: MouseEvent): void {
-    const m = new Menu();
-    m.addItem(i => i.setTitle('Search messages').setIcon('search').onClick(() => { this.searchBarModule?.toggle(); this.searchVisible = this.searchBarModule?.isVisible() ?? false; }));
-    m.addSeparator(); m.addItem(i => i.setTitle('Export as note').setIcon('file-down').onClick(() => this.exportModule?.downloadMarkdown()));
-    m.addItem(i => i.setTitle('Copy to clipboard').setIcon('clipboard-copy').onClick(() => this.exportModule?.copyToClipboard()));
-    m.addSeparator(); m.addItem(i => i.setTitle('Rename conversation').setIcon('pencil').onClick(() => this.handleRenamePrompt()));
-    m.addItem(i => i.setTitle('Clear messages').setIcon('trash-2').onClick(() => this.clearMessages())); m.showAtMouseEvent(e);
+  private showHeaderMenu(trigger: HTMLElement): void {
+    const sections: MenuSectionSpec[] = [
+      {
+        items: [
+          { label: 'New chat', icon: 'plus', onClick: () => this.newConversation() },
+          { label: 'Chat history…', icon: 'history', onClick: () => this.historyModule?.toggle() },
+          { label: 'Search messages', icon: 'search', onClick: () => { this.searchBarModule?.toggle(); this.searchVisible = this.searchBarModule?.isVisible() ?? false; } },
+          { label: 'Rename conversation', icon: 'pencil', onClick: () => this.handleRenamePrompt() },
+        ],
+      },
+      {
+        eyebrow: 'Vault',
+        items: [
+          { label: 'Working folder', icon: 'folder', trailing: '/', onClick: () => this.openPluginSettings() },
+          { label: 'Allowed tools…', icon: 'sliders', onClick: () => handleToolsCommand('', this.getCommandHandlerDeps()) },
+          { label: 'Move to main tab', icon: 'panel-right', onClick: () => this.moveToMainTab() },
+        ],
+      },
+      {
+        items: [
+          { label: 'Export chat to note', icon: 'file-down', onClick: () => this.exportModule?.downloadMarkdown() },
+          { label: 'Copy transcript', icon: 'copy', onClick: () => this.exportModule?.copyToClipboard() },
+        ],
+      },
+      {
+        items: [
+          { label: 'Clear conversation', icon: 'trash-2', danger: true, onClick: () => this.clearMessages() },
+          { label: 'Settings', icon: 'settings', onClick: () => this.openPluginSettings() },
+        ],
+      },
+    ];
+    this.menuController?.toggle('more', { sections, trigger, direction: 'down', align: 'right', minWidth: 226 });
+  }
+
+  /** Open the canonical plugin settings tab. */
+  private openPluginSettings(): void {
+    const setting = (this.app as unknown as { setting?: { open(): void; openTabById(id: string): void } }).setting;
+    if (setting) {
+      log.debug('Opening plugin settings');
+      setting.open();
+      setting.openTabById(this.plugin.manifest.id);
+    } else {
+      log.debug('Settings modal not available; showing fallback notice');
+      new Notice('Open Settings → Community plugins → Obsidi-Claude', 4000);
+    }
+  }
+
+  /** Move this chat from the sidebar into a main-area tab (conversation persists). */
+  private async moveToMainTab(): Promise<void> {
+    log.debug('Preparing to move chat to main tab', { conversationId: this.conversation.id });
+    try {
+      await this.saveConversation();
+      const leaf = this.app.workspace.getLeaf('tab');
+      await leaf.setViewState({ type: CHAT_VIEW_TYPE, active: true });
+      this.app.workspace.revealLeaf(leaf);
+      this.leaf.detach();
+      log.debug('Successfully moved chat to main tab');
+    } catch (error) {
+      log.error('Failed to move chat to main tab', { error: error instanceof Error ? error.message : String(error) });
+      throw error;
+    }
+  }
+
+  // ===== Composer dropdowns (mode / model / add-context) =====
+
+  private static readonly PERMISSION_MODES: {
+    mode: ChatViewPermissionMode;
+    label: string;
+    desc: string;
+    dot: string;
+    danger?: boolean;
+  }[] = [
+    { mode: 'default', label: 'Default', desc: 'ask before each edit', dot: 'var(--occ-mut)' },
+    { mode: 'plan', label: 'Plan', desc: 'read-only, propose first', dot: 'var(--occ-acc)' },
+    { mode: 'acceptEdits', label: 'Auto-accept edits', desc: 'apply edits, ask for commands', dot: 'var(--occ-grn)' },
+    { mode: 'dontAsk', label: 'Auto', desc: 'run edits & commands hands-free', dot: 'var(--occ-ylw)' },
+    { mode: 'bypassPermissions', label: 'Bypass permissions', desc: 'no prompts', dot: 'var(--occ-red)', danger: true },
+  ];
+
+  private static readonly MODEL_CHOICES: { model: string; name: string; caption: string }[] = [
+    { model: 'claude-opus-4-5', name: 'Opus 4.5', caption: 'deepest reasoning' },
+    { model: 'claude-sonnet-4-5', name: 'Sonnet 4.5', caption: 'balanced default' },
+    { model: 'claude-haiku-3-5', name: 'Haiku 3.5', caption: 'fastest' },
+  ];
+
+  private refreshComposerLabels(): void {
+    const meta = ChatView.PERMISSION_MODES.find(m => m.mode === this.plugin.settings.permissionMode);
+    this.inputModule?.setModeLabel(meta?.label ?? 'Default');
+    this.inputModule?.setModelLabel(this.modelShortLabel(this.plugin.settings.model));
+  }
+
+  private showModeMenu(trigger: HTMLElement): void {
+    const current = this.plugin.settings.permissionMode;
+    const sections: MenuSectionSpec[] = [{
+      eyebrow: 'Permission mode',
+      items: ChatView.PERMISSION_MODES.map(m => ({
+        label: m.label, description: m.desc, dotColor: m.dot, danger: m.danger,
+        checked: m.mode === current,
+        onClick: () => this.applyPermissionMode(m.mode),
+      })),
+    }];
+    this.menuController?.toggle('mode', { sections, trigger, direction: 'up', align: 'left', minWidth: 248 });
+  }
+
+  private async applyPermissionMode(mode: ChatViewPermissionMode): Promise<void> {
+    log.debug('Applying permission mode', { mode });
+    try {
+      this.plugin.settings.permissionMode = mode;
+      await this.plugin.saveSettings();
+      this.refreshComposerLabels();
+      const meta = ChatView.PERMISSION_MODES.find(m => m.mode === mode);
+      this.showTemporaryStatus(`Mode: ${meta?.label ?? mode}`, 'info', 1500);
+      log.debug('Permission mode applied successfully');
+    } catch (error) {
+      log.error('Failed to apply permission mode', { mode, error: error instanceof Error ? error.message : String(error) });
+      throw error;
+    }
+  }
+
+  private showModelMenu(trigger: HTMLElement): void {
+    const current = this.plugin.settings.model;
+    const sections: MenuSectionSpec[] = [{
+      eyebrow: 'Model',
+      items: ChatView.MODEL_CHOICES.map(c => ({
+        label: c.name, description: c.caption, chip: true,
+        checked: c.model === current,
+        onClick: () => this.applyModel(c.model),
+      })),
+    }];
+    this.menuController?.toggle('model', { sections, trigger, direction: 'up', align: 'right', minWidth: 230 });
+  }
+
+  private async applyModel(model: string): Promise<void> {
+    log.debug('Applying model', { model });
+    try {
+      this.plugin.settings.model = model as ObsidiClaudeModel;
+      await this.plugin.saveSettings();
+      this.refreshComposerLabels();
+      this.updateHeaderModel();
+      this.showTemporaryStatus(`Model: ${this.modelShortLabel(model)}`, 'info', 1500);
+      log.debug('Model applied successfully');
+    } catch (error) {
+      log.error('Failed to apply model', { model, error: error instanceof Error ? error.message : String(error) });
+      throw error;
+    }
+  }
+
+  private showContextMenu(trigger: HTMLElement): void {
+    const active = this.plugin.app.workspace.getActiveFile();
+    const sections: MenuSectionSpec[] = [{
+      eyebrow: 'Add to context',
+      items: [
+        { label: 'Current note', icon: 'file-text', trailing: active?.basename, onClick: () => this.addContext('note') },
+        { label: 'Selection', icon: 'text-cursor-input', onClick: () => this.addContext('selection') },
+        { label: 'Search vault…', icon: 'search', onClick: () => this.addContext('search') },
+        { label: 'Linked notes & backlinks', icon: 'link', onClick: () => this.addContext('links') },
+        { label: "Today's daily note", icon: 'calendar', onClick: () => this.addContext('daily') },
+        { label: 'Image or screenshot', icon: 'image', onClick: () => this.addContext('image') },
+        { label: 'Attach file…', icon: 'paperclip', onClick: () => this.addContext('attach') },
+      ],
+    }];
+    this.menuController?.toggle('add', { sections, trigger, direction: 'up', align: 'left', minWidth: 236 });
+  }
+
+  private addContext(kind: 'note' | 'selection' | 'search' | 'links' | 'daily' | 'image' | 'attach'): void {
+    log.debug('Adding context to input', { kind });
+    const active = this.plugin.app.workspace.getActiveFile();
+    switch (kind) {
+      case 'note':
+        if (active) {
+          this.inputModule?.insertText(`[[${active.basename}]] `);
+          log.debug('Added note to context', { file: active.basename });
+        } else {
+          this.showTemporaryStatus('No active note', 'info', 1500);
+          log.debug('No active note for context');
+        }
+        break;
+      case 'selection': {
+        const sel = this.plugin.app.workspace.getActiveViewOfType(MarkdownView)?.editor.getSelection();
+        if (sel) {
+          this.inputModule?.insertText(`\n> ${sel.replace(/\n/g, '\n> ')}\n`);
+          log.debug('Added selection to context', { length: sel.length });
+        } else {
+          this.showTemporaryStatus('No text selected', 'info', 1500);
+          log.debug('No text selected for context');
+        }
+        break;
+      }
+      case 'search':
+        log.debug('Opening vault search for context');
+        this.searchBarModule?.show();
+        break;
+      case 'links': {
+        if (!active) {
+          this.showTemporaryStatus('No active note', 'info', 1500);
+          log.debug('No active note for links context');
+          break;
+        }
+        const links = this.plugin.app.metadataCache.getFileCache(active)?.links ?? [];
+        if (links.length) {
+          this.inputModule?.insertText(links.map(l => `[[${l.link}]]`).join(' ') + ' ');
+          log.debug('Added links to context', { count: links.length });
+        } else {
+          this.showTemporaryStatus('No links in active note', 'info', 1500);
+          log.debug('No links found in active note');
+        }
+        break;
+      }
+      case 'daily': {
+        const moment = (window as unknown as { moment?: () => { format(f: string): string } }).moment;
+        const date = moment ? moment().format('YYYY-MM-DD') : new Date().toISOString().slice(0, 10);
+        this.inputModule?.insertText(`[[${date}]] `);
+        log.debug('Added daily note to context', { date });
+        break;
+      }
+      case 'image':
+      case 'attach':
+        log.debug('Opening image/file picker for context', { kind });
+        this.inputModule?.pickImage();
+        break;
+    }
   }
 
   private initializeTabs(): void { const st = this.plugin.settings.savedTabs as ChatTab[] | undefined, sa = this.plugin.settings.activeTabId as string | undefined; if (st && st.length > 0) { this.tabs = st; this.activeTabId = sa || st[0].id; } else { const t: ChatTab = { id: generateId(), conversationId: this.conversation?.id || '', label: this.conversation?.title || 'New Chat' }; this.tabs = [t]; this.activeTabId = t.id; } }
@@ -745,7 +997,36 @@ export class ChatView extends ItemView {
       onNotification: (title, message, type) => { log.debug('Hook notification', { title, message, type }); new Notice(`${title}: ${message}`, type === 'error' ? 5000 : 3000); },
       onToolBlocked: (toolName, reason) => { log.warn('Hook blocked tool', { toolName, reason }); new Notice(`Blocked: ${toolName} - ${reason}`, 3000); },
       onAuditLog: (toolName, input, output) => log.info('Tool audit', { tool: toolName, inputPreview: JSON.stringify(input).slice(0, 100), outputPreview: JSON.stringify(output).slice(0, 100) }),
-      onPermissionRequest: async (ctx: PermissionRequestContext): Promise<PermissionResponse> => { log.info('Permission request', { toolName: ctx.toolName, toolUseID: ctx.toolUseID }); return new Promise<PermissionResponse>(r => { let d = false; const s = (res: PermissionResponse) => { if (!d) { d = true; r(res); } }; new PermissionModal(this.plugin.app, ctx, s).open(); }); },
+      onPermissionRequest: async (ctx: PermissionRequestContext): Promise<PermissionResponse> => {
+        log.info('Permission request', { toolName: ctx.toolName, toolUseID: ctx.toolUseID });
+        return new Promise<PermissionResponse>(r => {
+          let d = false;
+          const settle = (res: PermissionResponse) => { if (!d) { d = true; r(res); } };
+          const toDecision = (decision: 'once' | 'always' | 'deny') => settle(
+            decision === 'deny' ? { allowed: false }
+              : decision === 'always' ? { allowed: true, applyAlwaysAllow: true }
+              : { allowed: true }
+          );
+          const isBash = ctx.toolName.toLowerCase() === 'bash';
+          const command = isBash
+            ? String((ctx.input as Record<string, unknown>).command ?? '')
+            : `${ctx.toolName} ${JSON.stringify(ctx.input)}`;
+          const title = isBash ? 'Run a terminal command?' : `Allow ${ctx.toolName}?`;
+          // Prefer the inline permission card; fall back to the modal.
+          const rendered = this.activeAssistantMsgId
+            ? this.messageModule?.renderPermissionCard(this.activeAssistantMsgId, command, title, toDecision)
+            : false;
+          if (rendered) {
+            log.debug('Permission card rendered inline', { msgId: this.activeAssistantMsgId, tool: ctx.toolName });
+          } else {
+            log.debug('Permission card not rendered; falling back to modal', {
+              reason: !this.activeAssistantMsgId ? 'no active assistant message' : 'renderPermissionCard failed',
+              tool: ctx.toolName
+            });
+            new PermissionModal(this.plugin.app, ctx, settle).open();
+          }
+        });
+      },
     });
   }
 
@@ -815,6 +1096,7 @@ export class ChatView extends ItemView {
     this.autocompleteModule?.destroy();
     this.voiceModule?.destroy();
     this.scrollModule?.destroy();
+    this.menuController?.destroy();
     await this.saveTabState();
     await this.saveConversation();
   }

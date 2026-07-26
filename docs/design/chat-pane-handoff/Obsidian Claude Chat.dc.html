@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<div style="min-width:100%;min-height:100vh;width:max-content;box-sizing:border-box;padding:44px 48px 60px;background:#e7e5e0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
+
+  <div style="margin-bottom:5px;font-size:13px;font-weight:700;color:#36352f;letter-spacing:.1px">Claude Code — Obsidian chat</div>
+  <div style="margin-bottom:32px;font-size:12.5px;line-height:1.55;color:#85837c;max-width:660px">Native-feeling chat &amp; tool-call presentation, driven by the Claude Agent SDK against local Claude Code. Tool calls collapse to one-liners — click any to expand. Each pane plays a live <span style="color:#6a6862">working → diff → streaming → permission</span> sequence on load.</div>
+
+  <div style="display:flex;align-items:flex-start;gap:40px">
+
+    <div style="flex:none;width:380px">
+      <div style="font-size:10.5px;font-weight:600;color:#6f6d67;margin-bottom:9px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.04em">SIDEBAR PANE · DARK · 380</div>
+      <div style="height:880px;border-radius:11px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.17),0 1px 3px rgba(0,0,0,.12);border:1px solid rgba(0,0,0,.1);background:#1e1e1e">
+        <dc-import name="ObsidianChatPane" theme="dark" hint-size="380px,880px" style="width:100%;height:100%"></dc-import>
+      </div>
+    </div>
+
+    <div style="flex:none;width:380px">
+      <div style="font-size:10.5px;font-weight:600;color:#6f6d67;margin-bottom:9px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.04em">SIDEBAR PANE · LIGHT · 380</div>
+      <div style="height:880px;border-radius:11px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.13),0 1px 3px rgba(0,0,0,.08);border:1px solid rgba(0,0,0,.1);background:#ffffff">
+        <dc-import name="ObsidianChatPane" theme="light" hint-size="380px,880px" style="width:100%;height:100%"></dc-import>
+      </div>
+    </div>
+
+    <div style="flex:none;width:720px">
+      <div style="font-size:10.5px;font-weight:600;color:#6f6d67;margin-bottom:9px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.04em">MAIN EDITOR TAB · DARK · 720</div>
+      <div style="height:880px;border-radius:11px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.17),0 1px 3px rgba(0,0,0,.12);border:1px solid rgba(0,0,0,.1);background:#1e1e1e">
+        <dc-import name="ObsidianChatPane" theme="dark" hint-size="720px,880px" style="width:100%;height:100%"></dc-import>
+      </div>
+    </div>
+
+    <div style="flex:none;width:720px">
+      <div style="font-size:10.5px;font-weight:600;color:#6f6d67;margin-bottom:9px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.04em">MAIN EDITOR TAB · LIGHT · 720</div>
+      <div style="height:880px;border-radius:11px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.13),0 1px 3px rgba(0,0,0,.08);border:1px solid rgba(0,0,0,.1);background:#ffffff">
+        <dc-import name="ObsidianChatPane" theme="light" hint-size="720px,880px" style="width:100%;height:100%"></dc-import>
+      </div>
+    </div>
+
+  </div>
+
+  <div style="margin:42px 0 14px;font-size:12px;font-weight:600;color:#56544e">Sessions &amp; settings <span style="color:#9a988f;font-weight:400">— reachable from the ··· menu in any pane</span></div>
+
+  <div style="display:flex;align-items:flex-start;gap:40px">
+
+    <div style="flex:none;width:380px">
+      <div style="font-size:10.5px;font-weight:600;color:#6f6d67;margin-bottom:9px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.04em">CHAT HISTORY · DARK · 380</div>
+      <div style="height:880px;border-radius:11px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.17),0 1px 3px rgba(0,0,0,.12);border:1px solid rgba(0,0,0,.1);background:#1e1e1e">
+        <dc-import name="ObsidianChatPane" theme="dark" view="history" hint-size="380px,880px" style="width:100%;height:100%"></dc-import>
+      </div>
+    </div>
+
+    <div style="flex:none;width:380px">
+      <div style="font-size:10.5px;font-weight:600;color:#6f6d67;margin-bottom:9px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.04em">CHAT HISTORY · LIGHT · 380</div>
+      <div style="height:880px;border-radius:11px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.13),0 1px 3px rgba(0,0,0,.08);border:1px solid rgba(0,0,0,.1);background:#ffffff">
+        <dc-import name="ObsidianChatPane" theme="light" view="history" hint-size="380px,880px" style="width:100%;height:100%"></dc-import>
+      </div>
+    </div>
+
+    <div style="flex:none;width:480px">
+      <div style="font-size:10.5px;font-weight:600;color:#6f6d67;margin-bottom:9px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.04em">SETTINGS · DARK · 480</div>
+      <div style="height:880px;border-radius:11px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.17),0 1px 3px rgba(0,0,0,.12);border:1px solid rgba(0,0,0,.1);background:#1e1e1e">
+        <dc-import name="ObsidianChatPane" theme="dark" view="settings" hint-size="480px,880px" style="width:100%;height:100%"></dc-import>
+      </div>
+    </div>
+
+    <div style="flex:none;width:480px">
+      <div style="font-size:10.5px;font-weight:600;color:#6f6d67;margin-bottom:9px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.04em">SETTINGS · LIGHT · 480</div>
+      <div style="height:880px;border-radius:11px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.13),0 1px 3px rgba(0,0,0,.08);border:1px solid rgba(0,0,0,.1);background:#ffffff">
+        <dc-import name="ObsidianChatPane" theme="light" view="settings" hint-size="480px,880px" style="width:100%;height:100%"></dc-import>
+      </div>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+</body>
+</html>
