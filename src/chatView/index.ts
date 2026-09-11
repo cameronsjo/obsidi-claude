@@ -22,3 +22,4 @@ export * from './keyboardHandler';
 export * from './exportHandler';
 export * from './scrollManager';
 export * from './slashCommandHandlers';
+export * from './menu';

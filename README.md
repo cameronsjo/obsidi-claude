@@ -59,10 +59,12 @@ Open Settings > Obsidi-Claude to configure:
 - **Working Directory**: Where Claude operates (defaults to vault root)
 - **Permission Mode**:
   - Default: Ask for confirmation before sensitive operations
+  - Plan: Read-only — Claude proposes changes before executing
   - Accept Edits: Auto-approve file changes
   - Bypass: No confirmations (use with caution)
 - **Max Turns**: Limit conversation turns
 - **Show Tool Calls**: Display when Claude uses tools
+- **Show thinking by default**: Expand Claude's reasoning blocks automatically
 - **Allowed Tools**: Enable/disable specific tools
 
 ## Tools Available

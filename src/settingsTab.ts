@@ -276,6 +276,18 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     new Setting(displaySection)
+      .setName('Show thinking by default')
+      .setDesc('Expand Claude\'s thinking blocks automatically in the chat pane.')
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.showThinkingByDefault)
+          .onChange(async (value) => {
+            this.plugin.settings.showThinkingByDefault = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(displaySection)
       .setName('Stream responses')
       .setDesc('Show responses as they are generated')
       .addToggle((toggle) =>

@@ -35,6 +35,8 @@ export interface ChatMessage {
   content: string;
   timestamp: number;
   toolCalls?: ToolCallInfo[];
+  /** Extended-thinking text for this assistant turn (rendered as a thinking block) */
+  thinking?: string;
   isStreaming?: boolean;
   /** User feedback reaction */
   reaction?: MessageReaction;
@@ -343,6 +345,8 @@ export interface ObsidiClaudeSettings {
   permissionMode: 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan' | 'dontAsk';
   showToolCalls: boolean;
   showMessageActions: boolean;
+  /** Expand thinking blocks by default in the chat pane (presentation only) */
+  showThinkingByDefault: boolean;
   streamResponses: boolean;
   embedding: EmbeddingSettings;
   externalMcpServers: ExternalMCPServer[];
@@ -643,6 +647,7 @@ When the user asks about their notes, always search first to ground your respons
   permissionMode: 'default',
   showToolCalls: true,
   showMessageActions: true,
+  showThinkingByDefault: false,
   streamResponses: true,
   embedding: DEFAULT_EMBEDDING_SETTINGS,
   externalMcpServers: [],

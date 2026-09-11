@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+### Features
+
+* **chat-pane:** visual redesign — semantic `--occ-*` CSS token layer, native-feeling header with dropdown menus (model, permission mode, context, overflow), restyled message bubbles and avatars, collapsible tool-call cards with plan/todo and diff views, restyled history panel with search, and a streaming status row in the composer
+* **chat-pane:** collapsible thinking blocks — assistant reasoning is captured in `ChatMessage.thinking` and rendered as a toggleable italic block above tool calls
+* **settings:** add "Show thinking by default" toggle — expand Claude's reasoning blocks automatically (`showThinkingByDefault`, default off)
+
 ## [1.2.0](https://github.com/cameronsjo/obsidi-claude/compare/1.1.0...1.2.0) (2026-02-08)
 
 
