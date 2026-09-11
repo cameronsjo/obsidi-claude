@@ -104,6 +104,8 @@ export class ChatView extends ItemView {
   private menuController: MenuController | null = null;
   /** Id of the assistant message currently streaming (for inline permission cards). */
   private activeAssistantMsgId: string | null = null;
+  /** Settles the in-flight inline permission card, if any — called before any teardown that would blow away its DOM node (conversation clear/switch/close), so the awaited tool call never hangs. */
+  private pendingPermissionSettle: ((res: PermissionResponse) => void) | null = null;
 
   // State
   private conversation!: Conversation;
@@ -511,7 +513,7 @@ export class ChatView extends ItemView {
     }
   }
 
-  private async loadConversationById(id: string): Promise<void> { const c = await this.plugin.storage.loadConversation(id); if (c) { this.conversation = c; this.contextModule?.resetNoteTracking(); await this.plugin.storage.setCurrentConversationId(id); this.renderAllMessages(); this.updateTitle(); this.historyModule?.toggle(); } }
+  private async loadConversationById(id: string): Promise<void> { const c = await this.plugin.storage.loadConversation(id); if (c) { this.settlePendingPermission(); this.conversation = c; this.contextModule?.resetNoteTracking(); await this.plugin.storage.setCurrentConversationId(id); this.renderAllMessages(); this.updateTitle(); this.historyModule?.toggle(); } }
   private async duplicateConversation(id: string): Promise<void> { const c = await this.plugin.storage.duplicateConversation(id); if (c) { this.showTemporaryStatus('Duplicated', 'success', 1500); await this.historyModule?.refresh(); } else this.showTemporaryStatus('Failed to duplicate', 'error', 2000); }
   private async deleteConversation(id: string): Promise<void> { const cs = await this.plugin.storage.listConversations(); await this.plugin.storage.deleteConversation(id); if (id === this.conversation.id) { const r = cs.filter(c => c.id !== id); if (r.length > 0) await this.loadConversationById(r[0].id); else await this.newConversation(); } await this.historyModule?.refresh(); }
 
@@ -1001,7 +1003,13 @@ export class ChatView extends ItemView {
         log.info('Permission request', { toolName: ctx.toolName, toolUseID: ctx.toolUseID });
         return new Promise<PermissionResponse>(r => {
           let d = false;
-          const settle = (res: PermissionResponse) => { if (!d) { d = true; r(res); } };
+          const settle = (res: PermissionResponse) => {
+            if (d) return;
+            d = true;
+            if (this.pendingPermissionSettle === settle) this.pendingPermissionSettle = null;
+            r(res);
+          };
+          this.pendingPermissionSettle = settle;
           const toDecision = (decision: 'once' | 'always' | 'deny') => settle(
             decision === 'deny' ? { allowed: false }
               : decision === 'always' ? { allowed: true, applyAlwaysAllow: true }
@@ -1050,8 +1058,16 @@ export class ChatView extends ItemView {
   }
 
   focusInput(): void { this.inputEl?.focus(); }
+  /** Denies any in-flight inline permission card before its message DOM is torn down, so the awaited tool call resolves instead of hanging forever. */
+  private settlePendingPermission(): void {
+    const settle = this.pendingPermissionSettle;
+    if (!settle) return;
+    this.pendingPermissionSettle = null;
+    settle({ allowed: false });
+  }
   async newConversation(): Promise<void> {
     log.info('Creating new conversation');
+    this.settlePendingPermission();
     this.conversation = await this.plugin.storage.createConversation();
     this.contextModule?.resetNoteTracking();
     this.renderAllMessages();
@@ -1062,6 +1078,7 @@ export class ChatView extends ItemView {
   }
   async clearMessages(): Promise<void> {
     log.info('Clearing messages', { conversationId: this.conversation.id });
+    this.settlePendingPermission();
     this.conversation.messages = [];
     this.conversation.sessionId = undefined;
     this.renderAllMessages();
@@ -1079,6 +1096,7 @@ export class ChatView extends ItemView {
 
   async onClose(): Promise<void> {
     log.info('Closing chat view');
+    this.settlePendingPermission();
     // Destroy all modules
     this.searchBarModule?.destroy();
     this.queueModule?.destroy();
