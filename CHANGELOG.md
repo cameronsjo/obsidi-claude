@@ -8,6 +8,10 @@
 * **chat-pane:** collapsible thinking blocks — assistant reasoning is captured in `ChatMessage.thinking` and rendered as a toggleable italic block above tool calls
 * **settings:** add "Show thinking by default" toggle — expand Claude's reasoning blocks automatically (`showThinkingByDefault`, default off)
 
+### Changed
+
+* **ci:** the release PR is opened with the Forge Bellows App token so CI runs on it, and a nightly `ship.yml` gate verifies and merges it; `versions.json` now changes inside the release PR instead of by a post-release push to `main`; release assets are built and uploaded in separate jobs; `beta-release.yml` builds read-only and publishes in a separate job; every action in `release-please.yml`, `beta-release.yml`, and `ship.yml` is pinned by SHA
+
 ## [1.2.0](https://github.com/cameronsjo/obsidi-claude/compare/1.1.0...1.2.0) (2026-02-08)
 
 
