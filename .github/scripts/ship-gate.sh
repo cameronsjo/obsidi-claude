@@ -31,10 +31,12 @@ def semver: if type == "string" and test("^[0-9]+\\.[0-9]+\\.[0-9]+$")
 def obj: (try fromjson catch null) | if type == "object" then . else null end;
 def vline: test("^version = \"[^\"]*\"$");
 # [package] version of a Cargo.toml, or null.
-def cargo_version: reduce split("\n")[] as $l ({sec: "", v: null};
+def cargo_version: reduce split("\n")[] as $l ({sec: "", v: null, w: null};
   if ($l | test("^\\s*\\[")) then .sec = ($l | gsub("\\s"; ""))
   elif .sec == "[package]" and .v == null and ($l | vline)
-  then .v = ($l | capture("^version = \"(?<v>[^\"]*)\"$").v) else . end) | .v;
+  then .v = ($l | capture("^version = \"(?<v>[^\"]*)\"$").v)
+  elif .sec == "[workspace.package]" and .w == null and ($l | vline)
+  then .w = ($l | capture("^version = \"(?<v>[^\"]*)\"$").v) else . end) | .v // .w;
 # Same line count; every changed line is a version line on both sides and
 # now reads the title version.
 def version_lines_only($b; $h; $v; $one):
