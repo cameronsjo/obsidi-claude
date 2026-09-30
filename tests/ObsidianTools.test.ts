@@ -52,6 +52,34 @@ function createMockCache(options: {
   };
 }
 
+// Mutating tools read the file back after writing (write verification). The
+// default mocks never persist a write, so make create/modify/rename stateful.
+// Call after any per-test getAbstractFileByPath override: it wraps whatever is set.
+function persistWrites(app: any): void {
+  const lookup = app.vault.getAbstractFileByPath;
+  const read = app.vault.cachedRead;
+  const overlay = new Map<string, TFile | null>();
+  const contents = new Map<string, string>();
+
+  app.vault.getAbstractFileByPath = vi.fn((path: string) =>
+    overlay.has(path) ? overlay.get(path) : lookup(path)
+  );
+  app.vault.cachedRead = vi.fn(async (file: TFile) =>
+    contents.has(file.path) ? contents.get(file.path)! : read(file)
+  );
+  app.vault.create = vi.fn(async (path: string, data: string) => {
+    overlay.set(path, createMockFile(path));
+    contents.set(path, data);
+  });
+  app.vault.modify = vi.fn(async (file: TFile, data: string) => {
+    contents.set(file.path, data);
+  });
+  app.fileManager.renameFile = vi.fn(async (file: TFile, newPath: string) => {
+    overlay.set(file.path, null);
+    overlay.set(newPath, createMockFile(newPath));
+  });
+}
+
 describe('ObsidianTools', () => {
   let mockApp: any;
   let mockRAGService: any;
@@ -160,9 +188,9 @@ describe('ObsidianTools', () => {
   });
 
   describe('getToolDefinitions', () => {
-    it('should return 22 tool definitions', () => {
+    it('should return 29 tool definitions', () => {
       const definitions = tools.getToolDefinitions();
-      expect(definitions).toHaveLength(28);
+      expect(definitions).toHaveLength(29);
     });
 
     it('should return tools with required properties', () => {
@@ -186,7 +214,7 @@ describe('ObsidianTools', () => {
   describe('getToolSchemas', () => {
     it('should return schemas in MCP format', () => {
       const schemas = tools.getToolSchemas();
-      expect(schemas).toHaveLength(28);
+      expect(schemas).toHaveLength(29);
       for (const schema of schemas) {
         expect(schema).toHaveProperty('name');
         expect(schema).toHaveProperty('description');
@@ -455,6 +483,7 @@ describe('ObsidianTools', () => {
     it('should create a new note', async () => {
       mockApp.vault.getAbstractFileByPath.mockReturnValue(null);
 
+      persistWrites(mockApp);
       const result = await tools.executeTool('create_note', {
         path: 'new-note.md',
         content: '# New Note\n\nContent here',
@@ -484,6 +513,7 @@ describe('ObsidianTools', () => {
     it('should overwrite when flag is set', async () => {
       mockApp.vault.getAbstractFileByPath.mockReturnValue(mockFiles[0]);
 
+      persistWrites(mockApp);
       const result = await tools.executeTool('create_note', {
         path: 'notes/project-a.md',
         content: 'new content',
@@ -500,6 +530,7 @@ describe('ObsidianTools', () => {
     it('should append content to existing note', async () => {
       mockApp.vault.getAbstractFileByPath.mockReturnValue(mockFiles[0]);
 
+      persistWrites(mockApp);
       const result = await tools.executeTool('append_to_note', {
         path: 'notes/project-a.md',
         content: 'Appended content',
@@ -514,6 +545,7 @@ describe('ObsidianTools', () => {
     it('should create note if missing and flag is set', async () => {
       mockApp.vault.getAbstractFileByPath.mockReturnValue(null);
 
+      persistWrites(mockApp);
       const result = await tools.executeTool('append_to_note', {
         path: 'new-note.md',
         content: 'Initial content',
@@ -712,11 +744,13 @@ describe('ObsidianTools', () => {
 
   describe('rename tool', () => {
     it('should rename file', async () => {
+      const oldFile = createMockFile('old-name.md');
       mockApp.vault.getAbstractFileByPath.mockImplementation((path: string) => {
-        if (path === 'old-name.md') return mockFiles[0];
+        if (path === 'old-name.md') return oldFile;
         return null;
       });
 
+      persistWrites(mockApp);
       const result = await tools.executeTool('rename', {
         oldPath: 'old-name.md',
         newPath: 'new-name.md',
@@ -805,6 +839,6 @@ describe('ObsidianTools without RAG', () => {
     const tools = new ObsidianTools(mockApp);
     const definitions = tools.getToolDefinitions();
 
-    expect(definitions).toHaveLength(28);
+    expect(definitions).toHaveLength(29);
   });
 });
