@@ -286,9 +286,14 @@ describe('HistoryPanel', () => {
     it('should display relative date', async () => {
       handle = createHistoryPanel(container, deps, callbacks);
       await handle.show();
-      // conv-3 was created today
+      // Redesign: each row carries a short relative time chip (e.g. "1h"),
+      // and the date is grouped under an uppercase group header ("Today").
       const todayItem = container.querySelector('[data-id="conv-3"]');
-      expect(todayItem?.textContent).toContain('Today');
+      expect(todayItem?.querySelector('.occ-hist-time')?.textContent).toBeTruthy();
+      const groupHeaders = Array.from(
+        container.querySelectorAll('.occ-hist-group-header')
+      ).map((el) => el.textContent);
+      expect(groupHeaders).toContain('Today');
     });
   });
 
@@ -581,7 +586,8 @@ describe('HistoryPanel', () => {
       await handle.show();
 
       const item = container.querySelector('[data-id="old-conv"]');
-      expect(item?.textContent).toContain('5 days ago');
+      // Redesign uses a compact relative time ("5d") instead of "5 days ago".
+      expect(item?.querySelector('.occ-hist-time')?.textContent).toBe('5d');
     });
   });
 });

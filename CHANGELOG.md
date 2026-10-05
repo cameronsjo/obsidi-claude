@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.3.0](https://github.com/cameronsjo/obsidi-claude/compare/1.2.0...1.3.0) (2026-09-30)
+
+
+### Features
+
+* add Claude Code plugin with onboarding skill ([de77d30](https://github.com/cameronsjo/obsidi-claude/commit/de77d30e2242c6e4359ec094e51a38124473c9cf))
+* **chat-pane:** adopt the Obsidian × Claude chat-pane design handoff ([#17](https://github.com/cameronsjo/obsidi-claude/issues/17)) ([47aedcd](https://github.com/cameronsjo/obsidi-claude/commit/47aedcda74d6cf79f36c204a81ee7cce726a620b))
+* **cli-bridge:** add Obsidian CLI bridge for Sync history, file recovery, and diff ([e2dfbe9](https://github.com/cameronsjo/obsidi-claude/commit/e2dfbe9c4bf3f3ea50fbcc5ce9bda7d9413bde15))
+
+
+### Bug Fixes
+
+* **ci:** use env variables for GitHub Actions expressions in run blocks ([4d73e20](https://github.com/cameronsjo/obsidi-claude/commit/4d73e2089820785f02d579a73d65159a383e98ff))
+* **cli-bridge:** add minimum version check (&gt;= 1.12.0) during initialization ([e4f46dd](https://github.com/cameronsjo/obsidi-claude/commit/e4f46dd3524f25cf816c19877c34e2669c90771b))
+* **cli-bridge:** gate on running Obsidian app version before CLI init ([14cb482](https://github.com/cameronsjo/obsidi-claude/commit/14cb482c3bc4ff3ddb0ca3a79ea9c4fd784d2794))
+* import TFile as a value in obsidianTools; update stale tool tests ([#22](https://github.com/cameronsjo/obsidi-claude/issues/22)) ([393d74e](https://github.com/cameronsjo/obsidi-claude/commit/393d74e281c86d16ef5970ff5b44bb160061920d))
+
+## [Unreleased]
+
+### Features
+
+* **chat-pane:** visual redesign — semantic `--occ-*` CSS token layer, native-feeling header with dropdown menus (model, permission mode, context, overflow), restyled message bubbles and avatars, collapsible tool-call cards with plan/todo and diff views, restyled history panel with search, and a streaming status row in the composer
+* **chat-pane:** collapsible thinking blocks — assistant reasoning is captured in `ChatMessage.thinking` and rendered as a toggleable italic block above tool calls
+* **settings:** add "Show thinking by default" toggle — expand Claude's reasoning blocks automatically (`showThinkingByDefault`, default off)
+
+### Changed
+
+* **ci:** the release PR is opened with the Forge Bellows App token so CI runs on it, and a nightly `ship.yml` gate verifies and merges it; `versions.json` now changes inside the release PR instead of by a post-release push to `main`; release assets are built and uploaded in separate jobs; `beta-release.yml` builds read-only and publishes in a separate job; every action in `release-please.yml`, `beta-release.yml`, and `ship.yml` is pinned by SHA
+
 ## [1.2.0](https://github.com/cameronsjo/obsidi-claude/compare/1.1.0...1.2.0) (2026-02-08)
 
 

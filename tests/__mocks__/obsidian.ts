@@ -137,6 +137,7 @@ export class Setting {
 
   setName(name: string): this { return this; }
   setDesc(desc: string): this { return this; }
+  setHeading(): this { return this; }
   addText(cb: (text: TextComponent) => void): this { return this; }
   addTextArea(cb: (text: TextAreaComponent) => void): this { return this; }
   addToggle(cb: (toggle: ToggleComponent) => void): this { return this; }
@@ -201,6 +202,24 @@ export class Notice {
   constructor(message: string, timeout?: number) {}
   hide(): void {}
 }
+
+export class Modal {
+  app: App;
+  contentEl: HTMLElement = document.createElement('div');
+
+  constructor(app: App) {
+    this.app = app;
+  }
+
+  open(): void {}
+  close(): void {}
+  setTitle(title: string): this { return this; }
+  onOpen(): void {}
+  onClose(): void {}
+}
+
+/** Stub for setIcon — no-op in tests */
+export function setIcon(el: HTMLElement, icon: string): void {}
 
 // Export additional commonly used types
 export type { App as ObsidianApp };

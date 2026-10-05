@@ -1,4 +1,4 @@
-import { App, PluginSettingTab, Setting, Notice, Modal, TextComponent, TextAreaComponent, Platform } from 'obsidian';
+import { App, PluginSettingTab, Setting, Notice, Modal, TextComponent, TextAreaComponent, Platform, setIcon } from 'obsidian';
 import type ObsidiClaudePlugin from '../main';
 import type { EmbeddingProviderType, ExternalMCPServer } from './types';
 import { createLogger } from './logger';
@@ -27,30 +27,51 @@ export class SettingsTab extends PluginSettingTab {
     title: string,
     defaultExpanded = false
   ): HTMLElement {
-    const isExpanded = this.expandedSections.has(id) || defaultExpanded;
+    // Seed default state on first render
+    if (!this.expandedSections.has(`__init_${id}`)) {
+      this.expandedSections.add(`__init_${id}`);
+      if (defaultExpanded) {
+        this.expandedSections.add(id);
+      }
+    }
 
-    const headerEl = containerEl.createDiv({ cls: 'settings-section-header' });
-    headerEl.style.cssText = 'display: flex; align-items: center; cursor: pointer; padding: 0.5rem 0; margin-top: 1rem; border-bottom: 1px solid var(--background-modifier-border);';
+    const isExpanded = this.expandedSections.has(id);
+
+    const headerEl = containerEl.createDiv({
+      cls: `settings-section-header${isExpanded ? ' is-expanded' : ''}`,
+    });
+    headerEl.setAttribute('role', 'button');
+    headerEl.setAttribute('tabindex', '0');
+    headerEl.setAttribute('aria-expanded', String(isExpanded));
 
     const chevron = headerEl.createSpan({ cls: 'settings-section-chevron' });
-    chevron.style.cssText = 'margin-right: 0.5rem; transition: transform 0.15s ease;';
-    chevron.innerHTML = isExpanded ? '▼' : '▶';
+    setIcon(chevron, 'chevron-right');
 
-    headerEl.createEl('h4', { text: title }).style.cssText = 'margin: 0; flex: 1;';
+    headerEl.createSpan({ text: title, cls: 'settings-section-title' });
 
-    const contentEl = containerEl.createDiv({ cls: 'settings-section-content' });
-    contentEl.style.display = isExpanded ? 'block' : 'none';
+    const contentEl = containerEl.createDiv({
+      cls: `settings-section-content${isExpanded ? ' is-expanded' : ''}`,
+    });
 
-    headerEl.onclick = () => {
+    const toggle = () => {
       const nowExpanded = !this.expandedSections.has(id);
       if (nowExpanded) {
         this.expandedSections.add(id);
       } else {
         this.expandedSections.delete(id);
       }
-      chevron.innerHTML = nowExpanded ? '▼' : '▶';
-      contentEl.style.display = nowExpanded ? 'block' : 'none';
+      headerEl.toggleClass('is-expanded', nowExpanded);
+      contentEl.toggleClass('is-expanded', nowExpanded);
+      headerEl.setAttribute('aria-expanded', String(nowExpanded));
     };
+
+    headerEl.addEventListener('click', toggle);
+    headerEl.addEventListener('keydown', (e: KeyboardEvent) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        toggle();
+      }
+    });
 
     return contentEl;
   }
@@ -77,22 +98,19 @@ export class SettingsTab extends PluginSettingTab {
 
     // Status indicator
     const statusEl = controlEl.createSpan({
-      cls: `api-key-status ${hasKey ? 'configured' : 'not-configured'}`,
+      cls: `api-key-status ${hasKey ? 'configured' : 'not-configured'} obsidi-claude-api-key-status`,
     });
     const statusText = hasKey
       ? `✓ Using ${sourceLabels[source!]}`
       : '✗ Not configured';
     statusEl.setText(statusText);
-    statusEl.style.marginRight = '1rem';
-    statusEl.style.color = hasKey ? 'var(--text-success)' : 'var(--text-muted)';
 
     // Set/Update button (not needed if using env var)
     if (source !== 'env') {
       const setBtn = controlEl.createEl('button', {
         text: hasKey ? 'Update' : 'Set Key',
-        cls: 'mod-cta',
+        cls: 'mod-cta obsidi-claude-api-key-btn',
       });
-      setBtn.style.marginRight = '0.5rem';
       setBtn.onclick = () => {
         new ApiKeyModal(this.app, async (key) => {
           await this.plugin.setApiKey(key);
@@ -120,17 +138,12 @@ export class SettingsTab extends PluginSettingTab {
     containerEl.empty();
     containerEl.addClass('obsidi-claude-settings');
 
-    // Header
-    containerEl.createEl('h2', { text: 'Obsidi-Claude Settings' });
-
     // Mobile notice
     if (Platform.isMobile) {
-      const mobileNotice = containerEl.createDiv({ cls: 'setting-item-description' });
-      mobileNotice.style.cssText = 'background: var(--background-secondary); padding: 0.75rem; border-radius: 6px; margin-bottom: 1rem; border-left: 3px solid var(--interactive-accent);';
-      mobileNotice.innerHTML = `
-        <strong>Mobile Mode</strong><br>
-        Using the direct Anthropic API. Some desktop features (SDK backend, MCP servers, bash commands) are unavailable on mobile.
-      `;
+      const mobileNotice = containerEl.createDiv({ cls: 'setting-item-description obsidi-claude-mobile-notice' });
+      const strong = mobileNotice.createEl('strong', { text: 'Mobile Mode' });
+      mobileNotice.createEl('br');
+      mobileNotice.appendText('Using the direct Anthropic API. Some desktop features (SDK backend, MCP servers, bash commands) are unavailable on mobile.');
     }
 
     // Tab bar
@@ -199,7 +212,7 @@ export class SettingsTab extends PluginSettingTab {
 
     // Include active note
     new Setting(containerEl)
-      .setName('Include Active Note')
+      .setName('Include active note')
       .setDesc('Automatically include the currently open note as context')
       .addToggle((toggle) =>
         toggle
@@ -212,7 +225,7 @@ export class SettingsTab extends PluginSettingTab {
 
     // Permission mode
     new Setting(containerEl)
-      .setName('Permission Mode')
+      .setName('Permission mode')
       .setDesc('How to handle tool permissions')
       .addDropdown((dropdown) =>
         dropdown
@@ -236,10 +249,10 @@ export class SettingsTab extends PluginSettingTab {
     // ═══════════════════════════════════════════════════════════════════
     // DISPLAY PREFERENCES - Collapsible, expanded by default
     // ═══════════════════════════════════════════════════════════════════
-    const displaySection = this.createCollapsibleSection(containerEl, 'display', 'Display Preferences', true);
+    const displaySection = this.createCollapsibleSection(containerEl, 'display', 'Display preferences', true);
 
     new Setting(displaySection)
-      .setName('Show Tool Calls')
+      .setName('Show tool calls')
       .setDesc('Display when Claude uses tools (Read, Write, Bash, etc.)')
       .addToggle((toggle) =>
         toggle
@@ -251,7 +264,7 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     new Setting(displaySection)
-      .setName('Show Message Actions')
+      .setName('Show message actions')
       .setDesc('Display action buttons (copy, bookmark, reactions) below messages')
       .addToggle((toggle) =>
         toggle
@@ -263,7 +276,19 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     new Setting(displaySection)
-      .setName('Stream Responses')
+      .setName('Show thinking by default')
+      .setDesc('Expand Claude\'s thinking blocks automatically in the chat pane.')
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.showThinkingByDefault)
+          .onChange(async (value) => {
+            this.plugin.settings.showThinkingByDefault = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(displaySection)
+      .setName('Stream responses')
       .setDesc('Show responses as they are generated')
       .addToggle((toggle) =>
         toggle
@@ -277,10 +302,10 @@ export class SettingsTab extends PluginSettingTab {
     // ═══════════════════════════════════════════════════════════════════
     // SAFETY & LIMITS - Collapsible, collapsed by default
     // ═══════════════════════════════════════════════════════════════════
-    const limitsSection = this.createCollapsibleSection(containerEl, 'limits', 'Safety & Limits');
+    const limitsSection = this.createCollapsibleSection(containerEl, 'limits', 'Safety & limits');
 
     new Setting(limitsSection)
-      .setName('Max Budget (USD)')
+      .setName('Max budget (USD)')
       .setDesc('Maximum spend per conversation (empty = no limit)')
       .addText((text) =>
         text
@@ -301,7 +326,7 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     new Setting(limitsSection)
-      .setName('Max Turns')
+      .setName('Max turns')
       .setDesc('Maximum conversation turns before stopping')
       .addSlider((slider) =>
         slider
@@ -317,13 +342,12 @@ export class SettingsTab extends PluginSettingTab {
     // ═══════════════════════════════════════════════════════════════════
     // BACKEND SETUP - Collapsible, collapsed by default
     // ═══════════════════════════════════════════════════════════════════
-    const backendSection = this.createCollapsibleSection(containerEl, 'backend', 'Backend Setup');
+    const backendSection = this.createCollapsibleSection(containerEl, 'backend', 'Backend setup');
 
     // On mobile, only show API option; on desktop show all options
     if (Platform.isMobile) {
-      const mobileBackendInfo = backendSection.createDiv({ cls: 'setting-item-description' });
-      mobileBackendInfo.style.marginBottom = '0.5rem';
-      mobileBackendInfo.innerHTML = '<em>Using direct Anthropic API (mobile)</em>';
+      const mobileBackendInfo = backendSection.createDiv({ cls: 'setting-item-description obsidi-claude-backend-info' });
+      mobileBackendInfo.createEl('em', { text: 'Using direct Anthropic API (mobile)' });
     } else {
       new Setting(backendSection)
         .setName('Backend')
@@ -345,15 +369,14 @@ export class SettingsTab extends PluginSettingTab {
     // Show current backend info
     const backendInfo = this.plugin.backendFactory?.getBackendInfo();
     if (backendInfo) {
-      const infoEl = backendSection.createDiv({ cls: 'setting-item-description' });
-      infoEl.style.marginTop = '-0.5rem';
-      infoEl.style.marginBottom = '0.5rem';
-      infoEl.innerHTML = `<em>Current: ${backendInfo.current.toUpperCase()} backend (${backendInfo.sdkAvailable ? 'SDK available' : 'SDK unavailable'})</em>`;
+      const infoEl = backendSection.createDiv({ cls: 'setting-item-description obsidi-claude-backend-current' });
+      const em = infoEl.createEl('em');
+      em.setText(`Current: ${backendInfo.current.toUpperCase()} backend (${backendInfo.sdkAvailable ? 'SDK available' : 'SDK unavailable'})`);
     }
 
     // API Key with secure storage
     const apiKeySetting = new Setting(backendSection)
-      .setName('Anthropic API Key')
+      .setName('Anthropic API key')
       .setDesc('Required for API backend. Stored securely. Env var ANTHROPIC_API_KEY takes precedence.');
 
     // Add status indicator and buttons asynchronously
@@ -362,7 +385,7 @@ export class SettingsTab extends PluginSettingTab {
     // Desktop-only: Claude Code Path and Working Directory
     if (!Platform.isMobile) {
       new Setting(backendSection)
-        .setName('Claude Code Path')
+        .setName('Claude Code path')
         .setDesc('Path to Claude Code CLI. Run "which claude" in terminal to find it.')
         .addText((text) =>
           text
@@ -375,7 +398,7 @@ export class SettingsTab extends PluginSettingTab {
         );
 
       new Setting(backendSection)
-        .setName('Working Directory')
+        .setName('Working directory')
         .setDesc('Directory where the agent operates. Leave empty for vault root.')
         .addText((text) =>
           text
@@ -391,12 +414,12 @@ export class SettingsTab extends PluginSettingTab {
     // ═══════════════════════════════════════════════════════════════════
     // STORAGE - Vault-based conversation storage for sync
     // ═══════════════════════════════════════════════════════════════════
-    const storageSection = this.createCollapsibleSection(containerEl, 'storage', 'Conversation Storage');
+    const storageSection = this.createCollapsibleSection(containerEl, 'storage', 'Conversation storage');
 
     const storageSettings = this.plugin.settings.conversationStorage;
 
     new Setting(storageSection)
-      .setName('Store in Vault')
+      .setName('Store in vault')
       .setDesc('Save conversations to your vault for cross-device sync via Obsidian Sync')
       .addToggle((toggle) =>
         toggle
@@ -419,7 +442,7 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     new Setting(storageSection)
-      .setName('Folder Path')
+      .setName('Folder path')
       .setDesc('Vault folder for conversation files')
       .addText((text) =>
         text
@@ -432,7 +455,7 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     new Setting(storageSection)
-      .setName('Auto-Resume')
+      .setName('Auto-resume')
       .setDesc('Automatically resume the last conversation on startup')
       .addToggle((toggle) =>
         toggle
@@ -450,7 +473,7 @@ export class SettingsTab extends PluginSettingTab {
 
     // System prompt
     new Setting(advancedSection)
-      .setName('Custom Instructions')
+      .setName('Custom instructions')
       .setDesc('Instructions that guide Claude\'s behavior')
       .addTextArea((text) => {
         text
@@ -480,11 +503,10 @@ export class SettingsTab extends PluginSettingTab {
    * Add skills-related settings to a container
    */
   private addSkillsSettings(containerEl: HTMLElement): void {
-    const skillsHeader = containerEl.createEl('h5', { text: 'Skills' });
-    skillsHeader.style.marginTop = '1rem';
+    new Setting(containerEl).setName('Skills').setHeading();
 
     new Setting(containerEl)
-      .setName('Enable Skills')
+      .setName('Enable skills')
       .setDesc('Load SKILL.md files from your vault to enhance Claude\'s capabilities')
       .addToggle((toggle) =>
         toggle
@@ -498,7 +520,7 @@ export class SettingsTab extends PluginSettingTab {
 
     if (this.plugin.settings.skills.enabled) {
       new Setting(containerEl)
-        .setName('Skills Folder')
+        .setName('Skills folder')
         .setDesc('Vault folder containing SKILL.md files')
         .addText((text) =>
           text
@@ -511,7 +533,7 @@ export class SettingsTab extends PluginSettingTab {
         );
 
       new Setting(containerEl)
-        .setName('Install Bundled Skills')
+        .setName('Install bundled skills')
         .setDesc('Auto-install default skills like Obsidian Markdown (by kepano)')
         .addToggle((toggle) =>
           toggle
@@ -528,7 +550,7 @@ export class SettingsTab extends PluginSettingTab {
 
       const skills = this.plugin.skillRegistry?.getSkills() ?? [];
       new Setting(containerEl)
-        .setName('Loaded Skills')
+        .setName('Loaded skills')
         .setDesc(`${skills.length} skill${skills.length !== 1 ? 's' : ''} loaded`)
         .addButton((button) =>
           button.setButtonText('Reload Skills').onClick(async () => {
@@ -543,21 +565,20 @@ export class SettingsTab extends PluginSettingTab {
         );
 
       if (skills.length > 0) {
-        const skillsListEl = containerEl.createDiv({ cls: 'setting-item-description' });
-        skillsListEl.style.marginTop = '0.5rem';
-        skillsListEl.innerHTML = `<strong>Active skills:</strong> ${skills.map(s => s.name).join(', ')}`;
+        const skillsListEl = containerEl.createDiv({ cls: 'setting-item-description obsidi-claude-skills-list' });
+        skillsListEl.createEl('strong', { text: 'Active skills:' });
+        skillsListEl.appendText(` ${skills.map(s => s.name).join(', ')}`);
       }
     }
   }
 
   private addSDKAdvancedSettings(containerEl: HTMLElement): void {
     // SDK Options header (nested in Advanced section)
-    const sdkHeader = containerEl.createEl('h5', { text: 'SDK Options' });
-    sdkHeader.style.marginTop = '1rem';
+    new Setting(containerEl).setName('SDK options').setHeading();
 
     // System prompt mode
     new Setting(containerEl)
-      .setName('System Prompt Mode')
+      .setName('System prompt mode')
       .setDesc('How to handle your custom system prompt')
       .addDropdown((dropdown) =>
         dropdown
@@ -571,7 +592,7 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Auto-Continue Session')
+      .setName('Auto-continue session')
       .setDesc('Continue the most recent session in working directory')
       .addToggle((toggle) =>
         toggle
@@ -583,7 +604,7 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('File Checkpointing')
+      .setName('File checkpointing')
       .setDesc('Enable undo/rewind for file changes (use /undo command)')
       .addToggle((toggle) =>
         toggle
@@ -595,7 +616,7 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Extended Context (1M tokens)')
+      .setName('Extended context (1M tokens)')
       .setDesc('Enable 1M token context window (Sonnet 4/4.5 only, beta)')
       .addToggle((toggle) =>
         toggle
@@ -607,7 +628,7 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Load Vault CLAUDE.md')
+      .setName('Load vault CLAUDE.md')
       .setDesc('Load project instructions from .claude/CLAUDE.md')
       .addToggle((toggle) =>
         toggle
@@ -619,7 +640,7 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Max Thinking Tokens')
+      .setName('Max thinking tokens')
       .setDesc('Limit thinking tokens to control costs (empty = no limit)')
       .addText((text) =>
         text
@@ -640,7 +661,7 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Additional Directories')
+      .setName('Additional directories')
       .setDesc('Extra directories Claude can access (comma-separated)')
       .addText((text) =>
         text
@@ -656,7 +677,7 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Blocked Tools')
+      .setName('Blocked tools')
       .setDesc('Tools to disable (comma-separated, e.g., "Bash, WebSearch")')
       .addText((text) =>
         text
@@ -687,7 +708,7 @@ export class SettingsTab extends PluginSettingTab {
 
     if (agentOptions.length > 1) {
       new Setting(containerEl)
-        .setName('Main Agent')
+        .setName('Main agent')
         .setDesc('Use a specific agent for all conversations')
         .addDropdown((dropdown) => {
           for (const opt of agentOptions) {
@@ -703,7 +724,7 @@ export class SettingsTab extends PluginSettingTab {
     }
 
     new Setting(containerEl)
-      .setName('Fallback Model')
+      .setName('Fallback model')
       .setDesc('Model to use if primary is rate-limited')
       .addDropdown((dropdown) => {
         dropdown.addOption('', '(None)');
@@ -717,7 +738,7 @@ export class SettingsTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
-      .setName('Ephemeral Mode')
+      .setName('Ephemeral mode')
       .setDesc('Privacy mode - sessions not saved to disk')
       .addToggle((toggle) =>
         toggle.setValue(this.plugin.settings.ephemeralMode).onChange(async (value) => {
@@ -727,11 +748,10 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     // Sandbox settings
-    const sandboxHeader = containerEl.createEl('h5', { text: 'Sandbox' });
-    sandboxHeader.style.marginTop = '1rem';
+    new Setting(containerEl).setName('Sandbox').setHeading();
 
     new Setting(containerEl)
-      .setName('Sandbox Mode')
+      .setName('Sandbox mode')
       .setDesc('Run Bash commands in a sandboxed environment')
       .addToggle((toggle) =>
         toggle.setValue(this.plugin.settings.sandboxEnabled).onChange(async (value) => {
@@ -741,7 +761,7 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Auto-allow Bash in Sandbox')
+      .setName('Auto-allow Bash in sandbox')
       .setDesc('Auto-approve Bash when sandbox is enabled')
       .addToggle((toggle) =>
         toggle.setValue(this.plugin.settings.autoAllowBashIfSandboxed).onChange(async (value) => {
@@ -751,11 +771,10 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     // Hooks settings
-    const hooksHeader = containerEl.createEl('h5', { text: 'Hooks' });
-    hooksHeader.style.marginTop = '1rem';
+    new Setting(containerEl).setName('Hooks').setHeading();
 
     new Setting(containerEl)
-      .setName('Enable Hooks')
+      .setName('Enable hooks')
       .setDesc('SDK hooks for vault refresh, audit logging, etc.')
       .addToggle((toggle) =>
         toggle.setValue(this.plugin.settings.hooks.enabled).onChange(async (value) => {
@@ -767,7 +786,7 @@ export class SettingsTab extends PluginSettingTab {
 
     if (this.plugin.settings.hooks.enabled) {
       new Setting(containerEl)
-        .setName('Auto-refresh Vault')
+        .setName('Auto-refresh vault')
         .setDesc('Refresh Obsidian after Claude edits files')
         .addToggle((toggle) =>
           toggle.setValue(this.plugin.settings.hooks.autoRefreshVault).onChange(async (value) => {
@@ -777,7 +796,7 @@ export class SettingsTab extends PluginSettingTab {
         );
 
       new Setting(containerEl)
-        .setName('Audit Tool Usage')
+        .setName('Audit tool usage')
         .setDesc('Log all tool usage for debugging')
         .addToggle((toggle) =>
           toggle.setValue(this.plugin.settings.hooks.auditToolUsage).onChange(async (value) => {
@@ -787,7 +806,7 @@ export class SettingsTab extends PluginSettingTab {
         );
 
       new Setting(containerEl)
-        .setName('Show SDK Notifications')
+        .setName('Show SDK notifications')
         .setDesc('Display SDK notifications (may be verbose)')
         .addToggle((toggle) =>
           toggle.setValue(this.plugin.settings.hooks.showNotifications).onChange(async (value) => {
@@ -797,7 +816,7 @@ export class SettingsTab extends PluginSettingTab {
         );
 
       new Setting(containerEl)
-        .setName('Hook Blocked Tools')
+        .setName('Hook blocked tools')
         .setDesc('Tools to block via hooks (e.g., Bash,Write)')
         .addText((text) =>
           text
@@ -814,11 +833,10 @@ export class SettingsTab extends PluginSettingTab {
     }
 
     // Compaction settings
-    const compactionHeader = containerEl.createEl('h5', { text: 'Context Compaction' });
-    compactionHeader.style.marginTop = '1rem';
+    new Setting(containerEl).setName('Context compaction').setHeading();
 
     new Setting(containerEl)
-      .setName('Compaction Instructions')
+      .setName('Compaction instructions')
       .setDesc('Instructions to preserve info during compaction')
       .addTextArea((text) => {
         text
@@ -833,13 +851,13 @@ export class SettingsTab extends PluginSettingTab {
   }
 
   private addEmbeddingSettings(containerEl: HTMLElement): void {
-    containerEl.createEl('h3', { text: 'Semantic Search (RAG)' });
+    new Setting(containerEl).setName('Semantic search (RAG)').setHeading();
 
     const embedding = this.plugin.settings.embedding;
 
     // Enable embeddings
     new Setting(containerEl)
-      .setName('Enable Semantic Search')
+      .setName('Enable semantic search')
       .setDesc(
         'Index vault for semantic search. Claude can find relevant notes by meaning, not just keywords.'
       )
@@ -855,7 +873,7 @@ export class SettingsTab extends PluginSettingTab {
 
     // Provider selection
     new Setting(containerEl)
-      .setName('Embedding Provider')
+      .setName('Embedding provider')
       .setDesc('Choose local (free, offline) or remote (paid, higher quality)')
       .addDropdown((dropdown) =>
         dropdown
@@ -875,14 +893,15 @@ export class SettingsTab extends PluginSettingTab {
     // Provider-specific warnings and settings
     if (embedding.provider === 'transformers') {
       const warningEl = containerEl.createDiv({ cls: 'setting-warning' });
-      warningEl.innerHTML = `
-        <strong>⚠️  Performance Notice</strong>
-        Transformers.js runs in your browser and may cause brief UI freezes during indexing.
-        <ul>
-          <li><strong>Recommended for:</strong> Small vaults (&lt;500 files)</li>
-          <li><strong>For larger vaults:</strong> Use Ollama (free, local, no UI blocking)</li>
-        </ul>
-      `;
+      const strongEl = warningEl.createEl('strong', { text: '⚠️  Performance Notice' });
+      warningEl.appendText('Transformers.js runs in your browser and may cause brief UI freezes during indexing.');
+      const ul = warningEl.createEl('ul');
+      const li1 = ul.createEl('li');
+      li1.createEl('strong', { text: 'Recommended for:' });
+      li1.appendText(' Small vaults (<500 files)');
+      const li2 = ul.createEl('li');
+      li2.createEl('strong', { text: 'For larger vaults:' });
+      li2.appendText(' Use Ollama (free, local, no UI blocking)');
 
       new Setting(containerEl)
         .setName('Model')
@@ -907,16 +926,15 @@ export class SettingsTab extends PluginSettingTab {
       // Show warning on mobile
       if (Platform.isMobile) {
         const warningEl = containerEl.createDiv({ cls: 'setting-warning' });
-        warningEl.innerHTML = `
-          <strong>⚠️ Not Available on Mobile</strong><br>
-          Ollama requires localhost access, which is not available on mobile devices.
-          Please use <strong>Transformers.js</strong> (free, in-browser) or a cloud provider (OpenAI, Voyage).
-        `;
-        warningEl.style.cssText = 'background: var(--background-modifier-error-rgb); padding: 0.75rem; border-radius: 6px; margin-bottom: 0.5rem;';
+        warningEl.createEl('strong', { text: '⚠️ Not Available on Mobile' });
+        warningEl.createEl('br');
+        warningEl.appendText('Ollama requires localhost access, which is not available on mobile devices. Please use ');
+        warningEl.createEl('strong', { text: 'Transformers.js' });
+        warningEl.appendText(' (free, in-browser) or a cloud provider (OpenAI, Voyage).');
       }
 
       new Setting(containerEl)
-        .setName('Ollama Host')
+        .setName('Ollama host')
         .setDesc('Ollama server URL (requires Ollama running)')
         .addText((text) =>
           text
@@ -944,7 +962,7 @@ export class SettingsTab extends PluginSettingTab {
         );
     } else if (embedding.provider === 'openai') {
       new Setting(containerEl)
-        .setName('OpenAI API Key')
+        .setName('OpenAI API key')
         .setDesc('Your OpenAI API key')
         .addText((text) =>
           text
@@ -985,7 +1003,7 @@ export class SettingsTab extends PluginSettingTab {
         );
     } else if (embedding.provider === 'voyage') {
       new Setting(containerEl)
-        .setName('Voyage AI API Key')
+        .setName('Voyage AI API key')
         .setDesc('Your Voyage AI API key')
         .addText((text) =>
           text
@@ -1014,10 +1032,10 @@ export class SettingsTab extends PluginSettingTab {
     }
 
     // Indexing settings
-    containerEl.createEl('h4', { text: 'Indexing Options' });
+    new Setting(containerEl).setName('Indexing options').setHeading();
 
     new Setting(containerEl)
-      .setName('Auto-Index')
+      .setName('Auto-index')
       .setDesc('Automatically index files when they change')
       .addToggle((toggle) =>
         toggle.setValue(embedding.autoIndex).onChange(async (value) => {
@@ -1027,7 +1045,7 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Chunk Size')
+      .setName('Chunk size')
       .setDesc('Characters per text chunk (smaller = more precise, larger = more context)')
       .addSlider((slider) =>
         slider
@@ -1041,7 +1059,7 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Chunk Overlap')
+      .setName('Chunk overlap')
       .setDesc('Character overlap between chunks')
       .addSlider((slider) =>
         slider
@@ -1055,7 +1073,7 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Excluded Folders')
+      .setName('Excluded folders')
       .setDesc('Folders to exclude from indexing (comma-separated)')
       .addText((text) =>
         text
@@ -1072,7 +1090,7 @@ export class SettingsTab extends PluginSettingTab {
 
     // Index management buttons
     new Setting(containerEl)
-      .setName('Index Actions')
+      .setName('Index actions')
       .setDesc('Manage the semantic search index')
       .addButton((button) =>
         button.setButtonText('Rebuild Index').onClick(async () => {
@@ -1105,14 +1123,14 @@ export class SettingsTab extends PluginSettingTab {
     // Show index stats
     if (this.plugin.ragService) {
       const stats = this.plugin.ragService.getStats();
-      const statsEl = containerEl.createDiv({ cls: 'setting-item-description' });
-      statsEl.style.marginTop = '10px';
-      statsEl.innerHTML = `
-        <strong>Index Status:</strong><br>
-        Provider: ${stats.providerName || 'Not configured'}<br>
-        Files indexed: ${stats.totalFiles}<br>
-        Total chunks: ${stats.totalChunks}
-      `;
+      const statsEl = containerEl.createDiv({ cls: 'setting-item-description obsidi-claude-index-stats' });
+      statsEl.createEl('strong', { text: 'Index Status:' });
+      statsEl.createEl('br');
+      statsEl.appendText(`Provider: ${stats.providerName || 'Not configured'}`);
+      statsEl.createEl('br');
+      statsEl.appendText(`Files indexed: ${stats.totalFiles}`);
+      statsEl.createEl('br');
+      statsEl.appendText(`Total chunks: ${stats.totalChunks}`);
     }
   }
 
@@ -1129,7 +1147,7 @@ export class SettingsTab extends PluginSettingTab {
 
     // Add server button
     new Setting(clientSection)
-      .setName('Add MCP Server')
+      .setName('Add MCP server')
       .setDesc('Connect to external MCP servers for additional capabilities')
       .addButton((button) =>
         button.setButtonText('Add Server').onClick(() => {
@@ -1148,7 +1166,6 @@ export class SettingsTab extends PluginSettingTab {
       for (let i = 0; i < servers.length; i++) {
         const server = servers[i];
         const serverEl = serversContainer.createDiv('mcp-server-item');
-        serverEl.style.cssText = 'padding: 0.5rem; margin: 0.5rem 0; background: var(--background-secondary); border-radius: 4px;';
 
         // Build description with command and env count
         let desc = `${server.command} ${server.args.join(' ')}`;
@@ -1237,7 +1254,7 @@ export class SettingsTab extends PluginSettingTab {
   }
 
   private addToolSettings(containerEl: HTMLElement): void {
-    containerEl.createEl('h3', { text: 'Allowed Tools' });
+    new Setting(containerEl).setName('Allowed tools').setHeading();
     containerEl.createEl('p', {
       text: 'Select which tools Claude can use:',
       cls: 'setting-item-description',
@@ -1281,25 +1298,22 @@ export class SettingsTab extends PluginSettingTab {
     const manifest = this.plugin.manifest;
 
     // Hero section with logo/icon
-    const heroEl = containerEl.createDiv({ cls: 'about-hero' });
-    heroEl.style.cssText = 'text-align: center; padding: 1.5rem 0; border-bottom: 1px solid var(--background-modifier-border); margin-bottom: 1rem;';
+    const heroEl = containerEl.createDiv({ cls: 'obsidi-claude-hero' });
 
-    const titleEl = heroEl.createEl('h2', { text: 'Obsidi-Claude' });
-    titleEl.style.cssText = 'margin: 0 0 0.5rem 0; font-size: 1.5rem;';
+    const titleEl = heroEl.createDiv({ cls: 'obsidi-claude-hero-title' });
+    titleEl.setText('Obsidi-Claude');
 
-    const versionEl = heroEl.createDiv({ cls: 'about-version' });
-    versionEl.style.cssText = 'font-size: 1.1rem; color: var(--text-muted); margin-bottom: 0.5rem;';
+    const versionEl = heroEl.createDiv({ cls: 'obsidi-claude-hero-version' });
     versionEl.setText(`Version ${manifest.version}`);
 
-    const descEl = heroEl.createDiv({ cls: 'about-description' });
-    descEl.style.cssText = 'color: var(--text-muted); max-width: 400px; margin: 0 auto;';
+    const descEl = heroEl.createDiv({ cls: 'obsidi-claude-hero-desc' });
     descEl.setText(manifest.description);
 
     // Links section
-    containerEl.createEl('h3', { text: 'Links' });
+    new Setting(containerEl).setName('Links').setHeading();
 
     new Setting(containerEl)
-      .setName('GitHub Repository')
+      .setName('GitHub repository')
       .setDesc('View source code, report issues, and contribute')
       .addButton((button) =>
         button.setButtonText('Open').onClick(() => {
@@ -1317,7 +1331,7 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Report Issue')
+      .setName('Report issue')
       .setDesc('Found a bug? Let us know!')
       .addButton((button) =>
         button.setButtonText('Report').onClick(() => {
@@ -1326,10 +1340,9 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     // System info section
-    containerEl.createEl('h3', { text: 'System Information' });
+    new Setting(containerEl).setName('System information').setHeading();
 
-    const infoEl = containerEl.createDiv({ cls: 'about-system-info' });
-    infoEl.style.cssText = 'background: var(--background-secondary); padding: 1rem; border-radius: 6px; font-family: var(--font-monospace); font-size: 0.85rem;';
+    const infoEl = containerEl.createDiv({ cls: 'obsidi-claude-sysinfo' });
 
     const backendInfo = this.plugin.backendFactory?.getBackendInfo();
     const ragStats = this.plugin.ragService?.getStats();
@@ -1347,11 +1360,13 @@ export class SettingsTab extends PluginSettingTab {
       `External MCP Servers: ${this.plugin.settings.externalMcpServers.filter(s => s.enabled).length}`,
     ].filter(Boolean);
 
-    infoEl.innerHTML = infoLines.join('<br>');
+    for (const line of infoLines) {
+      infoEl.createDiv({ text: line as string });
+    }
 
     // Copy system info button
     new Setting(containerEl)
-      .setName('Copy System Info')
+      .setName('Copy system info')
       .setDesc('Copy system information for bug reports')
       .addButton((button) =>
         button.setButtonText('Copy').onClick(() => {
@@ -1362,22 +1377,28 @@ export class SettingsTab extends PluginSettingTab {
       );
 
     // Credits
-    containerEl.createEl('h3', { text: 'Credits' });
+    new Setting(containerEl).setName('Credits').setHeading();
 
-    const creditsEl = containerEl.createDiv({ cls: 'about-credits' });
-    creditsEl.style.cssText = 'color: var(--text-muted); line-height: 1.6;';
-    creditsEl.innerHTML = `
-      <p>Created by <a href="${manifest.authorUrl}" target="_blank">${manifest.author}</a></p>
-      <p>Powered by <a href="https://www.anthropic.com/claude" target="_blank">Claude</a> and the <a href="https://github.com/anthropics/claude-code" target="_blank">Claude Agent SDK</a></p>
-      <p style="margin-top: 1rem; font-size: 0.9rem;">Special thanks to the Obsidian community for feedback and testing.</p>
-    `;
+    const creditsEl = containerEl.createDiv({ cls: 'obsidi-claude-credits' });
+    const p1 = creditsEl.createEl('p');
+    p1.appendText('Created by ');
+    p1.createEl('a', { text: manifest.author, href: manifest.authorUrl, attr: { target: '_blank' } });
+
+    const p2 = creditsEl.createEl('p');
+    p2.appendText('Powered by ');
+    p2.createEl('a', { text: 'Claude', href: 'https://www.anthropic.com/claude', attr: { target: '_blank' } });
+    p2.appendText(' and the ');
+    p2.createEl('a', { text: 'Claude Agent SDK', href: 'https://github.com/anthropics/claude-code', attr: { target: '_blank' } });
+
+    const p3 = creditsEl.createEl('p', { cls: 'obsidi-claude-credits-thanks' });
+    p3.setText('Special thanks to the Obsidian community for feedback and testing.');
   }
 
   private addResetSettings(containerEl: HTMLElement): void {
-    containerEl.createEl('h3', { text: 'Reset' });
+    new Setting(containerEl).setName('Reset').setHeading();
 
     new Setting(containerEl)
-      .setName('Reset to Defaults')
+      .setName('Reset to defaults')
       .setDesc('Reset all settings to their default values')
       .addButton((button) =>
         button.setButtonText('Reset').setWarning().onClick(async () => {
@@ -1437,18 +1458,18 @@ class AddMCPServerModal extends Modal {
     const { contentEl } = this;
     contentEl.empty();
 
-    contentEl.createEl('h2', { text: this.existing ? 'Edit MCP Server' : 'Add MCP Server' });
+    this.setTitle(this.existing ? 'Edit MCP server' : 'Add MCP server');
 
     // Name
     new Setting(contentEl)
-      .setName('Server Name')
+      .setName('Server name')
       .setDesc('Unique name for this MCP server (e.g., "mouse", "media")')
       .addText((text) => {
         this.nameInput = text;
         text
           .setPlaceholder('my-server')
-          .setValue(this.existing?.name || '')
-          .inputEl.style.width = '100%';
+          .setValue(this.existing?.name || '');
+        text.inputEl.addClass('obsidi-claude-modal-input-full');
       });
 
     // Command
@@ -1459,8 +1480,8 @@ class AddMCPServerModal extends Modal {
         this.commandInput = text;
         text
           .setPlaceholder('node')
-          .setValue(this.existing?.command || 'node')
-          .inputEl.style.width = '100%';
+          .setValue(this.existing?.command || 'node');
+        text.inputEl.addClass('obsidi-claude-modal-input-full');
       });
 
     // Args
@@ -1471,13 +1492,13 @@ class AddMCPServerModal extends Modal {
         this.argsInput = text;
         text
           .setPlaceholder('/path/to/server/dist/index.js')
-          .setValue(this.existing?.args.join(' ') || '')
-          .inputEl.style.width = '100%';
+          .setValue(this.existing?.args.join(' ') || '');
+        text.inputEl.addClass('obsidi-claude-modal-input-full');
       });
 
     // Environment variables
     new Setting(contentEl)
-      .setName('Environment Variables')
+      .setName('Environment variables')
       .setDesc('One per line: KEY=value')
       .addTextArea((text) => {
         this.envInput = text;
@@ -1488,12 +1509,11 @@ class AddMCPServerModal extends Modal {
           .setPlaceholder('API_KEY=your-key\nDEBUG=true')
           .setValue(envStr);
         text.inputEl.rows = 3;
-        text.inputEl.style.width = '100%';
+        text.inputEl.addClass('obsidi-claude-modal-input-full');
       });
 
     // Buttons
-    const buttonContainer = contentEl.createDiv();
-    buttonContainer.style.cssText = 'display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem;';
+    const buttonContainer = contentEl.createDiv({ cls: 'obsidi-claude-modal-buttons' });
 
     const cancelBtn = buttonContainer.createEl('button', { text: 'Cancel' });
     cancelBtn.onclick = () => this.close();
@@ -1562,46 +1582,38 @@ class ApiKeyModal extends Modal {
   onOpen(): void {
     const { contentEl } = this;
     contentEl.empty();
-    contentEl.createEl('h3', { text: 'Enter Anthropic API Key' });
+    this.setTitle('Enter Anthropic API key');
 
     const desc = contentEl.createEl('p', {
       text: 'Your API key will be stored securely and will not appear in plugin settings.',
+      cls: 'obsidi-claude-modal-desc',
     });
-    desc.style.marginBottom = '1rem';
-    desc.style.color = 'var(--text-muted)';
 
     let keyValue = '';
 
-    const inputContainer = contentEl.createDiv();
-    inputContainer.style.marginBottom = '1rem';
+    const inputContainer = contentEl.createDiv({ cls: 'obsidi-claude-modal-input-container' });
 
     const input = inputContainer.createEl('input', {
       type: 'password',
       placeholder: 'sk-ant-api03-...',
+      cls: 'obsidi-claude-modal-key-input',
     });
-    input.style.width = '100%';
-    input.style.padding = '0.5rem';
     input.oninput = () => {
       keyValue = input.value;
     };
 
     // Show/hide toggle
-    const toggleContainer = inputContainer.createDiv();
-    toggleContainer.style.marginTop = '0.5rem';
+    const toggleContainer = inputContainer.createDiv({ cls: 'obsidi-claude-modal-toggle-row' });
 
     const showToggle = toggleContainer.createEl('label');
-    const checkbox = showToggle.createEl('input', { type: 'checkbox' });
-    checkbox.style.marginRight = '0.5rem';
+    const checkbox = showToggle.createEl('input', { type: 'checkbox', cls: 'obsidi-claude-modal-checkbox' });
     showToggle.appendText('Show key');
     checkbox.onchange = () => {
       input.type = checkbox.checked ? 'text' : 'password';
     };
 
     // Buttons
-    const buttonContainer = contentEl.createDiv();
-    buttonContainer.style.display = 'flex';
-    buttonContainer.style.justifyContent = 'flex-end';
-    buttonContainer.style.gap = '0.5rem';
+    const buttonContainer = contentEl.createDiv({ cls: 'obsidi-claude-modal-buttons' });
 
     const cancelBtn = buttonContainer.createEl('button', { text: 'Cancel' });
     cancelBtn.onclick = () => this.close();

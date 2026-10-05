@@ -78,9 +78,21 @@ HTMLElement.prototype.createEl = function <K extends keyof HTMLElementTagNameMap
   return el;
 };
 
-HTMLElement.prototype.createSpan = function (cls?: string): HTMLSpanElement {
+HTMLElement.prototype.createSpan = function (
+  options?: string | { cls?: string; text?: string; attr?: Record<string, string> }
+): HTMLSpanElement {
   const span = document.createElement('span');
-  if (cls) span.className = cls;
+  if (typeof options === 'string') {
+    span.className = options;
+  } else if (options) {
+    if (options.cls) span.className = options.cls;
+    if (options.text) span.textContent = options.text;
+    if (options.attr) {
+      for (const [key, value] of Object.entries(options.attr)) {
+        span.setAttribute(key, value);
+      }
+    }
+  }
   this.appendChild(span);
   return span;
 };
@@ -309,7 +321,8 @@ describe('MessageRenderer', () => {
         ],
       };
       handle.renderMessage(msg);
-      const toolEl = container.querySelector('.tool-call');
+      // read_note renders as the quiet aggregated read line (not a card).
+      const toolEl = container.querySelector('.occ-read-line');
       expect(toolEl).not.toBeNull();
     });
 
@@ -330,8 +343,10 @@ describe('MessageRenderer', () => {
         ],
       };
       handle.renderMessage(msg);
-      const toolName = container.querySelector('.tool-name');
-      expect(toolName?.textContent).toBe('semantic_search');
+      // semantic_search renders as a search card titled "Searched vault".
+      const card = container.querySelector('.occ-card-search');
+      expect(card).not.toBeNull();
+      expect(card?.querySelector('.occ-card-title')?.textContent).toBe('Searched vault');
     });
 
     it('should update tool status', () => {
@@ -354,7 +369,8 @@ describe('MessageRenderer', () => {
       ];
       handle.updateTools('msg-1', toolCalls);
       expect(handle.getMessageElement('msg-1')).not.toBeNull();
-      const toolEl = container.querySelector('.tool-call');
+      // read_note renders as the quiet aggregated read line.
+      const toolEl = container.querySelector('.occ-read-line');
       expect(toolEl).not.toBeNull();
     });
 
@@ -374,8 +390,9 @@ describe('MessageRenderer', () => {
         ],
       };
       handle.renderMessage(msg);
-      const toolEl = container.querySelector('.tool-call');
-      expect(toolEl?.classList.contains('tool-status-error')).toBe(true);
+      // Unknown tools render as a generic card carrying the status class.
+      const toolEl = container.querySelector('.occ-card');
+      expect(toolEl?.classList.contains('occ-card-status-error')).toBe(true);
     });
   });
 

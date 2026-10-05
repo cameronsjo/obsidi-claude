@@ -1,6 +1,7 @@
 /**
  * Updates versions.json with a new version entry.
- * This script is called by the release-please workflow after a release is created.
+ * The release-please workflow adds the same entry inside the release PR itself
+ * (release-please.yml), so run this only for a manual version bump.
  *
  * Usage: node scripts/update-versions.mjs <version>
  *

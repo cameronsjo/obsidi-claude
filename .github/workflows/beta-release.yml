@@ -1,5 +1,8 @@
 name: Beta Release
 
+# Every push to main (except a release merge) rebuilds the plugin and replaces
+# the `beta` prerelease, which BRAT's beta channel installs. It writes only
+# the `beta` release and tag, never main.
 on:
   push:
     branches:
@@ -8,24 +11,33 @@ on:
       - "CHANGELOG.md"
       - ".release-please-manifest.json"
 
-permissions:
-  contents: write
+permissions: {}
+
+# Serialize, so two pushes cannot interleave the delete and create below.
+concurrency:
+  group: beta-release
+  cancel-in-progress: false
 
 jobs:
-  beta-release:
+  build:
+    name: Build beta
     runs-on: ubuntu-latest
-    # Skip if this is a release-please PR merge (version bump commit)
+    # Skip a release-please PR merge (version bump commit)
     if: "!startsWith(github.event.head_commit.message, 'chore(main): release')"
+    permissions:
+      contents: read
+    outputs:
+      beta_version: ${{ steps.version.outputs.beta_version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "20"
-          cache: "npm"
 
       - name: Install dependencies
         run: npm ci
@@ -48,7 +60,7 @@ jobs:
             COMMIT_COUNT=$(git rev-list --count HEAD)
           else
             # Count commits since last release
-            COMMIT_COUNT=$(git rev-list --count ${LAST_TAG}..HEAD)
+            COMMIT_COUNT=$(git rev-list --count "${LAST_TAG}..HEAD")
           fi
 
           # If we're on the same version as last tag, increment for next version
@@ -61,7 +73,7 @@ jobs:
           fi
 
           BETA_VERSION="${NEXT_VERSION}-beta.${COMMIT_COUNT}"
-          echo "beta_version=$BETA_VERSION" >> $GITHUB_OUTPUT
+          echo "beta_version=$BETA_VERSION" >> "$GITHUB_OUTPUT"
           echo "Beta version: $BETA_VERSION (commits since $LAST_TAG: $COMMIT_COUNT)"
 
       - name: Update manifest for beta
@@ -75,27 +87,53 @@ jobs:
             fs.writeFileSync('manifest.json', JSON.stringify(manifest, null, 2) + '\n');
           "
 
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: beta-assets
+          path: |
+            main.js
+            manifest.json
+            styles.css
+          if-no-files-found: error
+          retention-days: 1
+
+  # Separate from the build so the job that can write releases runs no
+  # dependency code.
+  publish:
+    name: Publish beta
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: beta-assets
+          path: assets
+
       - name: Create beta release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          BETA_VERSION: ${{ steps.version.outputs.beta_version }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BETA_VERSION: ${{ needs.build.outputs.beta_version }}
           COMMIT_SHA: ${{ github.sha }}
         run: |
+          set -euo pipefail
+          [[ "$BETA_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]] \
+            || { echo "::error::beta version is not X.Y.Z-beta.N"; exit 1; }
           BETA_TAG="beta"
 
           # Delete existing beta release to get fresh timestamps (BRAT checks publishedAt)
-          if gh release view "$BETA_TAG" &>/dev/null; then
+          if gh release view "$BETA_TAG" -R "$REPO" &>/dev/null; then
             echo "Deleting old beta release..."
-            gh release delete "$BETA_TAG" --yes --cleanup-tag
+            gh release delete "$BETA_TAG" -R "$REPO" --yes --cleanup-tag
           fi
-
-          # Also delete local tag if it exists (checkout may have fetched it)
-          git tag -d "$BETA_TAG" 2>/dev/null || true
 
           BUILD_TIME=$(date -u +'%Y-%m-%d %H:%M:%S UTC')
 
           echo "Creating fresh beta release..."
-          gh release create "$BETA_TAG" \
+          gh release create "$BETA_TAG" -R "$REPO" \
+            --target "$COMMIT_SHA" \
             --title "Beta: $BETA_VERSION" \
             --notes "Latest beta build from main branch.
 
@@ -109,6 +147,6 @@ jobs:
 
           To install via BRAT: Add \`cameronsjo/obsidi-claude\` and enable beta versions." \
             --prerelease \
-            main.js \
-            manifest.json \
-            styles.css
+            assets/main.js \
+            assets/manifest.json \
+            assets/styles.css
