@@ -23,13 +23,13 @@
   "devDependencies": {
     "@types/jsdom": "^27.0.0",
     "@types/node": "^22.19.7",
-    "@vitest/coverage-v8": "^4.0.16",
+    "@vitest/coverage-v8": "^4.1.12",
     "builtin-modules": "^4.0.0",
     "esbuild": "^0.27.2",
     "jsdom": "^27.4.0",
-    "obsidian": "^1.7.2",
+    "obsidian": "^1.14.4",
     "typescript": "^5.7.2",
-    "vitest": "^4.0.16"
+    "vitest": "^4.1.12"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.25",
